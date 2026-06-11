@@ -1,0 +1,545 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AIDailyReport",
+  "type": "object",
+  "required": ["version", "type", "date", "window", "generated_at", "sections", "fetch_status"],
+  "properties": {
+    "version": {"const": "1.0"},
+    "type": {"const": "daily"},
+    "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "window": {
+      "type": "object",
+      "required": ["start", "end", "timezone"],
+      "properties": {
+        "start": {"type": "string"},
+        "end": {"type": "string"},
+        "timezone": {"type": "string"}
+      }
+    },
+    "generated_at": {"type": "string"},
+    "sections": {
+      "type": "object",
+      "required": [
+        "frontier_models",
+        "coding_agents",
+        "general_agents",
+        "agent_ecosystem",
+        "market_signals",
+        "pattern_observations",
+        "experiments_this_week",
+        "decision_radar",
+        "action_items",
+        "unverified"
+      ],
+      "properties": {
+        "frontier_models": {"$ref": "#/$defs/itemSection"},
+        "coding_agents": {
+          "type": "object",
+          "required": ["title", "items", "deep_dive"],
+          "properties": {
+            "title": {"type": "string"},
+            "items": {
+              "type": "array",
+              "items": {"$ref": "#/$defs/codingItem"}
+            },
+            "deep_dive": {
+              "type": "object",
+              "required": ["title", "body", "related_item_indexes"],
+              "properties": {
+                "title": {"type": "string"},
+                "body": {"type": "string", "minLength": 100, "maxLength": 600},
+                "related_item_indexes": {
+                  "type": "array",
+                  "items": {"type": "integer", "minimum": 0}
+                }
+              }
+            }
+          }
+        },
+        "general_agents": {"$ref": "#/$defs/generalSection"},
+        "agent_ecosystem": {
+          "type": "object",
+          "required": ["title", "items", "empty_message"],
+          "properties": {
+            "title": {"type": "string"},
+            "items": {
+              "type": "array",
+              "maxItems": 4,
+              "items": {"$ref": "#/$defs/ecosystemItem"}
+            },
+            "empty_message": {"type": "string"}
+          }
+        },
+        "market_signals": {"$ref": "#/$defs/marketSignalsSection"},
+        "pattern_observations": {"$ref": "#/$defs/patternObservationsSection"},
+        "experiments_this_week": {
+          "type": "object",
+          "required": ["title", "items", "empty_message"],
+          "properties": {
+            "title": {"type": "string"},
+            "items": {
+              "type": "array",
+              "maxItems": 1,
+              "items": {"$ref": "#/$defs/experiment"}
+            },
+            "empty_message": {"type": "string"}
+          }
+        },
+        "decision_radar": {
+          "type": "object",
+          "required": ["title", "decisions", "empty_message"],
+          "properties": {
+            "title": {"type": "string"},
+            "decisions": {
+              "type": "array",
+              "items": {"$ref": "#/$defs/decisionRadarGroup"}
+            },
+            "empty_message": {"type": "string"}
+          }
+        },
+        "action_items": {
+          "type": "object",
+          "required": ["title", "items", "empty_message"],
+          "properties": {
+            "title": {"type": "string"},
+            "items": {
+              "type": "array",
+              "items": {"$ref": "#/$defs/actionItem"}
+            },
+            "empty_message": {"type": "string"}
+          }
+        },
+        "unverified": {
+          "type": "object",
+          "required": ["title", "items"],
+          "properties": {
+            "title": {"type": "string"},
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["headline", "summary", "source_name", "source_url", "reason_unverified"],
+                "properties": {
+                  "headline": {"type": "string"},
+                  "summary": {"type": "string"},
+                  "source_name": {"type": "string"},
+                  "source_url": {"type": "string"},
+                  "reason_unverified": {"type": "string"}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "fetch_status": {
+      "type": "object",
+      "required": ["succeeded", "failed", "empty"],
+      "properties": {
+        "succeeded": {"type": "array", "items": {"type": "string"}},
+        "failed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "reason", "attempts"],
+            "properties": {
+              "name": {"type": "string"},
+              "reason": {"type": "string"},
+              "attempts": {"type": "integer", "minimum": 1}
+            }
+          }
+        },
+        "empty": {"type": "array", "items": {"type": "string"}},
+        "source_details": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["final_layer_index", "final_layer_type", "via_broad_search"],
+            "properties": {
+              "final_layer_index": {"type": "integer", "minimum": 0},
+              "final_layer_type": {"enum": ["webfetch", "github_releases", "websearch_scoped", "websearch_broad"]},
+              "via_broad_search": {"type": "boolean"},
+              "confidence_policy": {"enum": ["none", "downgrade_one_step", "force_medium_plus_flag"]},
+              "attempts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["layer_index", "layer_type", "result"],
+                  "properties": {
+                    "layer_index": {"type": "integer", "minimum": 0},
+                    "layer_type": {"type": "string"},
+                    "target": {"type": "string"},
+                    "result": {"enum": ["success", "success_but_empty", "empty", "error"]},
+                    "reason": {"type": "string"},
+                    "note": {"type": "string"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "itemSection": {
+      "type": "object",
+      "required": ["title", "items"],
+      "properties": {
+        "title": {"type": "string"},
+        "items": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/modelItem"}
+        }
+      }
+    },
+    "generalSection": {
+      "type": "object",
+      "required": ["title", "items"],
+      "properties": {
+        "title": {"type": "string"},
+        "items": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/generalItem"}
+        }
+      }
+    },
+    "modelItem": {
+      "type": "object",
+      "required": ["vendor", "vendor_region", "headline", "summary", "impact", "source_name", "source_url", "confidence", "release_stage", "published_at_confidence", "authority_score", "editorial_tier"],
+      "properties": {
+        "vendor": {"type": "string"},
+        "vendor_region": {"enum": ["US", "CN"]},
+        "headline": {"type": "string", "maxLength": 40},
+        "summary": {"type": "string", "maxLength": 80},
+        "impact": {"type": "string", "maxLength": 60},
+        "source_name": {"type": "string"},
+        "source_url": {"type": "string"},
+        "published_at": {"type": "string"},
+        "confidence": {"enum": ["high", "medium", "low"]},
+        "release_stage": {"enum": ["announced", "preview", "beta", "ga", "rumor"]},
+        "published_at_confidence": {"enum": ["exact", "approximate", "inferred"]},
+        "authority_score": {"type": "integer", "minimum": 1, "maximum": 5},
+        "editorial_tier": {"enum": ["core", "watch"]},
+        "evidence_quote": {"type": "string", "maxLength": 120},
+        "dedup_key": {"type": "string"},
+        "via_broad_search": {"type": "boolean"},
+        "major_event": {"type": "boolean"},
+        "expanded": {"$ref": "#/$defs/expandedBlock"},
+        "tracking_ref": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,63}$"}
+      }
+    },
+    "codingItem": {
+      "type": "object",
+      "required": ["product", "product_tier", "headline", "summary", "impact", "source_name", "source_url", "confidence", "release_stage", "published_at_confidence", "authority_score", "editorial_tier"],
+      "properties": {
+        "product": {"type": "string"},
+        "product_tier": {"enum": ["primary", "secondary"]},
+        "headline": {"type": "string", "maxLength": 40},
+        "summary": {"type": "string", "maxLength": 80},
+        "impact": {"type": "string", "maxLength": 60},
+        "source_name": {"type": "string"},
+        "source_url": {"type": "string"},
+        "published_at": {"type": "string"},
+        "confidence": {"enum": ["high", "medium", "low"]},
+        "release_stage": {"enum": ["announced", "preview", "beta", "ga", "rumor"]},
+        "published_at_confidence": {"enum": ["exact", "approximate", "inferred"]},
+        "authority_score": {"type": "integer", "minimum": 1, "maximum": 5},
+        "editorial_tier": {"enum": ["core", "watch"]},
+        "evidence_quote": {"type": "string", "maxLength": 120},
+        "dedup_key": {"type": "string"},
+        "via_broad_search": {"type": "boolean"},
+        "major_event": {"type": "boolean"},
+        "expanded": {"$ref": "#/$defs/expandedBlock"},
+        "tracking_ref": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,63}$"}
+      }
+    },
+    "generalItem": {
+      "type": "object",
+      "required": ["product", "headline", "summary", "source_name", "source_url", "confidence", "release_stage", "published_at_confidence", "authority_score", "editorial_tier"],
+      "properties": {
+        "product": {"type": "string"},
+        "vendor": {"type": "string"},
+        "headline": {"type": "string", "maxLength": 40},
+        "summary": {"type": "string", "maxLength": 80},
+        "heat_signal": {"type": "string"},
+        "source_name": {"type": "string"},
+        "source_url": {"type": "string"},
+        "published_at": {"type": "string"},
+        "confidence": {"enum": ["high", "medium", "low"]},
+        "release_stage": {"enum": ["announced", "preview", "beta", "ga", "rumor"]},
+        "published_at_confidence": {"enum": ["exact", "approximate", "inferred"]},
+        "authority_score": {"type": "integer", "minimum": 1, "maximum": 5},
+        "editorial_tier": {"enum": ["core", "watch"]},
+        "evidence_quote": {"type": "string", "maxLength": 120},
+        "dedup_key": {"type": "string"},
+        "via_broad_search": {"type": "boolean"},
+        "major_event": {"type": "boolean"},
+        "expanded": {"$ref": "#/$defs/expandedBlock"},
+        "tracking_ref": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,63}$"}
+      }
+    },
+    "expandedBlock": {
+      "type": "object",
+      "required": ["what_shipped", "open_questions"],
+      "properties": {
+        "what_shipped": {"type": "string", "minLength": 50, "maxLength": 400},
+        "benchmarks": {"type": "string", "maxLength": 400},
+        "pricing_availability": {"type": "string", "maxLength": 300},
+        "comparison": {"type": "string", "maxLength": 300},
+        "third_party_reaction": {"type": "string", "maxLength": 300},
+        "open_questions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "items": {"type": "string", "minLength": 1, "maxLength": 120}
+        }
+      }
+    },
+    "decisionRadarGroup": {
+      "type": "object",
+      "required": ["decision_name", "items"],
+      "properties": {
+        "decision_name": {"type": "string", "minLength": 1, "maxLength": 60},
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": ["ref", "impact"],
+            "properties": {
+              "ref": {"$ref": "#/$defs/itemRef"},
+              "impact": {"type": "string", "minLength": 1, "maxLength": 120}
+            }
+          }
+        }
+      }
+    },
+    "ecosystemItem": {
+      "type": "object",
+      "required": ["item_type", "title", "summary", "source_name", "source_url", "relevance"],
+      "properties": {
+        "item_type": {"enum": ["trending_repo", "skill_plugin", "practice_case", "tool_release"]},
+        "title": {"type": "string", "minLength": 1, "maxLength": 60},
+        "summary": {"type": "string", "minLength": 1, "maxLength": 120},
+        "source_name": {"type": "string"},
+        "source_url": {"type": "string"},
+        "relevance": {"type": "string", "minLength": 1, "maxLength": 80},
+        "heat_note": {"type": "string", "maxLength": 80},
+        "onboarding_cost": {"enum": ["ready_to_use", "needs_config", "needs_build"]},
+        "repo_slug": {"type": "string", "maxLength": 100}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"item_type": {"const": "trending_repo"}}, "required": ["item_type"]},
+          "then": {"required": ["heat_note", "repo_slug"]}
+        },
+        {
+          "if": {"properties": {"item_type": {"const": "skill_plugin"}}, "required": ["item_type"]},
+          "then": {"required": ["onboarding_cost"]}
+        }
+      ]
+    },
+    "itemRef": {
+      "type": "string",
+      "pattern": "^(frontier_models|coding_agents|general_agents)\\[(0|[1-9][0-9]*)\\]$"
+    },
+    "benchmarkChange": {
+      "type": "object",
+      "required": ["vendor", "model", "source", "metric", "old_value", "new_value", "change_pct", "observed_at"],
+      "properties": {
+        "vendor": {"type": "string"},
+        "model": {"type": "string"},
+        "source": {"type": "string"},
+        "metric": {"type": "string"},
+        "old_value": {"type": "number"},
+        "new_value": {"type": "number"},
+        "change_pct": {"type": "number"},
+        "observed_at": {"type": "string"},
+        "note": {"type": "string", "maxLength": 80}
+      }
+    },
+    "benchmarkWatch": {
+      "type": "object",
+      "required": ["vendor", "model", "source", "signal", "observed_at"],
+      "properties": {
+        "vendor": {"type": "string"},
+        "model": {"type": "string"},
+        "source": {"type": "string"},
+        "signal": {"type": "string", "maxLength": 180},
+        "observed_at": {"type": "string"},
+        "note": {"type": "string", "maxLength": 100},
+        "ref": {"$ref": "#/$defs/itemRef"}
+      }
+    },
+    "pricingChange": {
+      "type": "object",
+      "required": ["vendor", "model", "old_price_per_mtok", "new_price_per_mtok", "change_pct", "direction", "observed_at"],
+      "properties": {
+        "vendor": {"type": "string"},
+        "model": {"type": "string"},
+        "price_type": {"enum": ["input", "output", "blended"]},
+        "currency": {"type": "string"},
+        "old_price_per_mtok": {"type": "number", "minimum": 0},
+        "new_price_per_mtok": {"type": "number", "minimum": 0},
+        "change_pct": {"type": "number"},
+        "direction": {"enum": ["up", "down", "flat"]},
+        "observed_at": {"type": "string"},
+        "note": {"type": "string", "maxLength": 80}
+      }
+    },
+    "adoptionSignal": {
+      "type": "object",
+      "required": ["vendor", "product", "metric", "value", "source", "observed_at"],
+      "properties": {
+        "vendor": {"type": "string"},
+        "product": {"type": "string"},
+        "metric": {"enum": ["paid_seats", "arr", "weekly_engagement", "customer_count", "usage_share", "other"]},
+        "value": {"type": "string", "maxLength": 80},
+        "source": {"type": "string"},
+        "observed_at": {"type": "string"},
+        "note": {"type": "string", "maxLength": 120},
+        "ref": {"$ref": "#/$defs/itemRef"}
+      }
+    },
+    "capabilityGap": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": {"type": "string", "maxLength": 140},
+        "evidence": {"type": "string"},
+        "ref": {"$ref": "#/$defs/itemRef"}
+      }
+    },
+    "marketSignalsSection": {
+      "type": "object",
+      "required": ["title", "benchmark_changes", "benchmark_watch", "pricing_changes", "adoption_signals", "capability_gaps", "empty_message"],
+      "properties": {
+        "title": {"type": "string"},
+        "benchmark_changes": {"type": "array", "items": {"$ref": "#/$defs/benchmarkChange"}},
+        "benchmark_watch": {"type": "array", "items": {"$ref": "#/$defs/benchmarkWatch"}},
+        "pricing_changes": {"type": "array", "items": {"$ref": "#/$defs/pricingChange"}},
+        "adoption_signals": {"type": "array", "items": {"$ref": "#/$defs/adoptionSignal"}},
+        "capability_gaps": {"type": "array", "items": {"$ref": "#/$defs/capabilityGap"}},
+        "empty_message": {"type": "string"}
+      }
+    },
+    "patternObservation": {
+      "type": "object",
+      "required": ["theme", "supporting_item_refs", "interpretation_for_tech_lead"],
+      "properties": {
+        "theme": {"type": "string", "maxLength": 60},
+        "supporting_item_refs": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 6,
+          "items": {"$ref": "#/$defs/itemRef"}
+        },
+        "interpretation_for_tech_lead": {"type": "string", "minLength": 100, "maxLength": 220}
+      }
+    },
+    "patternObservationsSection": {
+      "type": "object",
+      "required": ["title", "items", "empty_message"],
+      "properties": {
+        "title": {"type": "string"},
+        "items": {"type": "array", "items": {"$ref": "#/$defs/patternObservation"}, "maxItems": 3},
+        "empty_message": {"type": "string"}
+      }
+    },
+    "experiment": {
+      "type": "object",
+      "required": ["title", "hypothesis", "steps", "time_budget_hours", "expected_output", "required_skills", "audience"],
+      "properties": {
+        "title": {"type": "string", "maxLength": 50},
+        "hypothesis": {"type": "string", "maxLength": 180},
+        "steps": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 5,
+          "items": {"type": "string", "maxLength": 120}
+        },
+        "time_budget_hours": {
+          "type": "object",
+          "required": ["min", "max"],
+          "properties": {
+            "min": {"type": "integer", "minimum": 1, "maximum": 40},
+            "max": {"type": "integer", "minimum": 1, "maximum": 40}
+          }
+        },
+        "expected_output": {"type": "string", "maxLength": 140},
+        "required_skills": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {"type": "string", "maxLength": 30}
+        },
+        "audience": {"enum": ["team_pilot", "personal_workflow"]},
+        "related_item_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/itemRef"}
+        }
+      }
+    },
+    "experimentsSection": {
+      "type": "object",
+      "required": ["title", "items", "empty_message"],
+      "properties": {
+        "title": {"type": "string"},
+        "items": {"type": "array", "items": {"$ref": "#/$defs/experiment"}},
+        "empty_message": {"type": "string"}
+      }
+    },
+    "actionItem": {
+      "type": "object",
+      "required": [
+        "recommendation",
+        "rationale",
+        "recommendation_type",
+        "effort_person_days",
+        "time_horizon",
+        "team_size_applicability",
+        "priority"
+      ],
+      "properties": {
+        "recommendation": {"type": "string", "maxLength": 120},
+        "rationale": {"type": "string", "maxLength": 240},
+        "recommendation_type": {"enum": ["patch", "experiment", "adopt", "migrate", "monitor", "hire"]},
+        "effort_person_days": {
+          "type": "object",
+          "required": ["min", "max"],
+          "properties": {
+            "min": {"type": "number", "minimum": 0.25, "maximum": 180},
+            "max": {"type": "number", "minimum": 0.25, "maximum": 180}
+          }
+        },
+        "time_horizon": {"enum": ["this_week", "this_month", "this_quarter"]},
+        "team_size_applicability": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"enum": ["small_lt_10", "medium_10_50", "large_gt_50"]}
+        },
+        "success_metric": {"type": "string", "maxLength": 160},
+        "priority": {"enum": ["P0", "P1", "P2"]},
+        "references": {"type": "array", "items": {"$ref": "#/$defs/reference"}}
+      }
+    },
+    "reference": {
+      "type": "object",
+      "required": ["date", "headline", "url", "section", "editorial_tier"],
+      "properties": {
+        "date": {"type": "string"},
+        "headline": {"type": "string"},
+        "url": {"type": "string"},
+        "section": {"enum": ["frontier_models", "coding_agents", "general_agents"]},
+        "editorial_tier": {"enum": ["core", "watch"]},
+        "release_stage": {"enum": ["announced", "preview", "beta", "ga", "rumor"]},
+        "published_at_confidence": {"enum": ["exact", "approximate", "inferred"]},
+        "authority_score": {"type": "integer", "minimum": 1, "maximum": 5},
+        "evidence_quote": {"type": "string", "maxLength": 120},
+        "via_broad_search": {"type": "boolean"}
+      }
+    }
+  }
+}

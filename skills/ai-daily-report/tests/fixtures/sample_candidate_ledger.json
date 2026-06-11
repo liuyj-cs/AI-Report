@@ -1,0 +1,46 @@
+{
+  "version": "1.0",
+  "type": "daily_candidate_ledger",
+  "date": "2026-04-10",
+  "generated_at": "2026-04-10T07:03:12+08:00",
+  "items": [
+    {
+      "candidate_id": "openai-agents-sdk-2026-04-10",
+      "headline": "Agents SDK 原生接入沙箱执行",
+      "proposed_section": "general_agents",
+      "published_at": "2026-04-10T05:20:00+08:00",
+      "source_attempt_refs": [
+        "OpenAI.attempts[0]"
+      ],
+      "verification_state": "official_confirmed",
+      "editorial_tier": "core",
+      "decision": "selected_core",
+      "decision_reason": "官方 RSS 与同域新闻页均能确认发布时间，且属于 agent 执行层的重要基础设施更新。",
+      "novelty_vs_yesterday": "new",
+      "event_type": "enterprise_update",
+      "date_basis": "official_event_date",
+      "evidence_path": "primary",
+      "why_today": "官方发布时间落在日报窗口内。",
+      "action_eligibility": "full_action"
+    },
+    {
+      "candidate_id": "anthropic-opus-4-7-rumor",
+      "headline": "Anthropic 或本周发布 Claude Opus 4.7",
+      "proposed_section": "frontier_models",
+      "published_at": "2026-04-10",
+      "source_attempt_refs": [
+        "Semafor Technology.attempts[1]"
+      ],
+      "verification_state": "single_media_only",
+      "editorial_tier": "watch",
+      "decision": "selected_unverified",
+      "decision_reason": "只有媒体单源且无官方确认，保留在待证实区供审阅，不进入正文与建议层。",
+      "novelty_vs_yesterday": "new",
+      "event_type": "model_release",
+      "date_basis": "article_published_at",
+      "evidence_path": "media_only",
+      "why_today": "媒体发布时间落在日报窗口内，但没有官方确认。",
+      "action_eligibility": "none"
+    }
+  ]
+}

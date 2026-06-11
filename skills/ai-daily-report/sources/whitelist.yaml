@@ -1,0 +1,774 @@
+# AI 日报 信源白名单
+#
+# 统一格式 fetch_chain：{name, category, weight, authority_tier, fetch_chain:[]}
+#   - authority_tier: 1=官方/一级权威，2=主流科技媒体，3=Substack/个人博客
+#   - fetch_chain 是有序列表，runner 从上到下逐层尝试，首次「成功且非伪成功」即停。
+#   - layer types：
+#     * webfetch          {url}              confidence 不变
+#     * github_releases   {repo, path?}      confidence 不变
+#     * websearch_scoped  {queries: []}      confidence 降一档（high→medium）
+#     * websearch_broad   {queries: []}      confidence 强制 medium + via_broad_search 标记
+#   - queries 占位符：{date}、{yesterday}、{iso_week}
+#   - 「成功」判定：HTTP 200 且页面体感为真实内容（非纯 CSS 模板 / 空骨架 / 登录墙）。
+#     窗口内 0 条目（empty_in_window）属于合法成功，不应继续向下层穿透。
+#   - verify_before_use: true 表示该源 Layer 0 入口尚未被人工 verify 过，跑日报时
+#     首层若失败应直接落入 Layer 1+，不报警；近期需要做一次性人工巡检。
+#   - 对 OpenAI / OpenAI Codex：若 Layer 0 命中 `403`、Cloudflare、JS shell 或空骨架，
+#     只能记为“官方入口异常”，不得直接判空；必须沿同实体做一跳同域补证，
+#     例如 news index / product / docs / RSS / sitemap，再决定是否为空。
+
+source_families:
+  official_release_surface:
+    description: 官方发布页、一级公告页与产品发布入口
+    fallback_policy: same_entity_one_hop
+  official_changelog_surface:
+    description: 官方 changelog、release notes 与 GitHub Releases
+    fallback_policy: same_entity_one_hop
+  official_product_blog_surface:
+    description: 官方博客、news/blog 索引与产品博客
+    fallback_policy: same_entity_one_hop
+  hard_data_surface:
+    description: 榜单、benchmark、pricing 与趋势硬数据入口
+    fallback_policy: same_entity_one_hop
+  broad_discovery_surface:
+    description: 广义搜索、媒体发现面与社区高信号入口
+    fallback_policy: same_entity_one_hop
+
+us_labs:
+  - name: OpenAI
+    category: us_labs
+    weight: high
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://openai.com/news/
+      - type: websearch_scoped
+        queries:
+          - "OpenAI announcement site:openai.com {date}"
+          - "OpenAI release site:openai.com"
+      - type: websearch_broad
+        queries:
+          - "OpenAI news {date}"
+          - "OpenAI announcement {yesterday}"
+
+  - name: Anthropic
+    category: us_labs
+    weight: high
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://www.anthropic.com/news
+      - type: websearch_scoped
+        queries:
+          - "Anthropic news site:anthropic.com {date}"
+      - type: websearch_broad
+        queries:
+          - "Anthropic announcement {date}"
+
+  - name: Google DeepMind
+    category: us_labs
+    weight: high
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://deepmind.google/discover/blog/
+      - type: websearch_scoped
+        queries:
+          - "Google DeepMind blog site:deepmind.google {date}"
+      - type: websearch_broad
+        queries:
+          - "Google DeepMind announcement {date}"
+
+  - name: Google AI Blog
+    category: us_labs
+    weight: high
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://blog.google/technology/ai/
+      - type: websearch_scoped
+        queries:
+          - "Google AI blog site:blog.google {date}"
+          - "AI Mode site:blog.google/products/search {date}"
+      - type: websearch_broad
+        queries:
+          - "Google AI announcement {date}"
+          - "Chrome AI Mode {date}"
+
+  - name: xAI
+    category: us_labs
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://x.ai/news
+      - type: websearch_scoped
+        queries:
+          - "xAI news site:x.ai {date}"
+      - type: websearch_broad
+        queries:
+          - "xAI Grok release {date}"
+
+  - name: Meta AI
+    category: us_labs
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://ai.meta.com/blog/
+      - type: websearch_scoped
+        queries:
+          - "Meta AI blog site:ai.meta.com {date}"
+      - type: websearch_broad
+        queries:
+          - "Meta AI announcement {date}"
+
+cn_labs:
+  - name: DeepSeek
+    category: cn_labs
+    weight: high
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://api-docs.deepseek.com/updates
+      - type: websearch_scoped
+        queries:
+          - "DeepSeek release site:deepseek.com"
+          - "DeepSeek announcement site:api-docs.deepseek.com"
+      - type: websearch_broad
+        queries:
+          - "DeepSeek new model release {date}"
+          - "DeepSeek API update {yesterday}"
+          - "DeepSeek vision multimodal {date}"
+          - "DeepSeek image recognition beta {date}"
+
+  - name: 阿里 Qwen
+    category: cn_labs
+    weight: high
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://qwen.ai/blog/
+      - type: websearch_scoped
+        queries:
+          - "Qwen release site:qwen.ai/blog {date}"
+          - "Qwen release site:qwen.ai {date}"
+      - type: websearch_broad
+        queries:
+          - "Alibaba Qwen new model {date}"
+          - "Qwen new model {date}"
+
+  - name: 智谱 GLM
+    category: cn_labs
+    weight: high
+    authority_tier: 1
+    verify_before_use: true
+    fetch_chain:
+      - type: webfetch
+        url: https://bigmodel.cn/dev/howuse/introduction
+      - type: websearch_scoped
+        queries:
+          - "智谱 GLM 发布 site:zhipuai.cn"
+          - "智谱 GLM release {date}"
+      - type: websearch_broad
+        queries:
+          - "智谱 ZhipuAI 新模型 {date}"
+
+  - name: 月之暗面 Kimi
+    category: cn_labs
+    weight: high
+    authority_tier: 1
+    verify_before_use: true
+    fetch_chain:
+      - type: webfetch
+        url: https://kimi.moonshot.cn/
+      - type: websearch_scoped
+        queries:
+          - "Kimi 月之暗面 发布 site:moonshot.cn"
+      - type: websearch_broad
+        queries:
+          - "Kimi Moonshot 新模型 {date}"
+
+  - name: 豆包（字节/火山方舟）
+    category: cn_labs
+    weight: high
+    authority_tier: 1
+    verify_before_use: true
+    fetch_chain:
+      - type: webfetch
+        url: https://www.volcengine.com/docs/82379
+      - type: websearch_scoped
+        queries:
+          - "豆包 火山引擎 发布 site:volcengine.com"
+      - type: websearch_broad
+        queries:
+          - "字节 豆包 新模型 {date}"
+
+  - name: 腾讯混元
+    category: cn_labs
+    weight: high
+    authority_tier: 1
+    verify_before_use: true
+    fetch_chain:
+      - type: webfetch
+        url: https://hunyuan.tencent.com/
+      - type: websearch_scoped
+        queries:
+          - "腾讯 混元 发布 site:tencent.com"
+      - type: websearch_broad
+        queries:
+          - "腾讯 混元 新模型 {date}"
+
+  - name: MiniMax
+    category: cn_labs
+    weight: medium
+    authority_tier: 1
+    verify_before_use: true
+    fetch_chain:
+      - type: webfetch
+        url: https://www.minimaxi.com/news
+      - type: websearch_scoped
+        queries:
+          - "MiniMax 发布 site:minimaxi.com"
+      - type: websearch_broad
+        queries:
+          - "MiniMax 新模型 {date}"
+
+coding_agents_primary:
+  - name: OpenAI Codex
+    category: coding_agents_primary
+    weight: high
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://openai.com/index/introducing-codex/
+      - type: websearch_scoped
+        queries:
+          - "OpenAI Codex release site:openai.com {date}"
+      - type: websearch_broad
+        queries:
+          - "OpenAI Codex update {date}"
+
+  - name: Anthropic Claude Code
+    category: coding_agents_primary
+    weight: high
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://docs.anthropic.com/en/release-notes/claude-code
+      - type: github_releases
+        repo: anthropics/claude-code
+      - type: websearch_scoped
+        queries:
+          - "Claude Code release notes {date}"
+      - type: websearch_broad
+        queries:
+          - "Anthropic Claude Code update {date}"
+
+  - name: Google Gemini CLI
+    category: coding_agents_primary
+    weight: high
+    authority_tier: 1
+    fetch_chain:
+      - type: github_releases
+        repo: google-gemini/gemini-cli
+      - type: websearch_scoped
+        queries:
+          - "Gemini CLI release site:github.com/google-gemini"
+      - type: websearch_broad
+        queries:
+          - "Google Gemini CLI update {date}"
+
+  - name: Google Jules
+    category: coding_agents_primary
+    weight: high
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://jules.google/
+      - type: websearch_scoped
+        queries:
+          - "Google Jules update {date}"
+      - type: websearch_broad
+        queries:
+          - "Google Jules coding agent {date}"
+
+coding_agents_secondary:
+  - name: Cursor
+    category: coding_agents_secondary
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://cursor.com/blog
+      - type: webfetch
+        url: https://www.cursor.com/changelog
+      - type: websearch_scoped
+        queries:
+          - "Cursor SDK site:cursor.com/blog {date}"
+          - "Cursor changelog site:cursor.com {date}"
+          - "Cursor release site:cursor.com/blog {date}"
+      - type: websearch_broad
+        queries:
+          - "@cursor/sdk public beta {date}"
+          - "Cursor IDE update {date}"
+
+  - name: GitHub Copilot
+    category: coding_agents_secondary
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://github.blog/changelog/label/copilot/
+      - type: websearch_scoped
+        queries:
+          - "GitHub Copilot changelog site:github.blog {date}"
+      - type: websearch_broad
+        queries:
+          - "GitHub Copilot update {date}"
+
+  - name: Windsurf (Codeium)
+    category: coding_agents_secondary
+    weight: low
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://codeium.com/blog
+      - type: websearch_scoped
+        queries:
+          - "Windsurf Codeium release site:codeium.com"
+      - type: websearch_broad
+        queries:
+          - "Windsurf Codeium update {date}"
+
+  - name: Cline
+    category: coding_agents_secondary
+    weight: low
+    authority_tier: 2
+    fetch_chain:
+      - type: github_releases
+        repo: cline/cline
+      - type: websearch_scoped
+        queries:
+          - "Cline release site:github.com/cline"
+      - type: websearch_broad
+        queries:
+          - "Cline coding agent update {date}"
+
+  - name: Aider
+    category: coding_agents_secondary
+    weight: low
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://aider.chat/HISTORY.html
+      - type: websearch_scoped
+        queries:
+          - "aider chat release site:aider.chat"
+      - type: websearch_broad
+        queries:
+          - "aider AI coding agent update {date}"
+
+general_agent_search_queries:
+  - "trending AI agent this week site:news.ycombinator.com"
+  - "new AI agent launch today"
+  - "viral AI agent"
+  - "open source AI agent release"
+  - "AI Mode site:blog.google/products/search {date}"
+  - "Chrome AI Mode {date}"
+  - "AI-native editor agent protocol {date}"
+  - "AI coding editor 1.0 launch {date}"
+  - "enterprise AI agent paid seats earnings call {date}"
+  - "ChatGPT Enterprise Teams update {date}"
+  - "Claude for Work enterprise update {date}"
+  - "飞书 智能伙伴 AI 更新 {date}"
+  - "钉钉 AI 助理 更新 {date}"
+  - "Salesforce Agentforce update {date}"
+
+high_signal_media_queries:
+  - "TestingCatalog AI {date}"
+  - "DeepSeek V4 Reuters {date}"
+  - "Semafor technology AI {date}"
+  - "The Register AI agent {date}"
+  - "InfoQ AI architecture {date}"
+  - "Anthropic Claude Code pricing {date}"
+  - "OpenAI Microsoft partnership {date}"
+  - "OpenAI cloud infrastructure partnership {date}"
+  - "AI acquisition regulation {date}"
+  - "AI agent acquisition blocked regulator {date}"
+  - "AI benchmark leaderboard Terminal-Bench {date}"
+  - "GitHub Trending skills AI agent {date}"
+  - "Cursor SDK @cursor/sdk public beta {date}"
+  - "Zed 1.0 AI-native editor Agent Client Protocol {date}"
+  - "DeepSeek vision multimodal beta {date}"
+  - "Microsoft 365 Copilot paid seats earnings call {date}"
+
+recall_probe_queries:
+  - "Cursor SDK @cursor/sdk public beta {date}"
+  - "Zed 1.0 AI-native editor Agent Client Protocol {date}"
+  - "DeepSeek vision multimodal beta {date}"
+  - "Microsoft 365 Copilot paid seats weekly engagement {date}"
+  - "AI-native editor multiple agents Agent Client Protocol {date}"
+  - "enterprise Copilot ARR paid seats weekly active users {date}"
+
+ecosystem_search_queries:
+  - "github trending claude code skill {date}"
+  - "github trending MCP server {date}"
+  - "awesome-claude-code new entries {date}"
+  - "claude code plugin marketplace new {date}"
+  - "\"how we use\" coding agent site:news.ycombinator.com {date}"
+  - "AI coding agent team workflow case study {date}"
+
+general_agent_watchlist:
+  - name: openclaw
+    category: general_agent_watchlist
+    weight: high
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://openclaw.ai/
+      - type: websearch_scoped
+        queries:
+          - "openclaw release site:openclaw.ai"
+      - type: websearch_broad
+        queries:
+          - "openclaw AI agent update {date}"
+
+  - name: Hacker News front page
+    category: general_agent_watchlist
+    weight: high
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://news.ycombinator.com/
+      - type: websearch_scoped
+        queries:
+          - "AI agent site:news.ycombinator.com {date}"
+
+  - name: GitHub Trending (daily)
+    category: general_agent_watchlist
+    weight: medium
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://github.com/trending?since=daily
+      - type: websearch_scoped
+        queries:
+          - "github trending AI agent {date}"
+
+  - name: Zed
+    category: general_agent_watchlist
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://zed.dev/blog
+      - type: websearch_scoped
+        queries:
+          - "Zed 1.0 site:zed.dev/blog {date}"
+          - "Zed Agent Client Protocol site:zed.dev/blog {date}"
+      - type: websearch_broad
+        queries:
+          - "Zed AI-native editor agent protocol {date}"
+
+  - name: Microsoft 365 Copilot Adoption
+    category: general_agent_watchlist
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://news.microsoft.com/source/
+      - type: websearch_scoped
+        queries:
+          - "Microsoft 365 Copilot paid seats site:microsoft.com {date}"
+          - "Microsoft Copilot weekly engagement Outlook site:microsoft.com {date}"
+      - type: websearch_broad
+        queries:
+          - "Microsoft 365 Copilot paid seats earnings call {date}"
+          - "Microsoft AI ARR Copilot seats weekly engagement {date}"
+
+  - name: Google Workspace Updates
+    category: general_agent_watchlist
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://workspaceupdates.googleblog.com/
+      - type: websearch_scoped
+        queries:
+          - "Google Workspace Gemini update site:workspaceupdates.googleblog.com {date}"
+      - type: websearch_broad
+        queries:
+          - "Google Workspace Gemini AI update {date}"
+
+  - name: Product Hunt AI
+    category: general_agent_watchlist
+    weight: low
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://www.producthunt.com/categories/artificial-intelligence
+      - type: websearch_scoped
+        queries:
+          - "Product Hunt AI agent {date}"
+
+agent_ecosystem_sources:
+  - name: Anthropic Engineering
+    category: agent_ecosystem_sources
+    weight: high
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://www.anthropic.com/engineering
+      - type: websearch_scoped
+        queries:
+          - "site:anthropic.com/engineering {date}"
+      - type: websearch_broad
+        queries:
+          - "Anthropic engineering blog agents {date}"
+
+  - name: LangChain Blog
+    category: agent_ecosystem_sources
+    weight: medium
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://blog.langchain.dev/
+      - type: websearch_scoped
+        queries:
+          - "site:blog.langchain.dev agent {date}"
+
+  - name: Latent Space
+    category: agent_ecosystem_sources
+    weight: medium
+    authority_tier: 3
+    fetch_chain:
+      - type: webfetch
+        url: https://www.latent.space/
+      - type: websearch_scoped
+        queries:
+          - "Latent Space AI engineering {date}"
+
+english_media:
+  - name: Simon Willison's Blog
+    category: english_media
+    weight: high
+    authority_tier: 3
+    fetch_chain:
+      - type: webfetch
+        url: https://simonwillison.net/
+      - type: websearch_scoped
+        queries:
+          - "site:simonwillison.net {date}"
+
+  - name: The Batch (DeepLearning.AI)
+    category: english_media
+    weight: high
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://www.deeplearning.ai/the-batch/
+      - type: websearch_scoped
+        queries:
+          - "The Batch deeplearning.ai {date}"
+
+  - name: Import AI (Jack Clark)
+    category: english_media
+    weight: high
+    authority_tier: 3
+    fetch_chain:
+      - type: webfetch
+        url: https://importai.substack.com/
+      - type: websearch_scoped
+        queries:
+          - "Import AI Jack Clark {date}"
+
+  - name: TLDR AI
+    category: english_media
+    weight: medium
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://tldr.tech/ai
+      - type: websearch_scoped
+        queries:
+          - "TLDR AI newsletter {date}"
+
+  - name: The Rundown AI
+    category: english_media
+    weight: medium
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://www.therundown.ai/
+      - type: websearch_scoped
+        queries:
+          - "The Rundown AI {date}"
+
+  - name: Semafor Technology
+    category: english_media
+    weight: medium
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://www.semafor.com/vertical/technology
+      - type: websearch_scoped
+        queries:
+          - "Semafor technology AI {date}"
+
+  - name: The Register AI
+    category: english_media
+    weight: medium
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://www.theregister.com/software/ai_machine_learning/
+      - type: websearch_scoped
+        queries:
+          - "site:theregister.com AI agent {date}"
+          - "site:theregister.com Claude Code {date}"
+
+  - name: InfoQ Global AI
+    category: english_media
+    weight: medium
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://www.infoq.com/ai-ml-data-eng/
+      - type: websearch_scoped
+        queries:
+          - "site:infoq.com AI agent {date}"
+          - "site:infoq.com coding agent {date}"
+          - "site:infoq.com memory agent {date}"
+
+chinese_media:
+  - name: AI HOT
+    category: chinese_media
+    source_family: broad_discovery_surface
+    weight: high
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://aihot.virxact.com/
+      - type: webfetch
+        url: https://aihot.virxact.com/all
+      - type: websearch_scoped
+        queries:
+          - "AI HOT site:aihot.virxact.com {date}"
+          - "AI HOT coding agent site:aihot.virxact.com {date}"
+
+  - name: 机器之心
+    category: chinese_media
+    weight: medium
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://www.jiqizhixin.com/
+      - type: websearch_scoped
+        queries:
+          - "机器之心 AI {date}"
+
+  - name: 量子位
+    category: chinese_media
+    weight: medium
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://www.qbitai.com/
+      - type: websearch_scoped
+        queries:
+          - "量子位 AI {date}"
+
+  - name: 36kr AI
+    category: chinese_media
+    weight: medium
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://36kr.com/information/AI
+      - type: websearch_scoped
+        queries:
+          - "36kr AI {date}"
+
+  - name: InfoQ AI
+    category: chinese_media
+    weight: medium
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://www.infoq.cn/topic/AI
+      - type: websearch_scoped
+        queries:
+          - "InfoQ AI {date}"
+
+hard_data:
+  - name: LMArena Leaderboard
+    category: hard_data
+    weight: high
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://lmarena.ai/leaderboard
+      - type: websearch_scoped
+        queries:
+          - "LMArena leaderboard update {date}"
+          - "chatbot arena elo change {date}"
+      - type: websearch_broad
+        queries:
+          - "LMArena top model {date}"
+
+  - name: Artificial Analysis
+    category: hard_data
+    weight: high
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://artificialanalysis.ai/models
+      - type: websearch_scoped
+        queries:
+          - "artificial analysis benchmark {date}"
+          - "artificialanalysis.ai model ranking {date}"
+      - type: websearch_broad
+        queries:
+          - "AI model benchmark comparison {date}"
+
+  - name: OpenRouter Pricing
+    category: hard_data
+    weight: high
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://openrouter.ai/models
+      - type: websearch_scoped
+        queries:
+          - "openrouter pricing change {date}"
+          - "site:openrouter.ai models {date}"
+      - type: websearch_broad
+        queries:
+          - "LLM API price drop {date}"
+
+  - name: HuggingFace Trending
+    category: hard_data
+    weight: medium
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://huggingface.co/models?sort=trending
+      - type: websearch_scoped
+        queries:
+          - "huggingface trending models {date}"
+      - type: websearch_broad
+        queries:
+          - "popular open source LLM release {date}"
+
+# 核心源清单：fetch_chain 全层失败 ≥4 时中止运行（约 50% 容错率，含 2 家 CN 一级厂商）
+# hard_data 不入 core_sources：失败时 market_signals 走 empty_message，不阻塞日报。
+core_sources:
+  - OpenAI
+  - Anthropic
+  - Google DeepMind
+  - Anthropic Claude Code
+  - OpenAI Codex
+  - Google Gemini CLI
+  - DeepSeek
+  - 阿里 Qwen

@@ -1,0 +1,16 @@
+{
+  "entity": "OpenAI Codex",
+  "headline": "Codex Mac gains desktop control",
+  "discovery_signals": ["hn_hot", "media_multi_source"],
+  "source_detail": {
+    "attempts": [
+      {
+        "layer_index": 0,
+        "layer_type": "webfetch",
+        "target": "https://openai.com/news/",
+        "result": "error",
+        "reason": "HTTP 403"
+      }
+    ]
+  }
+}

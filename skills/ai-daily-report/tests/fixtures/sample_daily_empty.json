@@ -1,0 +1,73 @@
+{
+  "version": "1.0",
+  "type": "daily",
+  "date": "2026-04-11",
+  "window": {
+    "start": "2026-04-10T07:00:00+08:00",
+    "end": "2026-04-11T07:00:00+08:00",
+    "timezone": "Asia/Shanghai"
+  },
+  "generated_at": "2026-04-11T07:02:00+08:00",
+  "sections": {
+    "frontier_models": {
+      "title": "头部大模型动态",
+      "items": []
+    },
+    "coding_agents": {
+      "title": "Coding Agent 专项",
+      "items": [],
+      "deep_dive": {
+        "title": "本日无重大进展",
+        "body": "过去 24 小时 coding agent 领域未见明显动作，保持观察状态。建议把注意力放在持续验证已有工具（Claude Code / Cursor）在团队实际使用中的痛点和改进空间。过去一周积累的使用反馈是下一步迭代的关键输入源。",
+        "related_item_indexes": []
+      }
+    },
+    "general_agents": {
+      "title": "通用 Agent 动态",
+      "items": []
+    },
+    "agent_ecosystem": {
+      "title": "Agent 生态与实践",
+      "items": [],
+      "empty_message": "今日无值得收录的生态信号"
+    },
+    "market_signals": {
+      "title": "硬数据信号",
+      "benchmark_changes": [],
+      "benchmark_watch": [],
+      "pricing_changes": [],
+      "adoption_signals": [],
+      "capability_gaps": [],
+      "empty_message": "今日无显著硬数据变化"
+    },
+    "pattern_observations": {
+      "title": "跨条目模式",
+      "items": [],
+      "empty_message": "今日无显著跨条目模式"
+    },
+    "experiments_this_week": {
+      "title": "本期建议实验",
+      "items": [],
+      "empty_message": "今日无适合 1 日内验证的实验"
+    },
+    "decision_radar": {
+      "title": "决策雷达",
+      "decisions": [],
+      "empty_message": "今日无影响在途决策的信息"
+    },
+    "action_items": {
+      "title": "今日落地建议",
+      "items": [],
+      "empty_message": "今日无明显行动项，延续近期建议。"
+    },
+    "unverified": {
+      "title": "待核实区",
+      "items": []
+    }
+  },
+  "fetch_status": {
+    "succeeded": ["OpenAI", "Anthropic"],
+    "failed": [],
+    "empty": ["DeepSeek", "Google DeepMind", "xAI", "Meta AI"]
+  }
+}

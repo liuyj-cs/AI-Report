@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>AI 周报 · {{ report.iso_week }}</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1f2328; --muted: #656d76;
+    --accent: #0969da; --accent-soft: #f0f7ff;
+    --card: #ffffff; --border: #d0d7de;
+    --badge-us-bg: #ddf4ff; --badge-us-fg: #0969da;
+    --badge-cn-bg: #ffebe9; --badge-cn-fg: #cf222e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --fg: #e6edf3; --muted: #848d97;
+      --accent: #4493f8; --accent-soft: #0d1b2a;
+      --card: #161b22; --border: #30363d;
+      --badge-us-bg: #0d2d52; --badge-us-fg: #79c0ff;
+      --badge-cn-bg: #4a0e0e; --badge-cn-fg: #ff7b72;
+    }
+  }
+  body { font-family: -apple-system, "PingFang SC", "Helvetica Neue", system-ui, sans-serif; font-size: 17px; line-height: 1.75; color: var(--fg); background: var(--bg); margin: 0; padding: 16px; }
+  .container { max-width: 680px; margin: 0 auto; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 { font-size: 22px; margin: 32px 0 12px; }
+  h3 { font-size: 18px; margin: 16px 0 8px; }
+  .meta { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+  .tldr { background: var(--accent-soft); border-left: 4px solid var(--accent); padding: 16px; border-radius: 0 8px 8px 0; margin: 16px 0 24px; }
+  .tldr ul { margin: 8px 0 0; padding-left: 20px; }
+  .group { border: 1px solid var(--border); background: var(--card); border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+  .group .head { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+  .group .label { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  .group .body { margin: 6px 0; }
+  .group .trend { color: var(--accent); font-size: 15px; margin: 6px 0; }
+  .group .implication { font-size: 15px; margin: 6px 0; }
+  .group .refs { margin-top: 8px; color: var(--muted); font-size: 13px; }
+  .group .refs a { color: var(--accent); text-decoration: none; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; margin-right: 6px; }
+  .badge-us { background: var(--badge-us-bg); color: var(--badge-us-fg); }
+  .badge-cn { background: var(--badge-cn-bg); color: var(--badge-cn-fg); }
+  .badge-tier { background: var(--accent-soft); color: var(--accent); }
+  .badge-stage-ga { background: #dafbe1; color: #1a7f37; }
+  .badge-stage-beta, .badge-stage-preview { background: #fff8c5; color: #9a6700; }
+  .badge-stage-announced { background: var(--accent-soft); color: var(--accent); }
+  .badge-stage-rumor { background: transparent; color: var(--muted); border: 1px dashed var(--border); }
+  @media (prefers-color-scheme: dark) {
+    .badge-stage-ga { background: #0d3320; color: #56d364; }
+    .badge-stage-beta, .badge-stage-preview { background: #3d2e00; color: #d29922; }
+  }
+  .action-items { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 16px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+  .action-item { margin-bottom: 16px; }
+  .action-item:last-child { margin-bottom: 0; }
+  .action-item .head { font-weight: 600; margin-bottom: 6px; }
+  .action-item .rationale,
+  .action-item .estimate { color: var(--muted); font-size: 14px; }
+  .top-changes { padding-left: 22px; }
+  footer { margin-top: 32px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--border); padding-top: 16px; }
+  a { color: var(--accent); }
+  .market-signals { border: 1px solid var(--border); background: var(--card); border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+  .market-signals h3 { margin: 10px 0 6px; font-size: 16px; }
+  .signal-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 6px 0; border-bottom: 1px dotted var(--border); font-size: 15px; }
+  .signal-row:last-child { border-bottom: none; }
+  .signal-row .vendor { font-weight: 600; }
+  .signal-row .model { color: var(--muted); }
+  .signal-row .delta-up { color: #1a7f37; font-weight: 600; }
+  .signal-row .delta-down { color: #cf222e; font-weight: 600; }
+  .signal-row .delta-flat { color: var(--muted); }
+  .capability-gap { padding: 6px 0; font-size: 15px; }
+  .capability-gap::before { content: "• "; color: var(--accent); font-weight: 700; }
+  .pattern-card { border-left: 4px solid #8250df; background: var(--card); border: 1px solid var(--border); padding: 14px; border-radius: 0 8px 8px 0; margin-bottom: 12px; }
+  .pattern-card .theme { font-weight: 600; font-size: 17px; margin-bottom: 6px; }
+  .pattern-card .refs { font-size: 13px; color: var(--muted); margin: 6px 0; }
+  .pattern-card .refs a { color: var(--accent); text-decoration: none; }
+  .pattern-card .interp { font-size: 15px; margin-top: 6px; }
+  .experiment-card { border: 1px solid var(--border); border-left: 4px solid #bf8700; background: var(--card); padding: 14px; border-radius: 0 8px 8px 0; margin-bottom: 12px; }
+  .experiment-card .title { font-weight: 600; font-size: 17px; margin-bottom: 4px; }
+  .experiment-card .hypothesis { color: var(--muted); font-size: 14px; margin-bottom: 8px; }
+  .experiment-card ol.steps { padding-left: 22px; margin: 6px 0; }
+  .experiment-card ol.steps li { margin: 2px 0; }
+  .experiment-card .meta-line { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .experiment-card .meta-line .chip { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); margin-right: 6px; }
+  .digest-card { border: 1px solid var(--border); border-left: 4px solid #0969da; background: var(--card); padding: 14px; border-radius: 0 8px 8px 0; margin-bottom: 12px; }
+  .digest-card .title { font-weight: 600; font-size: 17px; margin-bottom: 6px; }
+  .digest-card .summary { font-size: 15px; margin: 8px 0; }
+  .digest-card .verdict { font-size: 14px; color: var(--muted); }
+  .badge-apt-adopt_now      { background: #dafbe1; color: #1a7f37; }
+  .badge-apt-wait_mature    { background: #fff8c5; color: #9a6700; }
+  .badge-apt-reference_only { background: #eaeef2; color: #57606a; }
+  .badge-rec-patch      { background: #eaeef2; color: #57606a; }
+  .badge-rec-experiment { background: #fff8c5; color: #9a6700; }
+  .badge-rec-adopt      { background: #dafbe1; color: #1a7f37; }
+  .badge-rec-migrate    { background: #ffebe9; color: #cf222e; }
+  .badge-rec-monitor    { background: var(--accent-soft); color: var(--accent); }
+  .badge-rec-hire       { background: #fbefff; color: #8250df; }
+  .badge-horizon        { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  @media (prefers-color-scheme: dark) {
+    .badge-rec-patch      { background: #21262d; color: #8b949e; }
+    .badge-rec-adopt      { background: #0d3320; color: #56d364; }
+    .badge-rec-migrate    { background: #4a0e0e; color: #ff7b72; }
+    .badge-rec-experiment { background: #3d2e00; color: #d29922; }
+    .badge-rec-hire       { background: #2d1b3e; color: #d2a8ff; }
+  }
+</style>
+</head>
+<body>
+{% macro ref_link(ref_str) -%}
+  {%- set section = ref_str.split('[')[0] -%}
+  {%- set idx = ref_str.split('[')[1].rstrip(']') -%}
+  <a href="#{{ section }}-{{ idx }}">{{ ref_str }}</a>
+{%- endmacro %}
+{% macro market_signals_block(ms) -%}
+<div class="market-signals">
+  {% set has_any = ms.benchmark_changes or ms.benchmark_watch or ms.pricing_changes or ms.adoption_signals or ms.capability_gaps %}
+  {% if not has_any %}<div>{{ ms.empty_message }}</div>{% else %}
+    {% if ms.benchmark_changes %}<h3>Benchmark 变化</h3>
+    {% for b in ms.benchmark_changes %}
+    <div class="signal-row">
+      <span class="vendor">{{ b.vendor }}</span>
+      <span class="model">{{ b.model }}</span>
+      <span>{{ b.metric }}</span>
+      <span>{{ b.old_value }} → {{ b.new_value }}</span>
+      <span class="{% if b.change_pct > 0 %}delta-up{% elif b.change_pct < 0 %}delta-down{% else %}delta-flat{% endif %}">{{ '%+.1f'|format(b.change_pct) }}%</span>
+      <span class="model">· {{ b.source }}</span>
+    </div>
+    {% endfor %}{% endif %}
+    {% if ms.benchmark_watch %}<h3>评分 / 榜单观察</h3>
+    {% for w in ms.benchmark_watch %}
+    <div class="signal-row">
+      <span class="vendor">{{ w.vendor }}</span>
+      <span class="model">{{ w.model }}</span>
+      <span>{{ w.signal }}</span>
+      <span class="model">· {{ w.source }}</span>
+      {% if w.ref %}<span class="model">· {{ ref_link(w.ref) }}</span>{% endif %}
+      {% if w.note %}<span class="model">· {{ w.note }}</span>{% endif %}
+    </div>
+    {% endfor %}{% endif %}
+    {% if ms.pricing_changes %}<h3>定价变化</h3>
+    {% for p in ms.pricing_changes %}
+    <div class="signal-row">
+      <span class="vendor">{{ p.vendor }}</span>
+      <span class="model">{{ p.model }}</span>
+      <span>${{ p.old_price_per_mtok }}/Mtok → ${{ p.new_price_per_mtok }}/Mtok</span>
+      <span class="delta-{{ p.direction }}">{{ '%+.1f'|format(p.change_pct) }}%</span>
+    </div>
+    {% endfor %}{% endif %}
+    {% if ms.adoption_signals %}<h3>采用率 / 商业化信号</h3>
+    {% for a in ms.adoption_signals %}
+    <div class="signal-row">
+      <span class="vendor">{{ a.vendor }}</span>
+      <span class="model">{{ a.product }}</span>
+      <span>{{ a.metric }}</span>
+      <span>{{ a.value }}</span>
+      <span class="model">· {{ a.source }}</span>
+      {% if a.ref %}<span class="model">· {{ ref_link(a.ref) }}</span>{% endif %}
+      {% if a.note %}<span class="model">· {{ a.note }}</span>{% endif %}
+    </div>
+    {% endfor %}{% endif %}
+    {% if ms.capability_gaps %}<h3>能力观察</h3>
+    {% for g in ms.capability_gaps %}
+    <div class="capability-gap">{{ g.text }}{% if g.ref %} · {{ ref_link(g.ref) }}{% endif %}</div>
+    {% endfor %}{% endif %}
+  {% endif %}
+</div>
+{%- endmacro %}
+{% macro pattern_observations_block(po) -%}
+{% if po["items"] %}
+  {% for p in po["items"] %}
+  <div class="pattern-card">
+    <div class="theme">{{ p.theme }}</div>
+    <div class="refs">证据：{% for r in p.supporting_item_refs %}{{ ref_link(r) }}{% if not loop.last %} · {% endif %}{% endfor %}</div>
+    <div class="interp">{{ p.interpretation_for_tech_lead }}</div>
+  </div>
+  {% endfor %}
+{% else %}
+  <p>{{ po.empty_message }}</p>
+{% endif %}
+{%- endmacro %}
+{% set audience_labels = {"team_pilot": "团队试点", "personal_workflow": "个人工作流"} %}
+{% set applicability_labels = {"adopt_now": "适合现在引入", "wait_mature": "等工具成熟", "reference_only": "仅参考思路"} %}
+{% macro experiments_block(ex) -%}
+{% if ex["items"] %}
+  {% for e in ex["items"] %}
+  <div class="experiment-card">
+    <div class="title">{{ e.title }}</div>
+    <div class="hypothesis">假设：{{ e.hypothesis }}</div>
+    <ol class="steps">{% for s in e.steps %}<li>{{ s }}</li>{% endfor %}</ol>
+    <div class="meta-line">
+      <span class="chip">⏱ {{ e.time_budget_hours.min }}–{{ e.time_budget_hours.max }} 小时</span>
+      <span class="chip">🧑 {{ e.required_skills | join(' · ') }}</span>
+      <span class="chip">👥 {{ audience_labels[e.audience] }}</span>
+      <span>产出：{{ e.expected_output }}</span>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  <p>{{ ex.empty_message }}</p>
+{% endif %}
+{%- endmacro %}
+{% macro action_item_block(item) -%}
+<div class="action-item">
+  <div class="head">
+    <span class="badge badge-tier">{{ item.priority }}</span>
+    <span class="badge badge-rec-{{ item.recommendation_type }}">{{ item.recommendation_type | upper }}</span>
+    <span class="badge badge-horizon">{{ item.time_horizon }}</span>
+    {{ item.recommendation }}
+  </div>
+  <div class="rationale">依据：{{ item.rationale }}</div>
+  <div class="estimate">投入 {{ item.effort_person_days.min }}–{{ item.effort_person_days.max }} 人日 · 适用团队 {{ item.team_size_applicability | join('，') }}{% if item.success_metric %} · 目标 {{ item.success_metric }}{% endif %}</div>
+  {% if item.references %}
+  <div class="rationale">引用：{% for r in item.references %}<a href="{{ r.url }}">{{ r.date }} {{ r.headline }}</a>{% if not loop.last %}；{% endif %}{% endfor %}</div>
+  {% endif %}
+</div>
+{%- endmacro %}
+<div class="container">
+  <header>
+    <h1>AI 周报</h1>
+    <div class="meta">{{ report.iso_week }} · {{ report.window.start }} ~ {{ report.window.end }}</div>
+  </header>
+
+  <section>
+    <h2>一、{{ report.sections.tldr.title }}</h2>
+    <div class="tldr">
+      <ul>
+        {% for bullet in report.sections.tldr.bullets %}
+        <li>{{ bullet }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>二、{{ report.sections.frontier_models.title }}</h2>
+    {% for g in report.sections.frontier_models.vendor_groups %}
+    <div class="group" id="frontier_models-{{ loop.index0 }}">
+      <div class="head"><span class="badge badge-{{ g.vendor_region | lower }}">{{ g.vendor }} · {{ g.vendor_region }}</span></div>
+      <div class="label">本周变化</div>
+      <div class="body">{{ g.weekly_changes }}</div>
+      <div class="label">趋势判断</div>
+      <div class="trend">{{ g.trend_judgment }}</div>
+      <div class="label">对技术总监的含义</div>
+      <div class="implication">{{ g.implication }}</div>
+      {% if g.references %}
+      <div class="refs">引用：
+        {% for r in g.references %}<a href="{{ r.url }}">{{ r.date }} {{ r.headline }}</a>{% if r.release_stage %} <span class="badge badge-stage-{{ r.release_stage }}">{{ r.release_stage | upper }}</span>{% endif %}{% if not loop.last %}；{% endif %}{% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+
+  <section>
+    <h2>三、{{ report.sections.coding_agents.title }}</h2>
+    <h3>本周三大变化</h3>
+    <ol class="top-changes">
+      {% for c in report.sections.coding_agents.top_changes %}
+      <li>{{ c }}</li>
+      {% endfor %}
+    </ol>
+    {% for g in report.sections.coding_agents.product_groups %}
+    <div class="group" id="coding_agents-{{ loop.index0 }}">
+      <div class="head"><span class="badge badge-tier">{{ g.product }}</span></div>
+      <div class="label">本周变化</div>
+      <div class="body">{{ g.weekly_changes }}</div>
+      <div class="label">趋势判断</div>
+      <div class="trend">{{ g.trend_judgment }}</div>
+      <div class="label">对技术总监的含义</div>
+      <div class="implication">{{ g.implication }}</div>
+      {% if g.references %}
+      <div class="refs">引用：
+        {% for r in g.references %}<a href="{{ r.url }}">{{ r.date }} {{ r.headline }}</a>{% if r.release_stage %} <span class="badge badge-stage-{{ r.release_stage }}">{{ r.release_stage | upper }}</span>{% endif %}{% if not loop.last %}；{% endif %}{% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+
+  <section>
+    <h2>四、{{ report.sections.general_agents.title }}</h2>
+    {% set ga_ns = namespace(idx=0) %}
+    {% if report.sections.general_agents.newcomers %}
+    <h3>新发布 / 新爆火</h3>
+    <ul>
+      {% for n in report.sections.general_agents.newcomers %}
+      <li id="general_agents-{{ ga_ns.idx }}">{{ n.product }}：{{ n.headline }}</li>
+      {% set ga_ns.idx = ga_ns.idx + 1 %}
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if report.sections.general_agents.big_lab_moves %}
+    <h3>头部大厂动作</h3>
+    <ul>
+      {% for m in report.sections.general_agents.big_lab_moves %}
+      <li id="general_agents-{{ ga_ns.idx }}">{{ m.vendor }}：{{ m.headline }}</li>
+      {% set ga_ns.idx = ga_ns.idx + 1 %}
+      {% endfor %}
+    </ul>
+    {% endif %}
+    <div class="group">
+      <div class="label">趋势判断</div>
+      <div class="trend">{{ report.sections.general_agents.trend_judgment }}</div>
+      <div class="label">对技术总监的含义</div>
+      <div class="implication">{{ report.sections.general_agents.implication }}</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>五、{{ report.sections.market_signals.title }}</h2>
+    {{ market_signals_block(report.sections.market_signals) }}
+  </section>
+
+  <section>
+    <h2>六、{{ report.sections.pattern_observations.title }}</h2>
+    {{ pattern_observations_block(report.sections.pattern_observations) }}
+  </section>
+
+  <section>
+    <h2>七、{{ report.sections.experiments_this_week.title }}</h2>
+    {{ experiments_block(report.sections.experiments_this_week) }}
+  </section>
+
+  <section>
+    <h2>八、{{ report.sections.practice_digest.title }}</h2>
+    {% for d in report.sections.practice_digest["items"] %}
+    <div class="digest-card">
+      <div><span class="badge badge-apt-{{ d.applicability }}">{{ applicability_labels[d.applicability] }}</span></div>
+      <div class="title">{{ d.title }}</div>
+      <div class="summary">{{ d.summary }}</div>
+      <div class="verdict">判断：{{ d.applicability_note }}</div>
+      <div class="verdict">来源：<a href="{{ d.source_url }}">{{ d.source_name }}</a> · 首报 {{ d.origin.date }} 日报生态板块</div>
+    </div>
+    {% else %}
+    <p>{{ report.sections.practice_digest.empty_message }}</p>
+    {% endfor %}
+  </section>
+
+  <section>
+    <h2>九、{{ report.sections.action_items.title }}</h2>
+    <div class="action-items">
+      {% for item in report.sections.action_items["items"] %}
+      {{ action_item_block(item) }}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section>
+    <h2>十、{{ report.sections.next_week_signals.title }}</h2>
+    {% if report.sections.next_week_signals.announced %}
+    <h3>已官宣</h3>
+    <ul>
+      {% for a in report.sections.next_week_signals.announced %}
+      <li>{% if a.url %}<a href="{{ a.url }}">{{ a.headline }}</a>{% else %}{{ a.headline }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if report.sections.next_week_signals.threads %}
+    <h3>值得追踪的线索</h3>
+    <ul>
+      {% for t in report.sections.next_week_signals.threads %}
+      <li>{% if t.url %}<a href="{{ t.url }}">{{ t.headline }}</a>{% else %}{{ t.headline }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+
+  <footer>
+    <div>基于日报：{{ report.source_days.daily_reports_used | join('，') }}</div>
+    {% if report.source_days.backfilled %}
+    <div>补抓：{{ report.source_days.backfilled | join('，') }}</div>
+    {% endif %}
+    <div>Generated at {{ report.generated_at }}</div>
+  </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# Secrets
+.env
+
+# Cache & generated reports
+cache/
+reports/daily/*.html
+reports/weekly/*.html
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+
+# Tests output
+skills/ai-daily-report/tests/output/
+
+# OS
+.DS_Store

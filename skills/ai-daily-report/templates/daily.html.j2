@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>AI 日报 · {{ report.date }}</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2328;
+    --muted: #656d76;
+    --accent: #0969da;
+    --accent-soft: #f0f7ff;
+    --card: #ffffff;
+    --border: #d0d7de;
+    --badge-us-bg: #ddf4ff;
+    --badge-us-fg: #0969da;
+    --badge-cn-bg: #ffebe9;
+    --badge-cn-fg: #cf222e;
+    --warn: #9a6700;
+    --warn-bg: #fff8c5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117;
+      --fg: #e6edf3;
+      --muted: #848d97;
+      --accent: #4493f8;
+      --accent-soft: #0d1b2a;
+      --card: #161b22;
+      --border: #30363d;
+      --badge-us-bg: #0d2d52;
+      --badge-us-fg: #79c0ff;
+      --badge-cn-bg: #4a0e0e;
+      --badge-cn-fg: #ff7b72;
+      --warn: #d29922;
+      --warn-bg: #3d2e00;
+    }
+  }
+  body {
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.75;
+    color: var(--fg);
+    background: var(--bg);
+    margin: 0;
+    padding: 16px;
+  }
+  .container { max-width: 680px; margin: 0 auto; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 { font-size: 22px; margin: 32px 0 12px; padding-top: 8px; }
+  h3 { font-size: 18px; margin: 16px 0 8px; }
+  .meta { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+  .toc { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; }
+  .toc ul { margin: 0; padding-left: 20px; }
+  .toc a { color: var(--accent); text-decoration: none; display: inline-block; min-height: 32px; line-height: 32px; }
+  .card { border: 1px solid var(--border); background: var(--card); border-radius: 8px; padding: 14px; margin-bottom: 12px; position: relative; }
+  .card .headline { font-size: 18px; font-weight: 600; margin: 6px 0; }
+  .card .summary { color: var(--fg); margin: 6px 0; }
+  .card .impact { color: var(--accent); margin: 8px 0; font-size: 15px; }
+  .card .source { color: var(--muted); font-size: 14px; margin-top: 10px; }
+  .card .source a { color: var(--accent); text-decoration: none; display: inline-block; min-height: 44px; line-height: 44px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; margin-right: 6px; }
+  .badge-us { background: var(--badge-us-bg); color: var(--badge-us-fg); }
+  .badge-cn { background: var(--badge-cn-bg); color: var(--badge-cn-fg); }
+  .badge-tier { background: var(--accent-soft); color: var(--accent); }
+  .badge-tier-core { background: #dafbe1; color: #1a7f37; }
+  .badge-tier-watch { background: #fff8c5; color: #9a6700; }
+  .badge-warn { background: var(--warn-bg); color: var(--warn); position: absolute; top: 10px; right: 10px; }
+  .badge-stage-ga { background: #dafbe1; color: #1a7f37; }
+  .badge-stage-beta { background: #fff8c5; color: #9a6700; }
+  .badge-stage-preview { background: #fff8c5; color: #9a6700; }
+  .badge-stage-announced { background: var(--accent-soft); color: var(--accent); }
+  .badge-stage-rumor { background: transparent; color: var(--muted); border: 1px dashed var(--border); }
+  @media (prefers-color-scheme: dark) {
+    .badge-stage-ga { background: #0d3320; color: #56d364; }
+    .badge-stage-beta, .badge-stage-preview { background: #3d2e00; color: #d29922; }
+  }
+  .badge-broad { background: var(--warn-bg); color: var(--warn); }
+  .evidence { border-left: 3px solid var(--border); margin: 10px 0 4px; padding: 4px 12px; color: var(--muted); font-style: italic; font-size: 14px; }
+  .deep-dive { border-left: 3px solid var(--accent); padding: 12px 14px; background: var(--accent-soft); border-radius: 0 8px 8px 0; margin: 12px 0; }
+  .deep-dive .title { font-weight: 600; margin-bottom: 8px; }
+  .action-items { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 16px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+  .action-item { margin-bottom: 14px; }
+  .action-item:last-child { margin-bottom: 0; }
+  .action-item .head { font-weight: 600; margin-bottom: 4px; }
+  .action-item .rationale { color: var(--muted); font-size: 14px; }
+  .unverified { color: var(--muted); font-size: 15px; }
+  .unverified .card { border-style: dashed; }
+  footer { margin-top: 32px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--border); padding-top: 16px; }
+  footer details { margin-bottom: 12px; }
+  footer summary { cursor: pointer; min-height: 44px; line-height: 44px; }
+  .heat { color: var(--warn); font-size: 13px; margin-top: 4px; }
+  a { color: var(--accent); }
+  .market-signals { border: 1px solid var(--border); background: var(--card); border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+  .market-signals h3 { margin: 10px 0 6px; font-size: 16px; }
+  .signal-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 6px 0; border-bottom: 1px dotted var(--border); font-size: 15px; }
+  .signal-row:last-child { border-bottom: none; }
+  .signal-row .vendor { font-weight: 600; }
+  .signal-row .model { color: var(--muted); }
+  .signal-row .delta-up { color: #1a7f37; font-weight: 600; }
+  .signal-row .delta-down { color: #cf222e; font-weight: 600; }
+  .signal-row .delta-flat { color: var(--muted); }
+  .capability-gap { padding: 6px 0; font-size: 15px; }
+  .capability-gap::before { content: "• "; color: var(--accent); font-weight: 700; }
+  .pattern-card { border-left: 4px solid #8250df; background: var(--card); border: 1px solid var(--border); padding: 14px; border-radius: 0 8px 8px 0; margin-bottom: 12px; }
+  .pattern-card .theme { font-weight: 600; font-size: 17px; margin-bottom: 6px; }
+  .pattern-card .refs { font-size: 13px; color: var(--muted); margin: 6px 0; }
+  .pattern-card .refs a { color: var(--accent); text-decoration: none; }
+  .pattern-card .interp { font-size: 15px; margin-top: 6px; }
+  .experiment-card { border: 1px solid var(--border); border-left: 4px solid #bf8700; background: var(--card); padding: 14px; border-radius: 0 8px 8px 0; margin-bottom: 12px; }
+  .experiment-card .title { font-weight: 600; font-size: 17px; margin-bottom: 4px; }
+  .experiment-card .hypothesis { color: var(--muted); font-size: 14px; margin-bottom: 8px; }
+  .experiment-card ol.steps { padding-left: 22px; margin: 6px 0; }
+  .experiment-card ol.steps li { margin: 2px 0; }
+  .experiment-card .meta-line { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .experiment-card .meta-line .chip { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); margin-right: 6px; }
+  .action-item .estimate { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .badge-rec-patch      { background: #eaeef2; color: #57606a; }
+  .badge-rec-experiment { background: #fff8c5; color: #9a6700; }
+  .badge-rec-adopt      { background: #dafbe1; color: #1a7f37; }
+  .badge-rec-migrate    { background: #ffebe9; color: #cf222e; }
+  .badge-rec-monitor    { background: var(--accent-soft); color: var(--accent); }
+  .badge-rec-hire       { background: #fbefff; color: #8250df; }
+  .badge-horizon        { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .badge-major { background: #ffebe9; color: #cf222e; font-weight: 600; }
+  .badge-tracking { background: #fbefff; color: #8250df; }
+  .major-expanded { border: 2px solid var(--accent); background: var(--accent-soft); border-radius: 8px; padding: 14px; margin: 12px 0; font-size: 15px; }
+  .major-expanded .row { margin: 6px 0; }
+  .major-expanded .row .label { font-weight: 600; }
+  .major-expanded ul.open-questions { margin: 4px 0 0; padding-left: 22px; }
+  .radar-group { border: 1px solid var(--border); border-left: 4px solid #1a7f37; background: var(--card); padding: 14px; border-radius: 0 8px 8px 0; margin-bottom: 12px; }
+  .radar-group .decision-name { font-weight: 600; font-size: 16px; margin-bottom: 6px; }
+  .radar-item { padding: 4px 0; font-size: 15px; }
+  .radar-item .refs { font-size: 13px; color: var(--muted); }
+  .badge-eco-trending_repo { background: #fff8c5; color: #9a6700; }
+  .badge-eco-skill_plugin  { background: #dafbe1; color: #1a7f37; }
+  .badge-eco-practice_case { background: #ddf4ff; color: #0969da; }
+  .badge-eco-tool_release  { background: #fbefff; color: #8250df; }
+  .eco-meta { color: var(--muted); font-size: 14px; margin-top: 4px; }
+  @media (prefers-color-scheme: dark) {
+    .badge-rec-patch      { background: #21262d; color: #8b949e; }
+    .badge-rec-adopt      { background: #0d3320; color: #56d364; }
+    .badge-rec-migrate    { background: #4a0e0e; color: #ff7b72; }
+    .badge-rec-experiment { background: #3d2e00; color: #d29922; }
+    .badge-rec-hire       { background: #2d1b3e; color: #d2a8ff; }
+    .badge-tier-core      { background: #0d3320; color: #56d364; }
+    .badge-tier-watch     { background: #3d2e00; color: #d29922; }
+    .badge-major          { background: #4a0e0e; color: #ff7b72; }
+    .badge-tracking       { background: #2d1b3e; color: #d2a8ff; }
+  }
+</style>
+</head>
+<body>
+{% set eco_type_labels = {"trending_repo": "热门仓库", "skill_plugin": "技能/插件", "practice_case": "实践案例", "tool_release": "工具发布"} %}
+{% set eco_cost_labels = {"ready_to_use": "即装即用", "needs_config": "需配置", "needs_build": "需自建"} %}
+{% set audience_labels = {"team_pilot": "团队试点", "personal_workflow": "个人工作流"} %}
+{% macro item_meta(item) -%}
+  {% if item.editorial_tier == "core" %}<span class="badge badge-tier badge-tier-core">核心发布</span>{% endif %}
+  {% if item.editorial_tier == "watch" %}<span class="badge badge-tier badge-tier-watch">重要观察</span>{% endif %}
+  {% if item.release_stage %}<span class="badge badge-stage-{{ item.release_stage }}">{{ item.release_stage | upper }}</span>{% endif %}
+  {% if item.via_broad_search %}<span class="badge badge-broad">广义搜索</span>{% endif %}
+  {% if item.major_event %}<span class="badge badge-major">重大事件</span>{% endif %}
+  {% if item.tracking_ref %}<span class="badge badge-tracking">事件追踪</span>{% endif %}
+{%- endmacro %}
+{% macro expanded_block(item) -%}
+{% if item.expanded %}
+<div class="major-expanded">
+  <div class="row"><span class="label">发布要点：</span>{{ item.expanded.what_shipped }}</div>
+  {% if item.expanded.benchmarks %}<div class="row"><span class="label">官方基准：</span>{{ item.expanded.benchmarks }}</div>{% endif %}
+  {% if item.expanded.pricing_availability %}<div class="row"><span class="label">定价与可用性：</span>{{ item.expanded.pricing_availability }}</div>{% endif %}
+  {% if item.expanded.comparison %}<div class="row"><span class="label">对比现役：</span>{{ item.expanded.comparison }}</div>{% endif %}
+  {% if item.expanded.third_party_reaction %}<div class="row"><span class="label">第三方反应：</span>{{ item.expanded.third_party_reaction }}</div>{% endif %}
+  <div class="row"><span class="label">待验证：</span></div>
+  <ul class="open-questions">{% for q in item.expanded.open_questions %}<li>{{ q }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{%- endmacro %}
+{% macro ref_link(ref_str) -%}
+  {%- set section = ref_str.split('[')[0] -%}
+  {%- set idx = ref_str.split('[')[1].rstrip(']') -%}
+  <a href="#{{ section }}-{{ idx }}">{{ ref_str }}</a>
+{%- endmacro %}
+{% macro market_signals_block(ms) -%}
+<div class="market-signals">
+  {% set has_any = ms.benchmark_changes or ms.benchmark_watch or ms.pricing_changes or ms.adoption_signals or ms.capability_gaps %}
+  {% if not has_any %}<div>{{ ms.empty_message }}</div>{% else %}
+    {% if ms.benchmark_changes %}<h3>Benchmark 变化</h3>
+    {% for b in ms.benchmark_changes %}
+    <div class="signal-row">
+      <span class="vendor">{{ b.vendor }}</span>
+      <span class="model">{{ b.model }}</span>
+      <span>{{ b.metric }}</span>
+      <span>{{ b.old_value }} → {{ b.new_value }}</span>
+      <span class="{% if b.change_pct > 0 %}delta-up{% elif b.change_pct < 0 %}delta-down{% else %}delta-flat{% endif %}">{{ '%+.1f'|format(b.change_pct) }}%</span>
+      <span class="model">· {{ b.source }}</span>
+    </div>
+    {% endfor %}{% endif %}
+    {% if ms.benchmark_watch %}<h3>评分 / 榜单观察</h3>
+    {% for w in ms.benchmark_watch %}
+    <div class="signal-row">
+      <span class="vendor">{{ w.vendor }}</span>
+      <span class="model">{{ w.model }}</span>
+      <span>{{ w.signal }}</span>
+      <span class="model">· {{ w.source }}</span>
+      {% if w.ref %}<span class="model">· {{ ref_link(w.ref) }}</span>{% endif %}
+      {% if w.note %}<span class="model">· {{ w.note }}</span>{% endif %}
+    </div>
+    {% endfor %}{% endif %}
+    {% if ms.pricing_changes %}<h3>定价变化</h3>
+    {% for p in ms.pricing_changes %}
+    <div class="signal-row">
+      <span class="vendor">{{ p.vendor }}</span>
+      <span class="model">{{ p.model }}</span>
+      <span>${{ p.old_price_per_mtok }}/Mtok → ${{ p.new_price_per_mtok }}/Mtok</span>
+      <span class="delta-{{ p.direction }}">{{ '%+.1f'|format(p.change_pct) }}%</span>
+    </div>
+    {% endfor %}{% endif %}
+    {% if ms.adoption_signals %}<h3>采用率 / 商业化信号</h3>
+    {% for a in ms.adoption_signals %}
+    <div class="signal-row">
+      <span class="vendor">{{ a.vendor }}</span>
+      <span class="model">{{ a.product }}</span>
+      <span>{{ a.metric }}</span>
+      <span>{{ a.value }}</span>
+      <span class="model">· {{ a.source }}</span>
+      {% if a.ref %}<span class="model">· {{ ref_link(a.ref) }}</span>{% endif %}
+      {% if a.note %}<span class="model">· {{ a.note }}</span>{% endif %}
+    </div>
+    {% endfor %}{% endif %}
+    {% if ms.capability_gaps %}<h3>能力观察</h3>
+    {% for g in ms.capability_gaps %}
+    <div class="capability-gap">{{ g.text }}{% if g.ref %} · {{ ref_link(g.ref) }}{% endif %}</div>
+    {% endfor %}{% endif %}
+  {% endif %}
+</div>
+{%- endmacro %}
+{% macro pattern_observations_block(po) -%}
+{% if po["items"] %}
+  {% for p in po["items"] %}
+  <div class="pattern-card">
+    <div class="theme">{{ p.theme }}</div>
+    <div class="refs">证据：{% for r in p.supporting_item_refs %}{{ ref_link(r) }}{% if not loop.last %} · {% endif %}{% endfor %}</div>
+    <div class="interp">{{ p.interpretation_for_tech_lead }}</div>
+  </div>
+  {% endfor %}
+{% else %}
+  <p class="unverified">{{ po.empty_message }}</p>
+{% endif %}
+{%- endmacro %}
+{% macro experiments_block(ex) -%}
+{% if ex["items"] %}
+  {% for e in ex["items"] %}
+  <div class="experiment-card">
+    <div class="title">{{ e.title }}</div>
+    <div class="hypothesis">假设：{{ e.hypothesis }}</div>
+    <ol class="steps">{% for s in e.steps %}<li>{{ s }}</li>{% endfor %}</ol>
+    <div class="meta-line">
+      <span class="chip">⏱ {{ e.time_budget_hours.min }}–{{ e.time_budget_hours.max }} 小时</span>
+      <span class="chip">🧑 {{ e.required_skills | join(' · ') }}</span>
+      <span class="chip">👥 {{ audience_labels[e.audience] }}</span>
+      <span>产出：{{ e.expected_output }}</span>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  <p class="unverified">{{ ex.empty_message }}</p>
+{% endif %}
+{%- endmacro %}
+{% macro action_item_block(item) -%}
+<div class="action-item">
+  <div class="head">
+    <span class="badge badge-tier">{{ item.priority }}</span>
+    <span class="badge badge-rec-{{ item.recommendation_type }}">{{ item.recommendation_type | upper }}</span>
+    <span class="badge badge-horizon">{{ item.time_horizon }}</span>
+    {{ item.recommendation }}
+  </div>
+  <div class="rationale">依据：{{ item.rationale }}</div>
+  <div class="estimate">投入 {{ item.effort_person_days.min }}–{{ item.effort_person_days.max }} 人日 · 适用团队 {{ item.team_size_applicability | join('，') }}{% if item.success_metric %} · 目标 {{ item.success_metric }}{% endif %}</div>
+  {% if item.references %}
+  <div class="rationale">引用：{% for r in item.references %}<a href="{{ r.url }}">{{ r.date }} {{ r.headline }}</a>{% if not loop.last %}；{% endif %}{% endfor %}</div>
+  {% endif %}
+</div>
+{%- endmacro %}
+<div class="container">
+  <header>
+    <h1>AI 日报</h1>
+    <div class="meta">
+      {{ report.date }} ·
+      采集窗口 {{ report.window.start[:16].replace('T', ' ') }} ~ {{ report.window.end[:16].replace('T', ' ') }}
+    </div>
+  </header>
+
+  <nav class="toc">
+    <ul>
+      <li><a href="#frontier">一、{{ report.sections.frontier_models.title }}</a></li>
+      <li><a href="#coding">二、{{ report.sections.coding_agents.title }}</a></li>
+      <li><a href="#general">三、{{ report.sections.general_agents.title }}</a></li>
+      <li><a href="#ecosystem">四、{{ report.sections.agent_ecosystem.title }}</a></li>
+      <li><a href="#market">五、{{ report.sections.market_signals.title }}</a></li>
+      <li><a href="#patterns">六、{{ report.sections.pattern_observations.title }}</a></li>
+      <li><a href="#experiments">七、{{ report.sections.experiments_this_week.title }}</a></li>
+      <li><a href="#radar">八、{{ report.sections.decision_radar.title }}</a></li>
+      <li><a href="#action"><strong>九、{{ report.sections.action_items.title }}</strong></a></li>
+      <li><a href="#unverified">十、{{ report.sections.unverified.title }}</a></li>
+    </ul>
+  </nav>
+
+  <section id="frontier">
+    <h2>一、{{ report.sections.frontier_models.title }}</h2>
+    {% for item in report.sections.frontier_models["items"] %}
+    <article class="card" id="frontier_models-{{ loop.index0 }}">
+      {% if item.confidence == "low" %}<span class="badge badge-warn">待核实</span>{% endif %}
+      <div>
+        <span class="badge badge-{{ item.vendor_region | lower }}">{{ item.vendor }} · {{ item.vendor_region }}</span>
+        {{ item_meta(item) }}
+      </div>
+      <div class="headline">{{ item.headline }}</div>
+      <div class="summary">{{ item.summary }}</div>
+      <div class="impact">影响：{{ item.impact }}</div>
+      {% if item.evidence_quote %}<blockquote class="evidence">“{{ item.evidence_quote }}”</blockquote>{% endif %}
+      <div class="source">{{ item.source_name }} · <a href="{{ item.source_url }}">查看原文</a></div>
+      {{ expanded_block(item) }}
+    </article>
+    {% else %}
+    <p class="unverified">本节无内容。</p>
+    {% endfor %}
+  </section>
+
+  <section id="coding">
+    <h2>二、{{ report.sections.coding_agents.title }}</h2>
+    {% for item in report.sections.coding_agents["items"] %}
+    <article class="card" id="coding_agents-{{ loop.index0 }}">
+      {% if item.confidence == "low" %}<span class="badge badge-warn">待核实</span>{% endif %}
+      <div>
+        <span class="badge badge-tier">{{ item.product }} · {{ item.product_tier }}</span>
+        {{ item_meta(item) }}
+      </div>
+      <div class="headline">{{ item.headline }}</div>
+      <div class="summary">{{ item.summary }}</div>
+      <div class="impact">影响：{{ item.impact }}</div>
+      {% if item.evidence_quote %}<blockquote class="evidence">“{{ item.evidence_quote }}”</blockquote>{% endif %}
+      <div class="source">{{ item.source_name }} · <a href="{{ item.source_url }}">查看原文</a></div>
+      {{ expanded_block(item) }}
+    </article>
+    {% else %}
+    <p class="unverified">本节无内容。</p>
+    {% endfor %}
+
+    {% if report.sections.coding_agents.deep_dive %}
+    <div class="deep-dive">
+      <div class="title">深度观察：{{ report.sections.coding_agents.deep_dive.title }}</div>
+      <div>{{ report.sections.coding_agents.deep_dive.body }}</div>
+    </div>
+    {% endif %}
+  </section>
+
+  <section id="general">
+    <h2>三、{{ report.sections.general_agents.title }}</h2>
+    {% for item in report.sections.general_agents["items"] %}
+    <article class="card" id="general_agents-{{ loop.index0 }}">
+      {% if item.confidence == "low" %}<span class="badge badge-warn">待核实</span>{% endif %}
+      <div>
+        <span class="badge badge-tier">{{ item.product }}{% if item.vendor %} · {{ item.vendor }}{% endif %}</span>
+        {{ item_meta(item) }}
+      </div>
+      <div class="headline">{{ item.headline }}</div>
+      <div class="summary">{{ item.summary }}</div>
+      {% if item.heat_signal %}<div class="heat">热度：{{ item.heat_signal }}</div>{% endif %}
+      {% if item.evidence_quote %}<blockquote class="evidence">“{{ item.evidence_quote }}”</blockquote>{% endif %}
+      <div class="source">{{ item.source_name }} · <a href="{{ item.source_url }}">查看原文</a></div>
+      {{ expanded_block(item) }}
+    </article>
+    {% else %}
+    <p class="unverified">本节无内容。</p>
+    {% endfor %}
+  </section>
+
+  <section id="ecosystem">
+    <h2>四、{{ report.sections.agent_ecosystem.title }}</h2>
+    {% for item in report.sections.agent_ecosystem["items"] %}
+    <article class="card" id="agent_ecosystem-{{ loop.index0 }}">
+      <div>
+        <span class="badge badge-eco-{{ item.item_type }}">{{ eco_type_labels[item.item_type] }}</span>
+        {% if item.onboarding_cost %}<span class="badge badge-tier">{{ eco_cost_labels[item.onboarding_cost] }}</span>{% endif %}
+      </div>
+      <div class="headline">{{ item.title }}</div>
+      <div class="summary">{{ item.summary }}</div>
+      {% if item.heat_note %}<div class="heat">{{ item.heat_note }}</div>{% endif %}
+      <div class="eco-meta">适用：{{ item.relevance }}</div>
+      <div class="source">{{ item.source_name }} · <a href="{{ item.source_url }}">查看原文</a></div>
+    </article>
+    {% else %}
+    <p class="unverified">{{ report.sections.agent_ecosystem.empty_message }}</p>
+    {% endfor %}
+  </section>
+
+  <section id="market">
+    <h2>五、{{ report.sections.market_signals.title }}</h2>
+    {{ market_signals_block(report.sections.market_signals) }}
+  </section>
+
+  <section id="patterns">
+    <h2>六、{{ report.sections.pattern_observations.title }}</h2>
+    {{ pattern_observations_block(report.sections.pattern_observations) }}
+  </section>
+
+  <section id="experiments">
+    <h2>七、{{ report.sections.experiments_this_week.title }}</h2>
+    {{ experiments_block(report.sections.experiments_this_week) }}
+  </section>
+
+  <section id="radar">
+    <h2>八、{{ report.sections.decision_radar.title }}</h2>
+    {% if report.sections.decision_radar.decisions %}
+      {% for group in report.sections.decision_radar.decisions %}
+      <div class="radar-group">
+        <div class="decision-name">{{ group.decision_name }}</div>
+        {% for r in group["items"] %}
+        <div class="radar-item">{{ r.impact }} <span class="refs">{{ ref_link(r.ref) }}</span></div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="unverified">{{ report.sections.decision_radar.empty_message }}</p>
+    {% endif %}
+  </section>
+
+  <section id="action">
+    <h2>九、{{ report.sections.action_items.title }}</h2>
+    <div class="action-items">
+      {% if report.sections.action_items["items"] %}
+        {% for item in report.sections.action_items["items"] %}
+        {{ action_item_block(item) }}
+        {% endfor %}
+      {% else %}
+        <div>{{ report.sections.action_items.empty_message }}</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section id="unverified" class="unverified">
+    <h2>十、{{ report.sections.unverified.title }}</h2>
+    {% for item in report.sections.unverified["items"] %}
+    <article class="card">
+      <div class="headline">{{ item.headline }}</div>
+      <div class="summary">{{ item.summary }}</div>
+      <div class="source">{{ item.source_name }} · <a href="{{ item.source_url }}">查看原文</a> · {{ item.reason_unverified }}</div>
+    </article>
+    {% else %}
+    <p>本节无内容。</p>
+    {% endfor %}
+  </section>
+
+  <footer>
+    <details>
+      <summary>抓取状态（点击展开）</summary>
+      {% set source_details = report.fetch_status.source_details if report.fetch_status.source_details is defined else {} %}
+      {% set fetch_ns = namespace(direct_empty=[], indirect_hits=[]) %}
+      {% for name in report.fetch_status.empty %}
+        {% set detail = source_details.get(name, {}) %}
+        {% set detail_ns = namespace(has_success=false) %}
+        {% for attempt in detail.get('attempts', []) %}
+          {% if attempt.result == 'success' %}
+            {% set detail_ns.has_success = true %}
+          {% endif %}
+        {% endfor %}
+        {% if detail_ns.has_success %}
+          {% set fetch_ns.indirect_hits = fetch_ns.indirect_hits + [name] %}
+        {% else %}
+          {% set fetch_ns.direct_empty = fetch_ns.direct_empty + [name] %}
+        {% endif %}
+      {% endfor %}
+      <p>成功 {{ report.fetch_status.succeeded | length }}：{{ report.fetch_status.succeeded | join('，') }}</p>
+      {% if report.fetch_status.failed %}
+      <p>失败 {{ report.fetch_status.failed | length }}：
+        {% for f in report.fetch_status.failed %}
+          {{ f.name }}（{{ f.reason }}，尝试 {{ f.attempts }} 次）{% if not loop.last %}；{% endif %}
+        {% endfor %}
+      </p>
+      {% endif %}
+      {% if fetch_ns.direct_empty %}
+      <p>首轮无窗口内条目 {{ fetch_ns.direct_empty | length }}：{{ fetch_ns.direct_empty | join('，') }}</p>
+      {% endif %}
+      {% if fetch_ns.indirect_hits %}
+      <p>经补证 / 其他 surface 命中 {{ fetch_ns.indirect_hits | length }}：{{ fetch_ns.indirect_hits | join('，') }}</p>
+      {% endif %}
+      {% if source_details %}
+      <p>降级路径：
+        {% for name, det in source_details.items() %}
+          {{ name }}（Layer {{ det.final_layer_index }} · {{ det.final_layer_type }}{% if det.via_broad_search %} · 广义搜索{% endif %}）{% if not loop.last %}；{% endif %}
+        {% endfor %}
+      </p>
+      {% endif %}
+    </details>
+    <div>Generated at {{ report.generated_at }}</div>
+  </footer>
+</div>
+</body>
+</html>

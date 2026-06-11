@@ -1,0 +1,313 @@
+{
+  "version": "1.0",
+  "type": "daily",
+  "date": "2026-04-10",
+  "window": {
+    "start": "2026-04-09T07:00:00+08:00",
+    "end": "2026-04-10T07:00:00+08:00",
+    "timezone": "Asia/Shanghai"
+  },
+  "generated_at": "2026-04-10T07:03:12+08:00",
+  "sections": {
+    "frontier_models": {
+      "title": "头部大模型动态",
+      "items": [
+        {
+          "vendor": "Anthropic",
+          "vendor_region": "US",
+          "headline": "发布 Claude Opus 4.6",
+          "summary": "编程和推理能力进一步提升，支持更长上下文窗口。",
+          "impact": "coding agent 体验有望显著改善。",
+          "source_name": "Anthropic News",
+          "source_url": "https://www.anthropic.com/news/claude-opus-4-6",
+          "published_at": "2026-04-09T22:00:00+08:00",
+          "confidence": "high",
+          "editorial_tier": "core",
+          "release_stage": "ga",
+          "published_at_confidence": "exact",
+          "authority_score": 5,
+          "evidence_quote": "Claude Opus 4.6 sets a new bar for coding and reasoning"
+        },
+        {
+          "vendor": "DeepSeek",
+          "vendor_region": "CN",
+          "headline": "开源 V4 推理模型",
+          "summary": "在 MATH-500 和 AIME 上接近 o1 水平，权重完全开源。",
+          "impact": "国产开源推理能力对标一线闭源模型。",
+          "source_name": "DeepSeek API Docs",
+          "source_url": "https://api-docs.deepseek.com/news/v4",
+          "published_at": "2026-04-09T15:00:00+08:00",
+          "confidence": "high",
+          "editorial_tier": "watch",
+          "release_stage": "ga",
+          "published_at_confidence": "exact",
+          "authority_score": 5
+        }
+      ]
+    },
+    "coding_agents": {
+      "title": "Coding Agent 专项",
+      "items": [
+        {
+          "product": "Claude Code",
+          "product_tier": "primary",
+          "headline": "新增 Plan Mode",
+          "summary": "引入独立规划阶段，任务开始前生成可编辑的实施计划。",
+          "impact": "复杂任务的可控性和一次成功率大幅提升。",
+          "source_name": "Claude Code Release Notes",
+          "source_url": "https://docs.anthropic.com/en/release-notes/claude-code",
+          "published_at": "2026-04-09T23:00:00+08:00",
+          "confidence": "high",
+          "editorial_tier": "core",
+          "release_stage": "ga",
+          "published_at_confidence": "exact",
+          "authority_score": 5
+        },
+        {
+          "product": "Cursor",
+          "product_tier": "secondary",
+          "headline": "Composer 2.0 内测开放",
+          "summary": "多文件上下文理解和跨文件重构能力显著增强。",
+          "impact": "对中型重构任务可能替代人工操作。",
+          "source_name": "Cursor Changelog",
+          "source_url": "https://www.cursor.com/changelog",
+          "published_at": "2026-04-09T10:00:00+08:00",
+          "confidence": "medium",
+          "editorial_tier": "watch",
+          "release_stage": "beta",
+          "published_at_confidence": "approximate",
+          "authority_score": 4,
+          "via_broad_search": true
+        }
+      ],
+      "deep_dive": {
+        "title": "Claude Code Plan Mode 的深度观察",
+        "body": "Plan Mode 的引入标志着 coding agent 从单步 REPL 式交互向多阶段工作流演进。在新的模式下，Claude 会先扫描代码库产出一份可审阅的实施计划，人类在 plan 阶段介入可以显著降低后续修改成本。这对我们的研发流程意味着：复杂任务应从一次性 prompt 转向 plan-review-execute 的协作模式。团队建议本周内让 2-3 个核心工程师试用并反馈，两周内形成标准使用规范。",
+        "related_item_indexes": [0]
+      }
+    },
+    "general_agents": {
+      "title": "通用 Agent 动态",
+      "items": [
+        {
+          "product": "openclaw",
+          "vendor": "openclaw.ai",
+          "headline": "开源浏览器 agent 登上 HN 首页",
+          "summary": "基于 Playwright 的开源浏览器操作 agent，支持多模型后端。",
+          "heat_signal": "HN 首页第 3 位 / 昨日 5 个信源提及",
+          "source_name": "Hacker News",
+          "source_url": "https://news.ycombinator.com/item?id=xxx",
+          "published_at": "2026-04-09T08:00:00+08:00",
+          "confidence": "high",
+          "editorial_tier": "watch",
+          "release_stage": "announced",
+          "published_at_confidence": "exact",
+          "authority_score": 3
+        }
+      ]
+    },
+    "agent_ecosystem": {
+      "title": "Agent 生态与实践",
+      "items": [
+        {
+          "item_type": "trending_repo",
+          "title": "claude-flow：多 agent 编排框架",
+          "summary": "用声明式 pipeline 编排多个 Claude Code 实例，内置评审与回滚步骤。",
+          "source_name": "GitHub Trending",
+          "source_url": "https://github.com/example/claude-flow",
+          "relevance": "团队级 agent 工作流",
+          "heat_note": "快照 2026-04-10：8.2k stars，本周 +1.9k",
+          "repo_slug": "example/claude-flow"
+        }
+      ],
+      "empty_message": "今日无值得收录的生态信号"
+    },
+    "market_signals": {
+      "title": "硬数据信号",
+      "benchmark_changes": [
+        {
+          "vendor": "Anthropic",
+          "model": "Claude Opus 4.6",
+          "source": "LMArena",
+          "metric": "Arena Elo",
+          "old_value": 1412,
+          "new_value": 1438,
+          "change_pct": 1.8,
+          "observed_at": "2026-04-10T06:00:00+08:00",
+          "note": "首次进入 Top 3"
+        }
+      ],
+      "benchmark_watch": [
+        {
+          "vendor": "DeepSeek",
+          "model": "DeepSeek V4",
+          "source": "DeepSeek 技术报告",
+          "signal": "新一轮官方 benchmark 快照显示其在 MATH-500 与 AIME 上继续逼近 o1，但缺稳定前一日基线。",
+          "observed_at": "2026-04-10T06:00:00+08:00",
+          "note": "新评分首曝，未写入严格 delta",
+          "ref": "frontier_models[1]"
+        }
+      ],
+      "pricing_changes": [
+        {
+          "vendor": "DeepSeek",
+          "model": "DeepSeek V4",
+          "price_type": "blended",
+          "currency": "USD",
+          "old_price_per_mtok": 0.14,
+          "new_price_per_mtok": 0.096,
+          "change_pct": -31.5,
+          "direction": "down",
+          "observed_at": "2026-04-10T06:00:00+08:00",
+          "note": "开源同步降价"
+        }
+      ],
+      "adoption_signals": [
+        {
+          "vendor": "Microsoft",
+          "product": "Microsoft 365 Copilot",
+          "metric": "paid_seats",
+          "value": "20M paid seats",
+          "source": "Microsoft earnings call transcript",
+          "observed_at": "2026-04-10T06:00:00+08:00",
+          "note": "示例 fixture，用于验证商业化采用率渲染",
+          "ref": "general_agents[0]"
+        }
+      ],
+      "capability_gaps": [
+        {
+          "text": "DeepSeek V4 在 MATH-500 上追上 o1，但 AIME 仍落后约 6 分。",
+          "evidence": "DeepSeek 官方技术报告 Table 3",
+          "ref": "frontier_models[1]"
+        }
+      ],
+      "empty_message": "今日无显著硬数据变化"
+    },
+    "pattern_observations": {
+      "title": "跨条目模式",
+      "items": [
+        {
+          "theme": "推理能力开始向开源外溢",
+          "supporting_item_refs": ["frontier_models[0]", "frontier_models[1]"],
+          "interpretation_for_tech_lead": "Anthropic 与 DeepSeek 同周释放推理强化模型，前者闭源高价、后者开源降价 30%。这意味着推理能力的护城河正在被开源加速压缩，技术负责人应推迟对独家闭源供应商的长期下注，转而预留 1-2 个季度的自建推理服务预算窗口与团队适配带宽。"
+        }
+      ],
+      "empty_message": "今日无显著跨条目模式"
+    },
+    "experiments_this_week": {
+      "title": "本期建议实验",
+      "items": [
+        {
+          "title": "Plan Mode 双盲对比",
+          "hypothesis": "Plan Mode 在中型重构任务上的一次成功率比直出模式高 ≥30%。",
+          "steps": [
+            "选 3 个真实重构 ticket",
+            "分别用 Plan Mode 与默认模式各跑一次",
+            "记录通过率与人工返工次数"
+          ],
+          "time_budget_hours": {"min": 4, "max": 8},
+          "expected_output": "一份对比表 + 推荐使用场景结论",
+          "required_skills": ["Claude Code 熟练", "代码 review"],
+          "audience": "personal_workflow",
+          "related_item_refs": ["coding_agents[0]"]
+        }
+      ],
+      "empty_message": "今日无适合 1 日内验证的实验"
+    },
+    "decision_radar": {
+      "title": "决策雷达",
+      "decisions": [
+        {
+          "decision_name": "coding-agent-2026H2",
+          "items": [
+            {"ref": "coding_agents[0]", "impact": "Composer 2.0 内测开放，对比评估窗口提前，建议纳入本轮选型测试。"}
+          ]
+        }
+      ],
+      "empty_message": "今日无影响在途决策的信息"
+    },
+    "action_items": {
+      "title": "今日落地建议",
+      "items": [
+        {
+          "recommendation": "本周让 2-3 个核心工程师试用 Claude Code Plan Mode 并反馈",
+          "rationale": "Plan Mode 把 coding agent 推向 plan-review-execute 协作模式，提前掌握能压缩复杂任务返工成本。",
+          "recommendation_type": "experiment",
+          "effort_person_days": {"min": 1, "max": 2},
+          "time_horizon": "this_week",
+          "team_size_applicability": ["small_lt_10", "medium_10_50"],
+          "success_metric": "≥3 个 ticket 用 Plan Mode 完成且通过 review",
+          "priority": "P1",
+          "references": [
+            {"date": "2026-04-09", "headline": "Claude Code Plan Mode 发布", "url": "https://docs.anthropic.com/en/release-notes/claude-code", "section": "coding_agents", "editorial_tier": "core", "release_stage": "ga", "authority_score": 5}
+          ]
+        },
+        {
+          "recommendation": "评估 DeepSeek V4 作为自建推理服务的开源底座",
+          "rationale": "V4 推理性能接近 o1 但价格降 30%，适合替换部分闭源调用。",
+          "recommendation_type": "adopt",
+          "effort_person_days": {"min": 3, "max": 6},
+          "time_horizon": "this_month",
+          "team_size_applicability": ["medium_10_50", "large_gt_50"],
+          "success_metric": "完成自建部署原型并跑通 1 个内部场景",
+          "priority": "P2",
+          "references": [
+            {"date": "2026-04-09", "headline": "DeepSeek V4 开源", "url": "https://api-docs.deepseek.com/news/v4", "section": "frontier_models", "editorial_tier": "watch", "release_stage": "ga", "authority_score": 5}
+          ]
+        },
+        {
+          "recommendation": "持续观察 Cursor Composer 2.0 内测反馈",
+          "rationale": "Composer 2.0 还在 beta，且仅靠广义搜索确认，暂不投入但需保持视线。",
+          "recommendation_type": "monitor",
+          "effort_person_days": {"min": 0.25, "max": 0.5},
+          "time_horizon": "this_week",
+          "team_size_applicability": ["small_lt_10", "medium_10_50", "large_gt_50"],
+          "priority": "P2"
+        }
+      ],
+      "empty_message": "今日无明显行动项，延续近期建议。"
+    },
+    "unverified": {
+      "title": "待核实区",
+      "items": [
+        {
+          "headline": "字节即将发布通用 agent 产品",
+          "summary": "传闻字节下月将发布通用 agent，整合豆包能力。",
+          "source_name": "机器之心",
+          "source_url": "https://www.jiqizhixin.com/articles/xxx",
+          "reason_unverified": "无官方声明，单一中文媒体来源"
+        }
+      ]
+    }
+  },
+    "fetch_status": {
+    "succeeded": ["OpenAI", "Anthropic", "Google DeepMind", "Claude Code", "Cursor", "DeepSeek"],
+    "failed": [
+      {"name": "MiniMax", "reason": "timeout after 30s", "attempts": 3}
+    ],
+    "empty": ["Cursor", "xAI", "Meta AI"],
+    "source_details": {
+      "OpenAI": {
+        "final_layer_index": 1,
+        "final_layer_type": "websearch_scoped",
+        "via_broad_search": false,
+        "confidence_policy": "downgrade_one_step",
+        "attempts": [
+          {"layer_index": 0, "layer_type": "webfetch", "target": "https://openai.com/news/", "result": "error", "reason": "HTTP 403"},
+          {"layer_index": 1, "layer_type": "websearch_scoped", "target": "OpenAI announcement site:openai.com", "result": "success"}
+        ]
+      },
+      "Cursor": {
+        "final_layer_index": 2,
+        "final_layer_type": "websearch_broad",
+        "via_broad_search": true,
+        "confidence_policy": "force_medium_plus_flag",
+        "attempts": [
+          {"layer_index": 0, "layer_type": "webfetch", "target": "https://www.cursor.com/changelog", "result": "error", "reason": "HTTP 403"},
+          {"layer_index": 1, "layer_type": "websearch_scoped", "target": "Cursor changelog site:cursor.com", "result": "empty"},
+          {"layer_index": 2, "layer_type": "websearch_broad", "target": "Cursor Composer 2.0 release", "result": "success"}
+        ]
+      }
+    }
+  }
+}

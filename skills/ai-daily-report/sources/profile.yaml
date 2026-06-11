@@ -1,0 +1,28 @@
+# 读者画像：AI 编辑做相关性与决策影响判断的输入。
+# roles 是长期角色；decisions_in_flight 是在途决策（radar 按它分组）；
+# practice_focus 锚定 agent_ecosystem 的相关性判断。过期决策应删除或归档。
+
+roles:
+  - id: coding_agent_selection
+    description: 公司 coding agent 方案选型负责人
+  - id: workplace_ai_enablement
+    description: 公司非技术人员 AI Agent 方案负责人
+  - id: ai_coding_adoption_lead
+    description: 技术总监，负责团队 AI coding 推进与最佳实践沉淀
+  - id: agent_power_user
+    description: 开发工程师，深度使用 Claude Code / Codex
+
+decisions_in_flight:
+  - name: coding-agent-2026H2
+    description: 公司 coding agent 选型
+    candidates: [Claude Code, Codex, Cursor, GitHub Copilot]
+    criteria: [企业管控/SSO/审计, 定价与席位, 模型路由灵活性, CN 可用性]
+  - name: workplace-ai
+    description: 非技术员工 AI agent 方案
+    candidates: [Microsoft 365 Copilot, ChatGPT Enterprise, 飞书/钉钉 AI]
+    criteria: [非技术上手成本, 数据合规, 部署形态]
+
+practice_focus:
+  - 团队级 agent 工作流（code review / 测试 / CI 集成 / 多 agent 编排）
+  - Claude Code / Codex 的 skills、插件、MCP 生态
+  - AI coding 推广度量与治理（采纳率、效率度量、权限管控）
