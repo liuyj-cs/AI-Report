@@ -17,5 +17,8 @@ venv/
 # Tests output
 skills/ai-daily-report/tests/output/
 
+# Internal planning/spec docs (not for upload)
+docs/superpowers/
+
 # OS
 .DS_Store
