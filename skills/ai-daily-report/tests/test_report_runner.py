@@ -397,7 +397,7 @@ def test_finalize_weekly_dry_run_writes_html_and_archive(tmp_path, normalized_we
         encoding="utf-8",
     )
     _write_weekly_daily_reports(tmp_path, normalized_weekly_report, sample_daily_report)
-    cache_dir = tmp_path / "cache" / "weekly" / "2026-W15"
+    cache_dir = tmp_path / "cache" / "weekly" / "2026-04-12"
     cache_dir.mkdir(parents=True)
     report = deepcopy(normalized_weekly_report)
     report["generated_at"] = "2026-04-12T08:00:00+08:00"
@@ -409,8 +409,8 @@ def test_finalize_weekly_dry_run_writes_html_and_archive(tmp_path, normalized_we
             "--project-root",
             str(tmp_path),
             "finalize-weekly",
-            "--iso-week",
-            "2026-W15",
+            "--end-date",
+            "2026-04-12",
             "--dry-run",
             "--env",
             str(env_path),
@@ -420,7 +420,7 @@ def test_finalize_weekly_dry_run_writes_html_and_archive(tmp_path, normalized_we
     assert exit_code == 0
     assert (cache_dir / "qa_diff.json").exists()
     assert (cache_dir / "report.html").exists()
-    assert (tmp_path / "reports" / "weekly" / "2026-W15.html").exists()
+    assert (tmp_path / "reports" / "weekly" / "2026-04-12.html").exists()
 
 
 def test_finalize_weekly_rejects_missing_source_day_report(tmp_path, normalized_weekly_report):
@@ -429,7 +429,7 @@ def test_finalize_weekly_rejects_missing_source_day_report(tmp_path, normalized_
         "GMAIL_USER=test@example.com\nGMAIL_APP_PASSWORD=secret\nREPORT_RECIPIENTS=a@example.com\n",
         encoding="utf-8",
     )
-    cache_dir = tmp_path / "cache" / "weekly" / "2026-W15"
+    cache_dir = tmp_path / "cache" / "weekly" / "2026-04-12"
     cache_dir.mkdir(parents=True)
     report = deepcopy(normalized_weekly_report)
     report["generated_at"] = "2026-04-12T08:00:00+08:00"
@@ -441,8 +441,8 @@ def test_finalize_weekly_rejects_missing_source_day_report(tmp_path, normalized_
             "--project-root",
             str(tmp_path),
             "finalize-weekly",
-            "--iso-week",
-            "2026-W15",
+            "--end-date",
+            "2026-04-12",
             "--dry-run",
             "--env",
             str(env_path),
@@ -453,14 +453,14 @@ def test_finalize_weekly_rejects_missing_source_day_report(tmp_path, normalized_
     assert (cache_dir / "qa_diff.json").exists()
 
 
-def test_finalize_weekly_rejects_iso_week_mismatch(tmp_path, normalized_weekly_report, sample_daily_report):
+def test_finalize_weekly_rejects_week_end_mismatch(tmp_path, normalized_weekly_report, sample_daily_report):
     env_path = tmp_path / ".env"
     env_path.write_text(
         "GMAIL_USER=test@example.com\nGMAIL_APP_PASSWORD=secret\nREPORT_RECIPIENTS=a@example.com\n",
         encoding="utf-8",
     )
     _write_weekly_daily_reports(tmp_path, normalized_weekly_report, sample_daily_report)
-    cache_dir = tmp_path / "cache" / "weekly" / "2026-W16"
+    cache_dir = tmp_path / "cache" / "weekly" / "2026-04-13"
     cache_dir.mkdir(parents=True)
     report = deepcopy(normalized_weekly_report)
     (cache_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -471,8 +471,8 @@ def test_finalize_weekly_rejects_iso_week_mismatch(tmp_path, normalized_weekly_r
             "--project-root",
             str(tmp_path),
             "finalize-weekly",
-            "--iso-week",
-            "2026-W16",
+            "--end-date",
+            "2026-04-13",
             "--dry-run",
             "--env",
             str(env_path),
