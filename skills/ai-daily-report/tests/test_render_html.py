@@ -629,7 +629,7 @@ def test_daily_schema_accepts_major_event_expanded_block():
 def test_daily_schema_rejects_overlong_expanded_field():
     data = json.loads((FIXTURES / "sample_daily.json").read_text(encoding="utf-8"))
     item = _major_event_item(data["sections"]["frontier_models"]["items"][0])
-    item["expanded"]["what_shipped"] = "长" * 401
+    item["expanded"]["what_shipped"] = "长" * 601
     data["sections"]["frontier_models"]["items"][0] = item
     validator = Draft202012Validator(_load_daily_schema())
     assert any(
@@ -667,6 +667,23 @@ def test_render_daily_major_event_expanded_block(tmp_path):
     assert "发布要点" in text
     assert "待验证" in text
     assert "第三方 benchmark（LMArena / AA）何时收录" in text
+
+
+def test_render_daily_expanded_decision_and_quickstart(tmp_path):
+    data = json.loads((FIXTURES / "sample_daily.json").read_text(encoding="utf-8"))
+    item = _major_event_item(data["sections"]["frontier_models"]["items"][0])
+    item["expanded"]["decision_relevance"] = "对正在评估的 coding agent 选型，这一代模型显著改变 Claude 档位的性价比判断，建议本周内重排候选。"
+    item["expanded"]["quick_start"] = "Claude Code 中 /model 切换 claude-fable-5 即可试用；API 侧把模型号换成 claude-fable-5，无需改请求结构。"
+    data["sections"]["frontier_models"]["items"][0] = item
+    src = tmp_path / "report.json"
+    src.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    output = tmp_path / "report.html"
+    result = run_render(src, output)
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    text = BeautifulSoup(output.read_text(encoding="utf-8"), "html.parser").get_text()
+    assert "对选型意味着什么" in text
+    assert "快速上手" in text
 
 
 # ---------- Task 2: decision_radar ----------

@@ -172,6 +172,8 @@
   {% if item.expanded.pricing_availability %}<div class="row"><span class="label">定价与可用性：</span>{{ item.expanded.pricing_availability }}</div>{% endif %}
   {% if item.expanded.comparison %}<div class="row"><span class="label">对比现役：</span>{{ item.expanded.comparison }}</div>{% endif %}
   {% if item.expanded.third_party_reaction %}<div class="row"><span class="label">第三方反应：</span>{{ item.expanded.third_party_reaction }}</div>{% endif %}
+  {% if item.expanded.decision_relevance %}<div class="row"><span class="label">对选型意味着什么：</span>{{ item.expanded.decision_relevance }}</div>{% endif %}
+  {% if item.expanded.quick_start %}<div class="row"><span class="label">快速上手：</span>{{ item.expanded.quick_start }}</div>{% endif %}
   <div class="row"><span class="label">待验证：</span></div>
   <ul class="open-questions">{% for q in item.expanded.open_questions %}<li>{{ q }}</li>{% endfor %}</ul>
 </div>

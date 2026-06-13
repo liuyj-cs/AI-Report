@@ -214,6 +214,8 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - `pricing_availability`（≤300 字，可选）：定价、配额、可用区
      - `comparison`（≤300 字，可选）：与现役模型/版本对比
      - `third_party_reaction`（≤300 字，可选）：已抓到证据的第三方反应，禁止臆测
+     - `decision_relevance`（≤300 字，可选）：对在途选型/迁移决策的整体判断（与 decision_radar 互补：radar 按决策分组一句话，这里是事件视角）
+     - `quick_start`（≤300 字，可选）：第一时间上手路径（入口 / 版本号 / 前置条件）
      - `open_questions`（1-5 条，必填）：待验证问题清单，将转入事件追踪
    - **开追踪档案**：写 `cache/tracking/{event_slug}.json`（schema `schemas/event_tracking.schema.json`）。`event_slug` 用小写连字符（如 `claude-fable-5`），`expires_on` 距 `opened_date` 不超过 5 天，`watch_items` 直接继承 `open_questions`。条目同时写 `tracking_ref: {event_slug}`；finalize 会校验 `major_event` 条目必须有 expanded + tracking_ref，且 tracking_ref 能解析到活跃档案。
    - **追踪期内的后续日报**：`discovery_manifest.json` 的 `active_tracking` 会列出活跃追踪事件。对每个活跃事件至少执行一轮定向搜索（第三方评测 / 实测反馈 / 价格与配额变化）。命中的增量条目：
@@ -518,7 +520,9 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 | `experiments_this_week.items[].time_budget_hours.max` | 日报 ≤ 8、周报 ≤ 16 |
 | `action_items.items[].recommendation_type` | 一期 items ≥ 3 时必须出现 ≥3 种 |
 | `action_items.items[].effort_person_days.max` | ≤ `min × 3` |
-| `expanded.what_shipped` | 50-400 字（仅 major_event 条目） |
+| `expanded.what_shipped` | 50-600 字（仅 major_event 条目） |
+| `expanded.benchmarks` | ≤600 字；`pricing_availability` / `comparison` / `third_party_reaction` 各 ≤400 字 |
+| `expanded.decision_relevance` / `expanded.quick_start` | 各 ≤300 字，可选 |
 | `expanded.open_questions` | 1-5 条，每条 ≤ 120 字 |
 | `major_event` 条目 | 仅 core；每日 0-2 条；必须同时有 `expanded` 与 `tracking_ref` |
 | `decision_radar` impact | ≤ 120 字，每决策 ≤ 4 条 |

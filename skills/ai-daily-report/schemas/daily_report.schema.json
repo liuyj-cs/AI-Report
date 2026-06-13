@@ -283,11 +283,13 @@
       "type": "object",
       "required": ["what_shipped", "open_questions"],
       "properties": {
-        "what_shipped": {"type": "string", "minLength": 50, "maxLength": 400},
-        "benchmarks": {"type": "string", "maxLength": 400},
-        "pricing_availability": {"type": "string", "maxLength": 300},
-        "comparison": {"type": "string", "maxLength": 300},
-        "third_party_reaction": {"type": "string", "maxLength": 300},
+        "what_shipped": {"type": "string", "minLength": 50, "maxLength": 600},
+        "benchmarks": {"type": "string", "maxLength": 600},
+        "pricing_availability": {"type": "string", "maxLength": 400},
+        "comparison": {"type": "string", "maxLength": 400},
+        "third_party_reaction": {"type": "string", "maxLength": 400},
+        "decision_relevance": {"type": "string", "maxLength": 300},
+        "quick_start": {"type": "string", "maxLength": 300},
         "open_questions": {
           "type": "array",
           "minItems": 1,
