@@ -8,7 +8,7 @@
 #     * github_releases   {repo, path?}      confidence 不变
 #     * websearch_scoped  {queries: []}      confidence 降一档（high→medium）
 #     * websearch_broad   {queries: []}      confidence 强制 medium + via_broad_search 标记
-#   - queries 占位符：{date}、{yesterday}、{iso_week}
+#   - queries 占位符：{date}、{yesterday}、{week_range}
 #   - 「成功」判定：HTTP 200 且页面体感为真实内容（非纯 CSS 模板 / 空骨架 / 登录墙）。
 #     窗口内 0 条目（empty_in_window）属于合法成功，不应继续向下层穿透。
 #   - verify_before_use: true 表示该源 Layer 0 入口尚未被人工 verify 过，跑日报时

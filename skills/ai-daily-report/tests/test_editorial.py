@@ -13,6 +13,7 @@ from editorial import (
     validate_major_event_consistency,
     validate_practice_digest,
     validate_weekly_artifacts,
+    validate_weekly_source_days,
 )
 
 
@@ -1099,7 +1100,26 @@ def test_validate_weekly_artifacts_rejects_incomplete_source_days(tmp_path, norm
     errors = validate_weekly_artifacts(weekly, tmp_path)
 
     assert any("must contain 7 dates" in error for error in errors)
-    assert any("must match ISO week" in error for error in errors)
+    assert any("must be the 7 days ending" in error for error in errors)
+
+
+def test_validate_weekly_source_days_rolling_window_crosses_month():
+    report = {
+        "week_end": "2026-05-03",
+        "source_days": {
+            "daily_reports_used": [
+                "2026-04-27", "2026-04-28", "2026-04-29", "2026-04-30",
+                "2026-05-01", "2026-05-02", "2026-05-03",
+            ],
+            "backfilled": [],
+        },
+    }
+    assert validate_weekly_source_days(report) == []
+
+
+def test_validate_weekly_source_days_requires_week_end():
+    report = {"source_days": {"daily_reports_used": [], "backfilled": []}}
+    assert validate_weekly_source_days(report) == ["weekly report missing week_end"]
 
 
 def test_build_weekly_qa_diff_reports_reference_gaps(tmp_path, normalized_weekly_report, sample_daily_report):
