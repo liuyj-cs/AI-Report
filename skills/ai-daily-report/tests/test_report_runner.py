@@ -319,7 +319,7 @@ def test_finalize_daily_rejects_candidate_ledger_missing_audit_field(
     assert not (cache_dir / "report.html").exists()
 
 
-def test_init_weekly_writes_input_days_manifest(tmp_path):
+def test_init_weekly_writes_rolling_input_days(tmp_path):
     env_path = tmp_path / ".env"
     env_path.write_text(
         "GMAIL_USER=test@example.com\nGMAIL_APP_PASSWORD=secret\nREPORT_RECIPIENTS=a@example.com\n",
@@ -331,17 +331,48 @@ def test_init_weekly_writes_input_days_manifest(tmp_path):
             "--project-root",
             str(tmp_path),
             "init-weekly",
-            "--iso-week",
-            "2026-W16",
+            "--end-date",
+            "2026-05-03",
             "--now",
-            "2026-04-18T08:00:00+08:00",
+            "2026-05-03T08:00:00+08:00",
             "--env",
             str(env_path),
         ]
     )
 
     assert exit_code == 0
-    assert (tmp_path / "cache" / "weekly" / "2026-W16" / "input_days.json").exists()
+    payload = json.loads(
+        (tmp_path / "cache" / "weekly" / "2026-05-03" / "input_days.json").read_text(encoding="utf-8")
+    )
+    assert payload["week_end"] == "2026-05-03"
+    assert payload["source_days"] == [
+        "2026-04-27", "2026-04-28", "2026-04-29", "2026-04-30",
+        "2026-05-01", "2026-05-02", "2026-05-03",
+    ]
+
+
+def test_init_weekly_rejects_invalid_end_date(tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "GMAIL_USER=test@example.com\nGMAIL_APP_PASSWORD=secret\nREPORT_RECIPIENTS=a@example.com\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "init-weekly",
+            "--end-date",
+            "2026-W20",
+            "--now",
+            "2026-05-03T08:00:00+08:00",
+            "--env",
+            str(env_path),
+        ]
+    )
+
+    assert exit_code == 1
 
 
 def _write_weekly_daily_reports(tmp_path, weekly_report, sample_daily_report):

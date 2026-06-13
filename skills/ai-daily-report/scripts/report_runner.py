@@ -6,6 +6,7 @@ import argparse
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 from typing import Any
@@ -171,27 +172,33 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
     return 0, str(archived_path)
 
 
-def _iso_week_dates(iso_week: str) -> list[str]:
-    year_str, week_str = iso_week.split("-W", 1)
-    monday = datetime.fromisocalendar(int(year_str), int(week_str), 1)
-    return [(monday + timedelta(days=offset)).date().isoformat() for offset in range(7)]
+def _rolling_week_dates(week_end: str) -> list[str]:
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", week_end):
+        raise ValueError(f"week_end must be YYYY-MM-DD, got {week_end!r}")
+    end = datetime.fromisoformat(week_end).date()
+    return [(end - timedelta(days=offset)).isoformat() for offset in range(6, -1, -1)]
 
 
-def run_weekly_init(project_root: Path, iso_week: str, now_iso: str, env_path: Path) -> tuple[int, str]:
+def run_weekly_init(project_root: Path, week_end: str, now_iso: str, env_path: Path) -> tuple[int, str]:
     env = _load_env(env_path)
     ok, message = _validate_email_env(env)
     if not ok:
         return 1, message
 
-    cache_dir = project_root / "cache" / "weekly" / iso_week
+    try:
+        source_days = _rolling_week_dates(week_end)
+    except ValueError:
+        return 1, f"invalid --end-date {week_end!r}, expected YYYY-MM-DD"
+
+    cache_dir = project_root / "cache" / "weekly" / week_end
     cache_dir.mkdir(parents=True, exist_ok=True)
     run_log = cache_dir / "run.log"
-    append_run_log(run_log, f"{now_iso} START weekly iso_week={iso_week}")
+    append_run_log(run_log, f"{now_iso} START weekly week_end={week_end}")
     payload = {
         "version": "1.0",
         "type": "weekly_input_days",
-        "iso_week": iso_week,
-        "source_days": _iso_week_dates(iso_week),
+        "week_end": week_end,
+        "source_days": source_days,
     }
     path = cache_dir / "input_days.json"
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -272,7 +279,7 @@ def main(argv: list[str] | None = None, project_root: Path | None = None) -> int
     finalize_daily.add_argument("--dry-run", action="store_true")
 
     init_weekly = subparsers.add_parser("init-weekly")
-    init_weekly.add_argument("--iso-week", required=True)
+    init_weekly.add_argument("--end-date", required=True, dest="end_date")
     init_weekly.add_argument("--now", required=True)
     init_weekly.add_argument("--env", type=Path, default=Path(".env"))
 
@@ -289,7 +296,7 @@ def main(argv: list[str] | None = None, project_root: Path | None = None) -> int
     elif args.command == "finalize-daily":
         code, message = run_daily_finalize(root, args.date, args.dry_run, args.env)
     elif args.command == "init-weekly":
-        code, message = run_weekly_init(root, args.iso_week, args.now, args.env)
+        code, message = run_weekly_init(root, args.end_date, args.now, args.env)
     else:
         code, message = run_weekly_finalize(root, args.iso_week, args.dry_run, args.env)
 
