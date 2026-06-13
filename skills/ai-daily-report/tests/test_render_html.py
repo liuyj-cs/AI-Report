@@ -210,9 +210,10 @@ def test_render_weekly_full(tmp_path):
     soup = BeautifulSoup(html, "html.parser")
     text = soup.get_text()
 
-    # 标题和周标识
+    # 标题和窗口标识
     assert "AI 周报" in text
-    assert "2026-W15" in text
+    assert "2026-04-12" in text
+    assert "2026-04-06" in text
 
     # 九个章节标题
     assert "本周核心结论" in text
