@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
 from pathlib import Path
-import re
 import subprocess
 import sys
 from typing import Any
@@ -21,6 +20,7 @@ from discovery import (
     compute_daily_window,
     load_profile,
     load_whitelist,
+    rolling_week_dates,
     write_discovery_manifest,
 )
 from ecosystem import record_ecosystem_repos
@@ -193,14 +193,6 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
     return 0, str(archived_path)
 
 
-def _rolling_week_dates(week_end: str) -> list[str]:
-    # fromisoformat (py>=3.11) accepts ISO week strings like "2026-W20"; require plain YYYY-MM-DD
-    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", week_end):
-        raise ValueError(f"week_end must be YYYY-MM-DD, got {week_end!r}")
-    end = datetime.fromisoformat(week_end).date()
-    return [(end - timedelta(days=offset)).isoformat() for offset in range(6, -1, -1)]
-
-
 def run_weekly_init(project_root: Path, week_end: str, now_iso: str, env_path: Path) -> tuple[int, str]:
     env = _load_env(env_path)
     ok, message = _validate_email_env(env)
@@ -208,7 +200,7 @@ def run_weekly_init(project_root: Path, week_end: str, now_iso: str, env_path: P
         return 1, message
 
     try:
-        source_days = _rolling_week_dates(week_end)
+        source_days = rolling_week_dates(week_end)
     except ValueError:
         return 1, f"invalid --end-date {week_end!r}, expected YYYY-MM-DD"
 
@@ -261,7 +253,7 @@ def run_weekly_finalize(project_root: Path, week_end: str, dry_run: bool, env_pa
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END weekly status=ok")
         return 0, str(archived_path)
 
-    week_start = _rolling_week_dates(week_end)[0]
+    week_start = rolling_week_dates(week_end)[0]
     code, send_output = _send_mail(project_root, archived_path, f"AI 周报 · {week_start} ~ {week_end}", env_path)
     if code != 0:
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")

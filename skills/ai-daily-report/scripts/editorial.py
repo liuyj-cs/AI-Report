@@ -11,7 +11,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-from discovery import RECALL_PROBE_SURFACE_NAME, missing_fetch_status_coverage, required_source_family_names
+from discovery import RECALL_PROBE_SURFACE_NAME, missing_fetch_status_coverage, required_source_family_names, rolling_week_dates
 from ecosystem import load_seen_repos, validate_ecosystem_repeats
 from tracking import validate_tracking_refs
 from deep_dive import validate_deep_dives
@@ -553,9 +553,12 @@ def _weekly_item_counts(report: dict[str, Any]) -> dict[str, int]:
     }
 
 
-def _expected_rolling_week_dates(week_end: str) -> list[str]:
-    end = datetime.fromisoformat(week_end).date()
-    return [(end - timedelta(days=offset)).isoformat() for offset in range(6, -1, -1)]
+def _window_date_part(value: str) -> str:
+    """Return the YYYY-MM-DD date of a window edge (e.g. '2026-04-06T00:00:00+08:00')."""
+    try:
+        return datetime.fromisoformat(value).date().isoformat()
+    except ValueError:
+        return value[:10]
 
 
 def validate_weekly_source_days(report: dict[str, Any]) -> list[str]:
@@ -565,7 +568,7 @@ def validate_weekly_source_days(report: dict[str, Any]) -> list[str]:
         return ["weekly report missing week_end"]
 
     try:
-        expected_days = _expected_rolling_week_dates(week_end)
+        expected_days = rolling_week_dates(week_end)
     except ValueError as exc:
         return [f"weekly report has invalid week_end {week_end!r}: {exc}"]
 
@@ -581,6 +584,15 @@ def validate_weekly_source_days(report: dict[str, Any]) -> list[str]:
         errors.append(f"source_days.daily_reports_used must be the 7 days ending {week_end}")
     if not set(backfilled).issubset(set(daily_reports_used)):
         errors.append("source_days.backfilled must be a subset of daily_reports_used")
+
+    # Cross-check the declared window against the rolling 7-day span (date-level only).
+    window = report.get("window", {})
+    win_start = str(window.get("start", ""))
+    win_end = str(window.get("end", ""))
+    if win_start and _window_date_part(win_start) != expected_days[0]:
+        errors.append(f"window.start date {win_start!r} does not match week_end-6 {expected_days[0]}")
+    if win_end and _window_date_part(win_end) != week_end:
+        errors.append(f"window.end date {win_end!r} does not match week_end {week_end}")
     return errors
 
 

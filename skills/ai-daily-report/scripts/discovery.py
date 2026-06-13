@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, time, timedelta
 import json
 from pathlib import Path
+import re
 from typing import Any, Iterator
 
 import yaml
@@ -137,6 +138,19 @@ def required_discovery_names(whitelist: dict[str, Any]) -> list[str]:
         if name not in deduped:
             deduped.append(name)
     return deduped
+
+
+def rolling_week_dates(week_end: str) -> list[str]:
+    """Return the 7 calendar dates ending at week_end (ascending).
+
+    Shared by report_runner (CLI --end-date) and editorial (weekly validation).
+    fromisoformat (py>=3.11) accepts ISO week strings like "2026-W20"; require
+    plain YYYY-MM-DD so the single guard lives here, not duplicated per caller.
+    """
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", week_end):
+        raise ValueError(f"week_end must be YYYY-MM-DD, got {week_end!r}")
+    end = datetime.fromisoformat(week_end).date()
+    return [(end - timedelta(days=offset)).isoformat() for offset in range(6, -1, -1)]
 
 
 def compute_daily_window(target_date: str, now_iso: str) -> dict[str, str]:

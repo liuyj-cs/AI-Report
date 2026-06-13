@@ -1117,6 +1117,46 @@ def test_validate_weekly_source_days_rolling_window_crosses_month():
     assert validate_weekly_source_days(report) == []
 
 
+def test_validate_weekly_source_days_accepts_matching_window():
+    report = {
+        "week_end": "2026-05-03",
+        "window": {
+            "start": "2026-04-27T00:00:00+08:00",
+            "end": "2026-05-03T23:59:59+08:00",
+            "timezone": "Asia/Shanghai",
+        },
+        "source_days": {
+            "daily_reports_used": [
+                "2026-04-27", "2026-04-28", "2026-04-29", "2026-04-30",
+                "2026-05-01", "2026-05-02", "2026-05-03",
+            ],
+            "backfilled": [],
+        },
+    }
+    assert validate_weekly_source_days(report) == []
+
+
+def test_validate_weekly_source_days_rejects_window_not_matching_week_end():
+    report = {
+        "week_end": "2026-05-03",
+        "window": {
+            "start": "2026-04-26T00:00:00+08:00",
+            "end": "2026-05-02T23:59:59+08:00",
+            "timezone": "Asia/Shanghai",
+        },
+        "source_days": {
+            "daily_reports_used": [
+                "2026-04-27", "2026-04-28", "2026-04-29", "2026-04-30",
+                "2026-05-01", "2026-05-02", "2026-05-03",
+            ],
+            "backfilled": [],
+        },
+    }
+    errors = validate_weekly_source_days(report)
+    assert any("window.start" in error for error in errors)
+    assert any("window.end" in error for error in errors)
+
+
 def test_validate_weekly_source_days_requires_week_end():
     report = {"source_days": {"daily_reports_used": [], "backfilled": []}}
     assert validate_weekly_source_days(report) == ["weekly report missing week_end"]
