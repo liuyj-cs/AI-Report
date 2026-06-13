@@ -14,6 +14,7 @@ from typing import Any
 from dotenv import dotenv_values
 
 from archive import archive as archive_html
+from deep_dive import deep_dive_path, major_event_slugs
 from discovery import (
     append_run_log,
     build_discovery_manifest,
@@ -158,6 +159,20 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
     if recorded:
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} ECOSYSTEM seen_repos+={recorded}")
 
+    deep_dive_sends: list[tuple[Path, str]] = []
+    for _, slug in major_event_slugs(report):
+        if not slug:
+            continue
+        dd_json_path = deep_dive_path(project_root, target_date, slug)
+        dd_html_path = render(dd_json_path)
+        dd_archived = archive_html(dd_html_path, "deep_dive", f"{target_date}-{slug}", project_root)
+        append_run_log(
+            run_log,
+            f"{report.get('generated_at', datetime.now().isoformat())} DEEPDIVE {dd_archived.relative_to(project_root)} ok",
+        )
+        dd_payload = _load_json(dd_json_path)
+        deep_dive_sends.append((dd_archived, f"AI 深度 · {dd_payload['title']}"))
+
     if dry_run:
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL skipped (dry-run)")
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=ok")
@@ -168,6 +183,12 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
         return code, send_output
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
+    for dd_archived, dd_subject in deep_dive_sends:
+        code, send_output = _send_mail(project_root, dd_archived, dd_subject, env_path)
+        if code != 0:
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
+            return code, send_output
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=ok")
     return 0, str(archived_path)
 
