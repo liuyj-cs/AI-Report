@@ -5,6 +5,7 @@
 cache/
 reports/daily/*.html
 reports/weekly/*.html
+reports/deep_dives/*.html
 
 # Python
 __pycache__/
