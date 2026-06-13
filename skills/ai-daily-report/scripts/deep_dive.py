@@ -17,7 +17,12 @@ def deep_dive_path(project_root: Path, date: str, slug: str) -> Path:
 
 
 def major_event_slugs(report: dict[str, Any]) -> list[tuple[str, str]]:
-    """Return (section_label, tracking_ref) for every major_event item."""
+    """Return (section_label, tracking_ref) for every major_event item.
+
+    tracking_ref is "" when the item lacks one; callers that resolve a deep
+    dive file from the slug must skip empty slugs (validate_major_event_consistency
+    is responsible for flagging major_event items missing a tracking_ref).
+    """
     pairs: list[tuple[str, str]] = []
     for section_name in ("frontier_models", "coding_agents", "general_agents"):
         for index, item in enumerate(report.get("sections", {}).get(section_name, {}).get("items", [])):

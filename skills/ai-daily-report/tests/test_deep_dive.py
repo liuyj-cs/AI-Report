@@ -51,6 +51,8 @@ def test_validate_deep_dives_passes_with_valid_file(tmp_path, sample_deep_dive):
 def test_validate_deep_dives_rejects_slug_mismatch(tmp_path, sample_deep_dive):
     payload = deepcopy(sample_deep_dive)
     payload["event_slug"] = "wrong-slug"
+    # write at the claude-fable-5 path but with a mismatching internal slug,
+    # so _write_deep_dive (which keys on payload["event_slug"]) can't be used here
     path = deep_dive_path(tmp_path, "2026-06-13", "claude-fable-5")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
