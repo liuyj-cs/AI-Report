@@ -507,6 +507,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 - **send_mail.py 失败**：HTML 已归档 → 报告失败但不回滚归档。退出码 2（认证失败）→ 提示用户重新生成 Gmail 应用专用密码并更新 `.env`；退出码 3（网络/SMTP 错误）→ 建议稍后重跑 `send_mail.py` 单步重试
 - **追踪档案损坏**：`cache/tracking/` 下存在无法解析或不符合 schema 的档案 → finalize 校验失败（错误信息会点名该文件）。修复或删除该档案后重跑；过期超过 7 天的档案由 finalize 自动清理。
 - **深度专题缺失或损坏**：major_event 条目无对应 `cache/{date}/deep_dive_{slug}.json`、或该文件 schema 校验失败 → finalize-daily 失败，不归档不发信；补写/修复专题 JSON 后重跑。补发型专题（事后为历史事件单独生成）不要求当日日报存在对应 major_event 条目。
+- **专题邮件失败后重跑会重发**：`finalize-daily` 没有发送幂等护栏。日报邮件已发成功、随后某份深度专题邮件失败时，函数返回该专题的非零码；此时**重跑整个 finalize-daily 会重发日报正文与已成功的专题邮件**（deep dive 把可失败的发送步骤从 1 放大到 N+1）。要避免重复：失败后改用 `send_mail.py reports/deep_dives/{date}-{slug}.html` 单步只补发失败的那一份，不要整体重跑 finalize。
 
 ## 产出字段约束
 
