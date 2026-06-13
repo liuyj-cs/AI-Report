@@ -134,6 +134,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - 严禁使用固定分数阈值、固定厂商排名、固定 Top N 条数决定正文入选与排序
      - 严禁因为“某厂商默认更重要”而跳过窗口硬卡、版本校验或来源闭环
      - **重大事件判定（major_event）**：当一条 `selected_core` 候选满足「会改变读者的选型决策、或值得当天安排评估」（典型：新一代前沿模型发布、头部 coding agent 重大版本或定价变化、影响选型的重大产品发布）时，标记 `major_event: true`。这是编辑结论，不是分数阈值；每天 0-2 条，宁缺毋滥。
+     - **major_event 默认必标清单**：以下三类事件命中即默认 `major_event: true`——① 新一代前沿主力模型正式发布/GA（Anthropic / OpenAI / Google / Meta / DeepSeek / Qwen 等，如 GPT-5.6、Gemini 3.5 Pro、Claude 新主力）；② 头部 coding agent 重大版本或定价模式变化（Claude Code / Codex / Cursor / Copilot 量级）；③ 影响选型的重大 agent 平台 / 协议发布。命中清单但决定不标的候选，`candidate_ledger` 的 `decision_reason` 必须写明不算 major_event 的理由。
 
    **3-0. 窗口硬卡（最高优先级，无例外）**
    - 每条候选条目必须已填写 `published_at`（在 Step 1a 完成）
@@ -217,6 +218,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - `decision_relevance`（≤300 字，可选）：对在途选型/迁移决策的整体判断（与 decision_radar 互补：radar 按决策分组一句话，这里是事件视角）
      - `quick_start`（≤300 字，可选）：第一时间上手路径（入口 / 版本号 / 前置条件）
      - `open_questions`（1-5 条，必填）：待验证问题清单，将转入事件追踪
+   - **撰写深度专题（每个 major_event 一份）**：落盘 `cache/{date}/deep_dive_{event_slug}.json`（schema `schemas/deep_dive.schema.json`）。七个小节全部必填：`background`（背景与时间线）/ `what_shipped_detail`（发布详述）/ `benchmarks_pricing`（基准与定价）/ `ecosystem_reaction`（生态与第三方反应）/ `role_implications`（profile.yaml 四个角色各 1-2 句）/ `quick_start`（上手指引）/ `open_questions`；`references` ≥1 条且全部来自当日 fetch 已留痕的证据，禁止臆测。总篇幅 800-1500 字。素材不足以撑起全部小节 → 说明该事件不够格 major_event，只走 expanded。finalize 渲染为 `reports/deep_dives/{date}-{slug}.html` 并以「AI 深度 · {title}」**独立邮件**发送（日报正文保持紧凑）。
    - **开追踪档案**：写 `cache/tracking/{event_slug}.json`（schema `schemas/event_tracking.schema.json`）。`event_slug` 用小写连字符（如 `claude-fable-5`），`expires_on` 距 `opened_date` 不超过 5 天，`watch_items` 直接继承 `open_questions`。条目同时写 `tracking_ref: {event_slug}`；finalize 会校验 `major_event` 条目必须有 expanded + tracking_ref，且 tracking_ref 能解析到活跃档案。
    - **追踪期内的后续日报**：`discovery_manifest.json` 的 `active_tracking` 会列出活跃追踪事件。对每个活跃事件至少执行一轮定向搜索（第三方评测 / 实测反馈 / 价格与配额变化）。命中的增量条目：
      - 豁免 3-1 跨日去重（见该节例外 2），headline 必须体现增量（如「Fable 5 第三方评测首批出炉」）
@@ -504,6 +506,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 - **finalize-weekly 校验失败**：若缺日报 JSON、`source_days` 不完整、引用无法回指或 `itemRef` 越界 → 停止流程，不归档不发信，先修正 JSON / 日报缓存
 - **send_mail.py 失败**：HTML 已归档 → 报告失败但不回滚归档。退出码 2（认证失败）→ 提示用户重新生成 Gmail 应用专用密码并更新 `.env`；退出码 3（网络/SMTP 错误）→ 建议稍后重跑 `send_mail.py` 单步重试
 - **追踪档案损坏**：`cache/tracking/` 下存在无法解析或不符合 schema 的档案 → finalize 校验失败（错误信息会点名该文件）。修复或删除该档案后重跑；过期超过 7 天的档案由 finalize 自动清理。
+- **深度专题缺失或损坏**：major_event 条目无对应 `cache/{date}/deep_dive_{slug}.json`、或该文件 schema 校验失败 → finalize-daily 失败，不归档不发信；补写/修复专题 JSON 后重跑。补发型专题（事后为历史事件单独生成）不要求当日日报存在对应 major_event 条目。
 
 ## 产出字段约束
 
@@ -530,6 +533,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 | `experiments_this_week.items[].audience` | team_pilot / personal_workflow；周报尽量两种各 ≥1 |
 | `practice_digest.items[].summary` | 200-400 字（schema 兜底 120-600） |
 | `practice_digest.items[]` | 0-2 篇/周；origin 必须回指本周某日日报 agent_ecosystem 条目 |
+| 深度专题 | 每个 major_event 一份；七小节必填；总篇幅 800-1500 字；references ≥1 |
 
 ## 终端输出格式
 
