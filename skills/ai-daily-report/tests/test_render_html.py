@@ -842,3 +842,13 @@ def test_render_deep_dive_missing_section_fails_schema(tmp_path, sample_deep_div
     result = run_render(src, tmp_path / "out.html")
     assert result.returncode == 1
     assert "quick_start" in result.stderr
+
+
+def test_render_deep_dive_rejects_non_http_reference_url(tmp_path, sample_deep_dive):
+    data = deepcopy(sample_deep_dive)
+    data["references"][0]["url"] = "not-a-real-url"
+    src = tmp_path / "deep_dive_claude-fable-5.json"
+    src.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    result = run_render(src, tmp_path / "out.html")
+    assert result.returncode == 1
+    assert "url" in result.stderr or "pattern" in result.stderr
