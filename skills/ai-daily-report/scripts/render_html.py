@@ -16,14 +16,15 @@ SCHEMAS_DIR = SKILL_ROOT / "schemas"
 
 
 def load_schema(report_type: str) -> dict:
-    path = SCHEMAS_DIR / f"{report_type}_report.schema.json"
+    filename = "deep_dive.schema.json" if report_type == "deep_dive" else f"{report_type}_report.schema.json"
+    path = SCHEMAS_DIR / filename
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def render(json_path: Path, output_path: Path | None = None, report_type: str | None = None) -> Path:
     data = json.loads(json_path.read_text(encoding="utf-8"))
     rtype = report_type or data.get("type")
-    if rtype not in ("daily", "weekly"):
+    if rtype not in ("daily", "weekly", "deep_dive"):
         raise ValueError(f"Unknown report type: {rtype}")
 
     schema = load_schema(rtype)
@@ -43,7 +44,7 @@ def render(json_path: Path, output_path: Path | None = None, report_type: str | 
     html = template.render(report=data)
 
     if output_path is None:
-        output_path = json_path.with_name("report.html")
+        output_path = json_path.with_suffix(".html") if rtype == "deep_dive" else json_path.with_name("report.html")
     output_path.write_text(html, encoding="utf-8")
     return output_path
 
@@ -52,7 +53,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Render report JSON to HTML")
     parser.add_argument("json_path", type=Path)
     parser.add_argument("--output", type=Path, default=None)
-    parser.add_argument("--type", choices=["daily", "weekly"], default=None)
+    parser.add_argument("--type", choices=["daily", "weekly", "deep_dive"], default=None)
     args = parser.parse_args()
 
     try:

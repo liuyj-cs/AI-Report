@@ -2,6 +2,7 @@ import json
 import re
 import subprocess
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -29,12 +30,11 @@ SHARED_DEFS = [
 ]
 
 
-def run_render(json_path: Path, output_path: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, str(SCRIPT), str(json_path), "--output", str(output_path)],
-        capture_output=True,
-        text=True,
-    )
+def run_render(json_path: Path, output_path: Path | None = None) -> subprocess.CompletedProcess:
+    cmd = [sys.executable, str(SCRIPT), str(json_path)]
+    if output_path is not None:
+        cmd += ["--output", str(output_path)]
+    return subprocess.run(cmd, capture_output=True, text=True)
 
 
 def test_render_daily_basic(tmp_path):
@@ -805,3 +805,40 @@ def test_render_weekly_practice_digest(tmp_path):
     assert soup.select(".digest-card"), "expect practice digest card"
     assert "适合现在引入" in text
     assert "九、" in text and "十、" in text
+
+
+# ---------- deep dive ----------
+
+
+def test_render_deep_dive_basic(tmp_path, sample_deep_dive):
+    src = tmp_path / "deep_dive_claude-fable-5.json"
+    src.write_text(json.dumps(sample_deep_dive, ensure_ascii=False), encoding="utf-8")
+    output = tmp_path / "deep_dive_claude-fable-5.html"
+    result = run_render(src, output)
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    text = BeautifulSoup(output.read_text(encoding="utf-8"), "html.parser").get_text()
+    assert "AI 深度" in text
+    assert "背景与时间线" in text
+    assert "对四个角色意味着什么" in text
+    assert "选型负责人" in text
+    assert "快速上手" in text
+    assert "待验证问题" in text
+
+
+def test_render_deep_dive_default_output_next_to_json(tmp_path, sample_deep_dive):
+    src = tmp_path / "deep_dive_claude-fable-5.json"
+    src.write_text(json.dumps(sample_deep_dive, ensure_ascii=False), encoding="utf-8")
+    result = run_render(src)
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+    assert (tmp_path / "deep_dive_claude-fable-5.html").exists()
+
+
+def test_render_deep_dive_missing_section_fails_schema(tmp_path, sample_deep_dive):
+    data = deepcopy(sample_deep_dive)
+    del data["sections"]["quick_start"]
+    src = tmp_path / "deep_dive_claude-fable-5.json"
+    src.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    result = run_render(src, tmp_path / "out.html")
+    assert result.returncode == 1
+    assert "quick_start" in result.stderr
