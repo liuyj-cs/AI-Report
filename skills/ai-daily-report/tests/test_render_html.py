@@ -684,6 +684,8 @@ def test_render_daily_expanded_decision_and_quickstart(tmp_path):
     text = BeautifulSoup(output.read_text(encoding="utf-8"), "html.parser").get_text()
     assert "对选型意味着什么" in text
     assert "快速上手" in text
+    assert "coding agent 选型" in text
+    assert "claude-fable-5" in text
 
 
 # ---------- Task 2: decision_radar ----------

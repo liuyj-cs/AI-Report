@@ -209,11 +209,11 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - **判定**：见编辑原则。`major_event: true` 只能标在 `editorial_tier: core` 的条目上。
    - **当天深度补证（2-3 跳）**：对重大事件，证据扩展从常规 1 跳放宽到 2-3 跳，目标面优先：model card / system card / 官方 benchmark 页 / pricing 页 / developer docs / 可用区与配额说明。每次尝试照常写入 `fetch_status.source_details`。
    - **撰写 `expanded` 块**（schema `$defs/expandedBlock`，挂在条目上）：
-     - `what_shipped`（50-400 字，必填）：发布要点
-     - `benchmarks`（≤400 字，可选）：官方 benchmark 摘录，只写官方给出的数字
-     - `pricing_availability`（≤300 字，可选）：定价、配额、可用区
-     - `comparison`（≤300 字，可选）：与现役模型/版本对比
-     - `third_party_reaction`（≤300 字，可选）：已抓到证据的第三方反应，禁止臆测
+     - `what_shipped`（50-600 字，必填）：发布要点
+     - `benchmarks`（≤600 字，可选）：官方 benchmark 摘录，只写官方给出的数字
+     - `pricing_availability`（≤400 字，可选）：定价、配额、可用区
+     - `comparison`（≤400 字，可选）：与现役模型/版本对比
+     - `third_party_reaction`（≤400 字，可选）：已抓到证据的第三方反应，禁止臆测
      - `decision_relevance`（≤300 字，可选）：对在途选型/迁移决策的整体判断（与 decision_radar 互补：radar 按决策分组一句话，这里是事件视角）
      - `quick_start`（≤300 字，可选）：第一时间上手路径（入口 / 版本号 / 前置条件）
      - `open_questions`（1-5 条，必填）：待验证问题清单，将转入事件追踪
