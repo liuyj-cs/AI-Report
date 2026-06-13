@@ -9,12 +9,14 @@ from pathlib import Path
 
 CACHE_RETENTION_DAYS = 14
 
+TYPE_DIRS = {"daily": "daily", "weekly": "weekly", "deep_dive": "deep_dives"}
+
 
 def archive(html_path: Path, report_type: str, date_tag: str, project_root: Path) -> Path:
-    if report_type not in ("daily", "weekly"):
+    if report_type not in TYPE_DIRS:
         raise ValueError(f"Unknown type: {report_type}")
 
-    dst_dir = project_root / "reports" / report_type
+    dst_dir = project_root / "reports" / TYPE_DIRS[report_type]
     dst_dir.mkdir(parents=True, exist_ok=True)
     dst = dst_dir / f"{date_tag}.html"
     shutil.copy2(html_path, dst)
@@ -54,8 +56,8 @@ def cleanup_cache(project_root: Path, retention_days: int = CACHE_RETENTION_DAYS
 def main() -> int:
     parser = argparse.ArgumentParser(description="Archive HTML report and clean old cache")
     parser.add_argument("html_path", type=Path, nargs="?")
-    parser.add_argument("--type", choices=["daily", "weekly"])
-    parser.add_argument("--date", help="YYYY-MM-DD for daily or YYYY-W{nn} for weekly")
+    parser.add_argument("--type", choices=["daily", "weekly", "deep_dive"])
+    parser.add_argument("--date", help="YYYY-MM-DD for daily or YYYY-W{nn} for weekly or YYYY-MM-DD-{slug} for deep_dive")
     parser.add_argument("--cleanup", action="store_true", help="only run cache cleanup")
     args = parser.parse_args()
 
