@@ -14,6 +14,7 @@ from jsonschema import Draft202012Validator
 from discovery import RECALL_PROBE_SURFACE_NAME, missing_fetch_status_coverage, required_source_family_names
 from ecosystem import load_seen_repos, validate_ecosystem_repeats
 from tracking import validate_tracking_refs
+from deep_dive import validate_deep_dives
 
 DAILY_REFERENCE_SECTIONS = ("frontier_models", "coding_agents", "general_agents")
 ITEM_REF_PATTERN = re.compile(r"^(?P<section>frontier_models|coding_agents|general_agents)\[(?P<index>\d+)\]$")
@@ -787,6 +788,7 @@ def validate_daily_artifacts(
     errors.extend(validate_decision_radar(report, profile))
     if project_root is not None:
         errors.extend(validate_tracking_refs(report, project_root))
+        errors.extend(validate_deep_dives(report, project_root))
         errors.extend(
             validate_ecosystem_repeats(report, load_seen_repos(project_root), str(report.get("date", "")))
         )
