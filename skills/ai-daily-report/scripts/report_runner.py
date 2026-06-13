@@ -173,6 +173,7 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
 
 
 def _rolling_week_dates(week_end: str) -> list[str]:
+    # fromisoformat (py>=3.11) accepts ISO week strings like "2026-W20"; require plain YYYY-MM-DD
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", week_end):
         raise ValueError(f"week_end must be YYYY-MM-DD, got {week_end!r}")
     end = datetime.fromisoformat(week_end).date()
