@@ -2,6 +2,7 @@ import json
 import re
 import subprocess
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -29,12 +30,11 @@ SHARED_DEFS = [
 ]
 
 
-def run_render(json_path: Path, output_path: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, str(SCRIPT), str(json_path), "--output", str(output_path)],
-        capture_output=True,
-        text=True,
-    )
+def run_render(json_path: Path, output_path: Path | None = None) -> subprocess.CompletedProcess:
+    cmd = [sys.executable, str(SCRIPT), str(json_path)]
+    if output_path is not None:
+        cmd += ["--output", str(output_path)]
+    return subprocess.run(cmd, capture_output=True, text=True)
 
 
 def test_render_daily_basic(tmp_path):
@@ -210,9 +210,10 @@ def test_render_weekly_full(tmp_path):
     soup = BeautifulSoup(html, "html.parser")
     text = soup.get_text()
 
-    # 标题和周标识
+    # 标题和窗口标识
     assert "AI 周报" in text
-    assert "2026-W15" in text
+    assert "2026-04-12" in text
+    assert "2026-04-06" in text
 
     # 九个章节标题
     assert "本周核心结论" in text
@@ -628,7 +629,7 @@ def test_daily_schema_accepts_major_event_expanded_block():
 def test_daily_schema_rejects_overlong_expanded_field():
     data = json.loads((FIXTURES / "sample_daily.json").read_text(encoding="utf-8"))
     item = _major_event_item(data["sections"]["frontier_models"]["items"][0])
-    item["expanded"]["what_shipped"] = "长" * 401
+    item["expanded"]["what_shipped"] = "长" * 601
     data["sections"]["frontier_models"]["items"][0] = item
     validator = Draft202012Validator(_load_daily_schema())
     assert any(
@@ -666,6 +667,25 @@ def test_render_daily_major_event_expanded_block(tmp_path):
     assert "发布要点" in text
     assert "待验证" in text
     assert "第三方 benchmark（LMArena / AA）何时收录" in text
+
+
+def test_render_daily_expanded_decision_and_quickstart(tmp_path):
+    data = json.loads((FIXTURES / "sample_daily.json").read_text(encoding="utf-8"))
+    item = _major_event_item(data["sections"]["frontier_models"]["items"][0])
+    item["expanded"]["decision_relevance"] = "对正在评估的 coding agent 选型，这一代模型显著改变 Claude 档位的性价比判断，建议本周内重排候选。"
+    item["expanded"]["quick_start"] = "Claude Code 中 /model 切换 claude-fable-5 即可试用；API 侧把模型号换成 claude-fable-5，无需改请求结构。"
+    data["sections"]["frontier_models"]["items"][0] = item
+    src = tmp_path / "report.json"
+    src.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    output = tmp_path / "report.html"
+    result = run_render(src, output)
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    text = BeautifulSoup(output.read_text(encoding="utf-8"), "html.parser").get_text()
+    assert "对选型意味着什么" in text
+    assert "快速上手" in text
+    assert "coding agent 选型" in text
+    assert "claude-fable-5" in text
 
 
 # ---------- Task 2: decision_radar ----------
@@ -785,3 +805,50 @@ def test_render_weekly_practice_digest(tmp_path):
     assert soup.select(".digest-card"), "expect practice digest card"
     assert "适合现在引入" in text
     assert "九、" in text and "十、" in text
+
+
+# ---------- deep dive ----------
+
+
+def test_render_deep_dive_basic(tmp_path, sample_deep_dive):
+    src = tmp_path / "deep_dive_claude-fable-5.json"
+    src.write_text(json.dumps(sample_deep_dive, ensure_ascii=False), encoding="utf-8")
+    output = tmp_path / "deep_dive_claude-fable-5.html"
+    result = run_render(src, output)
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    text = BeautifulSoup(output.read_text(encoding="utf-8"), "html.parser").get_text()
+    assert "AI 深度" in text
+    assert "背景与时间线" in text
+    assert "对四个角色意味着什么" in text
+    assert "选型负责人" in text
+    assert "快速上手" in text
+    assert "待验证问题" in text
+
+
+def test_render_deep_dive_default_output_next_to_json(tmp_path, sample_deep_dive):
+    src = tmp_path / "deep_dive_claude-fable-5.json"
+    src.write_text(json.dumps(sample_deep_dive, ensure_ascii=False), encoding="utf-8")
+    result = run_render(src)
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+    assert (tmp_path / "deep_dive_claude-fable-5.html").exists()
+
+
+def test_render_deep_dive_missing_section_fails_schema(tmp_path, sample_deep_dive):
+    data = deepcopy(sample_deep_dive)
+    del data["sections"]["quick_start"]
+    src = tmp_path / "deep_dive_claude-fable-5.json"
+    src.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    result = run_render(src, tmp_path / "out.html")
+    assert result.returncode == 1
+    assert "quick_start" in result.stderr
+
+
+def test_render_deep_dive_rejects_non_http_reference_url(tmp_path, sample_deep_dive):
+    data = deepcopy(sample_deep_dive)
+    data["references"][0]["url"] = "not-a-real-url"
+    src = tmp_path / "deep_dive_claude-fable-5.json"
+    src.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    result = run_render(src, tmp_path / "out.html")
+    assert result.returncode == 1
+    assert "url" in result.stderr or "pattern" in result.stderr

@@ -11,9 +11,10 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-from discovery import RECALL_PROBE_SURFACE_NAME, missing_fetch_status_coverage, required_source_family_names
+from discovery import RECALL_PROBE_SURFACE_NAME, missing_fetch_status_coverage, required_source_family_names, rolling_week_dates
 from ecosystem import load_seen_repos, validate_ecosystem_repeats
 from tracking import validate_tracking_refs
+from deep_dive import validate_deep_dives
 
 DAILY_REFERENCE_SECTIONS = ("frontier_models", "coding_agents", "general_agents")
 ITEM_REF_PATTERN = re.compile(r"^(?P<section>frontier_models|coding_agents|general_agents)\[(?P<index>\d+)\]$")
@@ -552,35 +553,46 @@ def _weekly_item_counts(report: dict[str, Any]) -> dict[str, int]:
     }
 
 
-def _expected_iso_week_dates(iso_week: str) -> list[str]:
-    year_str, week_str = iso_week.split("-W", 1)
-    monday = datetime.fromisocalendar(int(year_str), int(week_str), 1)
-    return [(monday + timedelta(days=offset)).date().isoformat() for offset in range(7)]
+def _window_date_part(value: str) -> str:
+    """Return the YYYY-MM-DD date of a window edge (e.g. '2026-04-06T00:00:00+08:00')."""
+    try:
+        return datetime.fromisoformat(value).date().isoformat()
+    except ValueError:
+        return value[:10]
 
 
 def validate_weekly_source_days(report: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    iso_week = report.get("iso_week")
-    if not iso_week:
-        return ["weekly report missing iso_week"]
+    week_end = report.get("week_end")
+    if not week_end:
+        return ["weekly report missing week_end"]
 
     try:
-        expected_days = _expected_iso_week_dates(iso_week)
+        expected_days = rolling_week_dates(week_end)
     except ValueError as exc:
-        return [f"weekly report has invalid iso_week {iso_week!r}: {exc}"]
+        return [f"weekly report has invalid week_end {week_end!r}: {exc}"]
 
     source_days = report.get("source_days", {})
     daily_reports_used = source_days.get("daily_reports_used", [])
     backfilled = source_days.get("backfilled", [])
 
     if len(daily_reports_used) != len(expected_days):
-        errors.append(f"source_days.daily_reports_used must contain 7 dates for {iso_week}")
+        errors.append(f"source_days.daily_reports_used must contain 7 dates ending {week_end}")
     if len(set(daily_reports_used)) != len(daily_reports_used):
         errors.append("source_days.daily_reports_used contains duplicate dates")
     if set(daily_reports_used) != set(expected_days):
-        errors.append(f"source_days.daily_reports_used must match ISO week {iso_week}")
+        errors.append(f"source_days.daily_reports_used must be the 7 days ending {week_end}")
     if not set(backfilled).issubset(set(daily_reports_used)):
         errors.append("source_days.backfilled must be a subset of daily_reports_used")
+
+    # Cross-check the declared window against the rolling 7-day span (date-level only).
+    window = report.get("window", {})
+    win_start = str(window.get("start", ""))
+    win_end = str(window.get("end", ""))
+    if win_start and _window_date_part(win_start) != expected_days[0]:
+        errors.append(f"window.start date {win_start!r} does not match week_end-6 {expected_days[0]}")
+    if win_end and _window_date_part(win_end) != week_end:
+        errors.append(f"window.end date {win_end!r} does not match week_end {week_end}")
     return errors
 
 
@@ -788,6 +800,7 @@ def validate_daily_artifacts(
     errors.extend(validate_decision_radar(report, profile))
     if project_root is not None:
         errors.extend(validate_tracking_refs(report, project_root))
+        errors.extend(validate_deep_dives(report, project_root))
         errors.extend(
             validate_ecosystem_repeats(report, load_seen_repos(project_root), str(report.get("date", "")))
         )
@@ -877,7 +890,6 @@ def recall_probe_findings(report: dict[str, Any], whitelist: dict[str, Any]) -> 
     replacements = {
         "{date}": date,
         "{yesterday}": yesterday,
-        "{iso_week}": str(report.get("iso_week", "")),
     }
     query_variants = set()
     for query in probe_queries:
@@ -1004,7 +1016,7 @@ def build_weekly_qa_diff(report: dict[str, Any], project_root: Path) -> dict[str
     return {
         "type": "qa_diff",
         "target_kind": "weekly",
-        "target_id": report.get("iso_week", ""),
+        "target_id": report.get("week_end", ""),
         "generated_at": report.get("generated_at", ""),
         "summary": _qa_summary(findings),
         "findings": findings,

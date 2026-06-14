@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "type": "weekly",
-  "iso_week": "2026-W15",
+  "week_end": "2026-04-12",
   "window": {
     "start": "2026-04-06",
     "end": "2026-04-12",

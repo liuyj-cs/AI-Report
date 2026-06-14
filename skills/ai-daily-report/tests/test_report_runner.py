@@ -319,7 +319,7 @@ def test_finalize_daily_rejects_candidate_ledger_missing_audit_field(
     assert not (cache_dir / "report.html").exists()
 
 
-def test_init_weekly_writes_input_days_manifest(tmp_path):
+def test_init_weekly_writes_rolling_input_days(tmp_path):
     env_path = tmp_path / ".env"
     env_path.write_text(
         "GMAIL_USER=test@example.com\nGMAIL_APP_PASSWORD=secret\nREPORT_RECIPIENTS=a@example.com\n",
@@ -331,17 +331,48 @@ def test_init_weekly_writes_input_days_manifest(tmp_path):
             "--project-root",
             str(tmp_path),
             "init-weekly",
-            "--iso-week",
-            "2026-W16",
+            "--end-date",
+            "2026-05-03",
             "--now",
-            "2026-04-18T08:00:00+08:00",
+            "2026-05-03T08:00:00+08:00",
             "--env",
             str(env_path),
         ]
     )
 
     assert exit_code == 0
-    assert (tmp_path / "cache" / "weekly" / "2026-W16" / "input_days.json").exists()
+    payload = json.loads(
+        (tmp_path / "cache" / "weekly" / "2026-05-03" / "input_days.json").read_text(encoding="utf-8")
+    )
+    assert payload["week_end"] == "2026-05-03"
+    assert payload["source_days"] == [
+        "2026-04-27", "2026-04-28", "2026-04-29", "2026-04-30",
+        "2026-05-01", "2026-05-02", "2026-05-03",
+    ]
+
+
+def test_init_weekly_rejects_invalid_end_date(tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "GMAIL_USER=test@example.com\nGMAIL_APP_PASSWORD=secret\nREPORT_RECIPIENTS=a@example.com\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "init-weekly",
+            "--end-date",
+            "2026-W20",
+            "--now",
+            "2026-05-03T08:00:00+08:00",
+            "--env",
+            str(env_path),
+        ]
+    )
+
+    assert exit_code == 1
 
 
 def _write_weekly_daily_reports(tmp_path, weekly_report, sample_daily_report):
@@ -366,7 +397,7 @@ def test_finalize_weekly_dry_run_writes_html_and_archive(tmp_path, normalized_we
         encoding="utf-8",
     )
     _write_weekly_daily_reports(tmp_path, normalized_weekly_report, sample_daily_report)
-    cache_dir = tmp_path / "cache" / "weekly" / "2026-W15"
+    cache_dir = tmp_path / "cache" / "weekly" / "2026-04-12"
     cache_dir.mkdir(parents=True)
     report = deepcopy(normalized_weekly_report)
     report["generated_at"] = "2026-04-12T08:00:00+08:00"
@@ -378,8 +409,8 @@ def test_finalize_weekly_dry_run_writes_html_and_archive(tmp_path, normalized_we
             "--project-root",
             str(tmp_path),
             "finalize-weekly",
-            "--iso-week",
-            "2026-W15",
+            "--end-date",
+            "2026-04-12",
             "--dry-run",
             "--env",
             str(env_path),
@@ -389,7 +420,7 @@ def test_finalize_weekly_dry_run_writes_html_and_archive(tmp_path, normalized_we
     assert exit_code == 0
     assert (cache_dir / "qa_diff.json").exists()
     assert (cache_dir / "report.html").exists()
-    assert (tmp_path / "reports" / "weekly" / "2026-W15.html").exists()
+    assert (tmp_path / "reports" / "weekly" / "2026-04-12.html").exists()
 
 
 def test_finalize_weekly_rejects_missing_source_day_report(tmp_path, normalized_weekly_report):
@@ -398,7 +429,7 @@ def test_finalize_weekly_rejects_missing_source_day_report(tmp_path, normalized_
         "GMAIL_USER=test@example.com\nGMAIL_APP_PASSWORD=secret\nREPORT_RECIPIENTS=a@example.com\n",
         encoding="utf-8",
     )
-    cache_dir = tmp_path / "cache" / "weekly" / "2026-W15"
+    cache_dir = tmp_path / "cache" / "weekly" / "2026-04-12"
     cache_dir.mkdir(parents=True)
     report = deepcopy(normalized_weekly_report)
     report["generated_at"] = "2026-04-12T08:00:00+08:00"
@@ -410,8 +441,8 @@ def test_finalize_weekly_rejects_missing_source_day_report(tmp_path, normalized_
             "--project-root",
             str(tmp_path),
             "finalize-weekly",
-            "--iso-week",
-            "2026-W15",
+            "--end-date",
+            "2026-04-12",
             "--dry-run",
             "--env",
             str(env_path),
@@ -422,14 +453,14 @@ def test_finalize_weekly_rejects_missing_source_day_report(tmp_path, normalized_
     assert (cache_dir / "qa_diff.json").exists()
 
 
-def test_finalize_weekly_rejects_iso_week_mismatch(tmp_path, normalized_weekly_report, sample_daily_report):
+def test_finalize_weekly_rejects_week_end_mismatch(tmp_path, normalized_weekly_report, sample_daily_report):
     env_path = tmp_path / ".env"
     env_path.write_text(
         "GMAIL_USER=test@example.com\nGMAIL_APP_PASSWORD=secret\nREPORT_RECIPIENTS=a@example.com\n",
         encoding="utf-8",
     )
     _write_weekly_daily_reports(tmp_path, normalized_weekly_report, sample_daily_report)
-    cache_dir = tmp_path / "cache" / "weekly" / "2026-W16"
+    cache_dir = tmp_path / "cache" / "weekly" / "2026-04-13"
     cache_dir.mkdir(parents=True)
     report = deepcopy(normalized_weekly_report)
     (cache_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -440,8 +471,8 @@ def test_finalize_weekly_rejects_iso_week_mismatch(tmp_path, normalized_weekly_r
             "--project-root",
             str(tmp_path),
             "finalize-weekly",
-            "--iso-week",
-            "2026-W16",
+            "--end-date",
+            "2026-04-13",
             "--dry-run",
             "--env",
             str(env_path),
@@ -603,6 +634,80 @@ def test_finalize_daily_cleans_expired_tracking(
     assert not stale_path.exists()
     run_log = (cache_dir / "run.log").read_text(encoding="utf-8")
     assert "TRACKING cleanup removed=1" in run_log
+
+
+def _promote_to_major_event(cache_dir, slug="agents-sdk-sandbox"):
+    """把 setup 中唯一的 general_agents 条目升级为 major_event,并开活跃追踪档案。"""
+    report_path = cache_dir / "report.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    item = report["sections"]["general_agents"]["items"][0]
+    item["major_event"] = True
+    item["tracking_ref"] = slug
+    item["expanded"] = {
+        "what_shipped": "OpenAI 把沙箱执行原生并入 Agents SDK,agent 可以在受控环境内检查文件、运行命令并修改代码,官方同步更新了文档与示例。",
+        "open_questions": ["沙箱的资源限额与计费方式"],
+    }
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    tracking_dir = cache_dir.parent / "tracking"
+    tracking_dir.mkdir(parents=True, exist_ok=True)
+    tracking_payload = {
+        "version": "1.0",
+        "type": "event_tracking",
+        "event_slug": slug,
+        "title": "Agents SDK 原生接入沙箱执行",
+        "opened_date": "2026-04-18",
+        "expires_on": "2026-04-22",
+        "origin": {
+            "date": "2026-04-18",
+            "section": "general_agents",
+            "headline": "Agents SDK 原生接入沙箱执行",
+        },
+        "watch_items": ["沙箱的资源限额与计费方式"],
+        "updates": [],
+    }
+    (tracking_dir / f"{slug}.json").write_text(
+        json.dumps(tracking_payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return slug
+
+
+def test_finalize_daily_rejects_major_event_without_deep_dive(
+    tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+):
+    cache_dir, env_path = _build_passing_finalize_setup(
+        tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+    )
+    _promote_to_major_event(cache_dir)
+
+    exit_code, message = run_daily_finalize(tmp_path, "2026-04-18", True, env_path)
+
+    assert exit_code == 1
+    assert "deep dive" in message
+
+
+def test_finalize_daily_renders_and_archives_deep_dive(
+    tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status, sample_deep_dive
+):
+    cache_dir, env_path = _build_passing_finalize_setup(
+        tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+    )
+    slug = _promote_to_major_event(cache_dir)
+
+    payload = deepcopy(sample_deep_dive)
+    payload["date"] = "2026-04-18"
+    payload["event_slug"] = slug
+    payload["title"] = "Agents SDK 原生接入沙箱执行"
+    (cache_dir / f"deep_dive_{slug}.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    exit_code, message = run_daily_finalize(tmp_path, "2026-04-18", True, env_path)
+
+    assert exit_code == 0, message
+    assert (tmp_path / "reports" / "deep_dives" / f"2026-04-18-{slug}.html").exists()
+    run_log = (cache_dir / "run.log").read_text(encoding="utf-8")
+    assert "DEEPDIVE" in run_log
 
 
 def test_init_daily_manifest_lists_active_tracking(tmp_path):

@@ -107,6 +107,22 @@ def test_archive_cleanup_removes_old_weekly_leaf_only(tmp_path):
     assert not stale.exists(), "stale weekly leaf should be removed"
 
 
+def test_archive_deep_dive_copies_to_reports(tmp_path):
+    project = setup_project(tmp_path)
+    html_src = project / "cache" / "2026-06-13" / "deep_dive_claude-fable-5.html"
+    html_src.parent.mkdir(parents=True)
+    html_src.write_text("<html>deep</html>", encoding="utf-8")
+
+    result = run_archive(
+        str(html_src), "--type", "deep_dive", "--date", "2026-06-13-claude-fable-5", cwd=project
+    )
+
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+    dst = project / "reports" / "deep_dives" / "2026-06-13-claude-fable-5.html"
+    assert dst.exists()
+    assert dst.read_text(encoding="utf-8") == "<html>deep</html>"
+
+
 def test_archive_creates_report_dir_if_missing(tmp_path):
     project = tmp_path  # 没有 reports/
     (project / "cache" / "2026-04-10").mkdir(parents=True)

@@ -18,7 +18,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
 0. **初始化 runner（默认入口）**
    - 日报：`python skills/ai-daily-report/scripts/report_runner.py init-daily --date {YYYY-MM-DD} --now {ISO8601} --env .env`
-   - 周报：`python skills/ai-daily-report/scripts/report_runner.py init-weekly --iso-week {YYYY-Wnn} --now {ISO8601} --env .env`
+   - 周报：`python skills/ai-daily-report/scripts/report_runner.py init-weekly --end-date {YYYY-MM-DD} --now {ISO8601} --env .env`
    - 作用：提前校验 `.env`、创建 `cache/.../run.log`。日报入口只负责生成 `discovery_manifest.json` 与窗口；周报入口会写 `input_days.json`。若邮件环境变量缺失，此步即失败并停止。
 1. **读取 sources/whitelist.yaml**：按类别枚举所有信源和搜索 query
 1b. **读取 sources/profile.yaml**：读者画像（四个角色、在途决策、实践关注点）。它是编辑判断的输入：相关性、决策雷达分组、生态板块取舍都要回答"这条信息服务哪个角色/哪个在途决策"。
@@ -26,7 +26,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 3. **CN 厂商官方源验证**：whitelist 中标记 `verify_before_use: true` 的中国厂商源，在首次抓取前用一次浏览打开测试。若失败或返回无效页面，记录到 run.log 但仍尝试抓取相关信息（可通过 search query 兜底）。
 4. **检查 cache 是否已有当日产出**：
    - 日报：`cache/{YYYY-MM-DD}/report.json` 存在 → 询问用户是否覆盖
-   - 周报：`cache/weekly/{YYYY-W{nn}}/report.json` 存在 → 询问用户是否覆盖
+   - 周报：`cache/weekly/{end_date}/report.json` 存在 → 询问用户是否覆盖
 5. **确认 SMTP 凭据可用**：本步骤已合并到 step 2 的 .env 校验。Gmail 应用专用密码无浏览器认证流程。
 
 ## 日报工作流
@@ -49,7 +49,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - **Layer 类型 → 使用方式**
      - `webfetch` → AI 代理用浏览/网页工具直连 URL
      - `github_releases` → AI 代理打开 `https://github.com/{repo}/releases` 或 GitHub API
-     - `websearch_scoped` → AI 代理使用自身搜索能力执行 query，对每个 query 替换 `{date}` / `{yesterday}` / `{iso_week}` 占位符
+     - `websearch_scoped` → AI 代理使用自身搜索能力执行 query，对每个 query 替换 `{date}` / `{yesterday}` / `{week_range}` 占位符
      - `websearch_broad` → 同 scoped，但检索范围更宽
 
    - **「成功」判定**（这一步至关重要，否则会掉进伪成功陷阱）
@@ -134,6 +134,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - 严禁使用固定分数阈值、固定厂商排名、固定 Top N 条数决定正文入选与排序
      - 严禁因为“某厂商默认更重要”而跳过窗口硬卡、版本校验或来源闭环
      - **重大事件判定（major_event）**：当一条 `selected_core` 候选满足「会改变读者的选型决策、或值得当天安排评估」（典型：新一代前沿模型发布、头部 coding agent 重大版本或定价变化、影响选型的重大产品发布）时，标记 `major_event: true`。这是编辑结论，不是分数阈值；每天 0-2 条，宁缺毋滥。
+     - **major_event 默认必标清单**：以下三类事件命中即默认 `major_event: true`——① 新一代前沿主力模型正式发布/GA（Anthropic / OpenAI / Google / Meta / DeepSeek / Qwen 等，如 GPT-5.6、Gemini 3.5 Pro、Claude 新主力）；② 头部 coding agent 重大版本或定价模式变化（Claude Code / Codex / Cursor / Copilot 量级）；③ 影响选型的重大 agent 平台 / 协议发布。命中清单但决定不标的候选，`candidate_ledger` 的 `decision_reason` 必须写明不算 major_event 的理由。
 
    **3-0. 窗口硬卡（最高优先级，无例外）**
    - 每条候选条目必须已填写 `published_at`（在 Step 1a 完成）
@@ -209,12 +210,15 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - **判定**：见编辑原则。`major_event: true` 只能标在 `editorial_tier: core` 的条目上。
    - **当天深度补证（2-3 跳）**：对重大事件，证据扩展从常规 1 跳放宽到 2-3 跳，目标面优先：model card / system card / 官方 benchmark 页 / pricing 页 / developer docs / 可用区与配额说明。每次尝试照常写入 `fetch_status.source_details`。
    - **撰写 `expanded` 块**（schema `$defs/expandedBlock`，挂在条目上）：
-     - `what_shipped`（50-400 字，必填）：发布要点
-     - `benchmarks`（≤400 字，可选）：官方 benchmark 摘录，只写官方给出的数字
-     - `pricing_availability`（≤300 字，可选）：定价、配额、可用区
-     - `comparison`（≤300 字，可选）：与现役模型/版本对比
-     - `third_party_reaction`（≤300 字，可选）：已抓到证据的第三方反应，禁止臆测
+     - `what_shipped`（50-600 字，必填）：发布要点
+     - `benchmarks`（≤600 字，可选）：官方 benchmark 摘录，只写官方给出的数字
+     - `pricing_availability`（≤400 字，可选）：定价、配额、可用区
+     - `comparison`（≤400 字，可选）：与现役模型/版本对比
+     - `third_party_reaction`（≤400 字，可选）：已抓到证据的第三方反应，禁止臆测
+     - `decision_relevance`（≤300 字，可选）：对在途选型/迁移决策的整体判断（与 decision_radar 互补：radar 按决策分组一句话，这里是事件视角）
+     - `quick_start`（≤300 字，可选）：第一时间上手路径（入口 / 版本号 / 前置条件）
      - `open_questions`（1-5 条，必填）：待验证问题清单，将转入事件追踪
+   - **撰写深度专题（每个 major_event 一份）**：落盘 `cache/{date}/deep_dive_{event_slug}.json`（schema `schemas/deep_dive.schema.json`）。七个小节全部必填：`background`（背景与时间线）/ `what_shipped_detail`（发布详述）/ `benchmarks_pricing`（基准与定价）/ `ecosystem_reaction`（生态与第三方反应）/ `role_implications`（profile.yaml 四个角色各 1-2 句）/ `quick_start`（上手指引）/ `open_questions`；`references` ≥1 条且全部来自当日 fetch 已留痕的证据，禁止臆测。总篇幅 800-1500 字。素材不足以撑起全部小节 → 说明该事件不够格 major_event，只走 expanded。finalize 渲染为 `reports/deep_dives/{date}-{slug}.html` 并以「AI 深度 · {title}」**独立邮件**发送（日报正文保持紧凑）。
    - **开追踪档案**：写 `cache/tracking/{event_slug}.json`（schema `schemas/event_tracking.schema.json`）。`event_slug` 用小写连字符（如 `claude-fable-5`），`expires_on` 距 `opened_date` 不超过 5 天，`watch_items` 直接继承 `open_questions`。条目同时写 `tracking_ref: {event_slug}`；finalize 会校验 `major_event` 条目必须有 expanded + tracking_ref，且 tracking_ref 能解析到活跃档案。
    - **追踪期内的后续日报**：`discovery_manifest.json` 的 `active_tracking` 会列出活跃追踪事件。对每个活跃事件至少执行一轮定向搜索（第三方评测 / 实测反馈 / 价格与配额变化）。命中的增量条目：
      - 豁免 3-1 跨日去重（见该节例外 2），headline 必须体现增量（如「Fable 5 第三方评测首批出炉」）
@@ -391,20 +395,20 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
 ## 周报工作流
 
-**目标周**：运行当日所在的 ISO 周（`2026-W15` 格式）
-**采集窗口**：本周一 00:00 ~ 本周日 23:59:59（北京时间）
-**运行节奏**：每周一上午运行上一 ISO 周的周报（例如周一为 2026-06-15 时，iso_week = 2026-W24）。`cache/tracking/` 中本周活跃过的追踪档案（含 `updates[]`）是周报回顾重大事件的现成素材，读入后随日报 JSON 一起聚合。
+**目标窗口**：最近 7 天——`end_date` 往前数 7 个自然日（含 `end_date` 当天）；`end_date` 默认为运行当日
+**采集窗口**：`{end_date-6} 00:00 ~ {end_date} 23:59:59`（北京时间）
+**运行节奏**：任意一天可跑（建议每周固定一天）。`cache/tracking/` 中窗口内活跃过的追踪档案（含 `updates[]`）是周报回顾重大事件的现成素材，读入后随日报 JSON 一起聚合。
 
 步骤：
 
 1. **检查日报齐全**
-   - 以 `cache/{date}/report.json` 为准检查本周 7 个日期是否齐全；`reports/daily/*.html` 只作为成品展示，不作为周报聚合的 source of truth
+   - 以 `cache/{date}/report.json` 为准检查窗口内 7 个日期是否齐全（含运行当日；当日日报未生成同样按缺失补齐）；`reports/daily/*.html` 只作为成品展示，不作为周报聚合的 source of truth
    - 对每个缺失日期：**独立走一次"日报工作流步骤 1-6"** 补齐（包括抓取、归类、产出 JSON 与 HTML），并把该日期加入 `source_days.backfilled`
 
 2. **读入 7 份日报 JSON**
    - 从 `cache/{date}/report.json` 读入每天的结构化数据
    - 合并为内存中的"本周事件集合"
-   - `source_days.daily_reports_used` 必须完整覆盖该 `iso_week` 的 7 个自然日；`backfilled` 只能是其中子集
+   - `source_days.daily_reports_used` 必须恰好等于 `week_end` 往前的 7 个自然日；`backfilled` 只能是其中子集
 
 3. **聚合 & 去重 & 归纳**
    - 按模型提供方聚合 frontier_models 条目 → `vendor_groups`
@@ -436,40 +440,41 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - 当周日报生态板块没有值得深读的内容 → `items: []` + `empty_message`，不硬凑
 
 4. **补充搜索（兜底）**
-   - 3-5 条搜索，query 形如 "AI industry week summary 2026-W15"、"top AI agent news this week" 等
+   - 3-5 条搜索，query 形如 "AI industry week summary {week_range}"（以窗口日期区间替换，如 2026-06-07..2026-06-13）、"top AI agent news this week" 等
    - 对比日报聚合结果，补齐遗漏内容
 
 5. **产出周报 JSON**
    - 严格遵循 `schemas/weekly_report.schema.json`
    - **十章节**：`tldr / frontier_models / coding_agents / general_agents / market_signals / pattern_observations / experiments_this_week / practice_digest / action_items / next_week_signals`
+   - 顶层必填 `week_end`（YYYY-MM-DD，窗口结束日）
    - TL;DR 3-5 条
    - **落地建议**：3-5 条体系化建议，每条字段与日报 `actionItem` 完全一致：
      - `recommendation` / `rationale` / `recommendation_type` / `effort_person_days{min,max}` / `time_horizon` / `team_size_applicability[]` / `success_metric` / `priority` / `references`
    - `references` 引用本周具体日期的日报条目
    - **多样性硬约束**：items ≥ 3 时 `recommendation_type` 必须出现 ≥3 种
-   - 落盘：`cache/weekly/{iso_week}/report.json`
+   - 落盘：`cache/weekly/{end_date}/report.json`
 
 5a. **Runner 收尾（默认入口）**
-   - Run: `python skills/ai-daily-report/scripts/report_runner.py finalize-weekly --iso-week {iso_week} --env .env`
-   - dry-run: `python skills/ai-daily-report/scripts/report_runner.py finalize-weekly --iso-week {iso_week} --env .env --dry-run`
-   - 作用：校验周报 JSON 已落盘，并检查 CLI 传入的 `iso_week` 是否与 payload 一致、`source_days` 是否完整覆盖该周、`cache/{date}/report.json` 是否齐全、weekly `references` 是否能回指日报条目、以及 `itemRef` 是否越界；通过后再顺序执行渲染、归档、发送邮件。若发送失败，保留 `cache/weekly/{iso_week}` 下所有产物与 `run.log`。
+   - Run: `python skills/ai-daily-report/scripts/report_runner.py finalize-weekly --end-date {end_date} --env .env`
+   - dry-run: `python skills/ai-daily-report/scripts/report_runner.py finalize-weekly --end-date {end_date} --env .env --dry-run`
+   - 作用：校验周报 JSON 已落盘，并检查 CLI 传入的 `end_date` 是否与 payload 的 `week_end` 一致、`source_days` 是否完整覆盖该周、`cache/{date}/report.json` 是否齐全、weekly `references` 是否能回指日报条目、以及 `itemRef` 是否越界；通过后再顺序执行渲染、归档、发送邮件。若发送失败，保留 `cache/weekly/{end_date}` 下所有产物与 `run.log`。
 
 6. **渲染 HTML（调试/单步重跑）**
-   - Run: `python skills/ai-daily-report/scripts/render_html.py cache/weekly/{iso_week}/report.json`
+   - Run: `python skills/ai-daily-report/scripts/render_html.py cache/weekly/{end_date}/report.json`
 
 7. **归档（调试/单步重跑）**
-   - Run: `python skills/ai-daily-report/scripts/archive.py cache/weekly/{iso_week}/report.html --type weekly --date {iso_week}`
-   - 清理 cache 时只删除过期的叶子目录；周报会按 `cache/weekly/{iso_week}` 粒度清理，不会误删 `cache/weekly/` 根目录
+   - Run: `python skills/ai-daily-report/scripts/archive.py cache/weekly/{end_date}/report.html --type weekly --date {end_date}`
+   - 清理 cache 时只删除过期的叶子目录；周报会按 `cache/weekly/{end_date}` 粒度清理，不会误删 `cache/weekly/` 根目录
 
 8. **发送邮件（调试/单步重跑）**
-   - Run: `python skills/ai-daily-report/scripts/send_mail.py reports/weekly/{iso_week}.html --subject "AI 周报 · {iso_week}"`
+   - Run: `python skills/ai-daily-report/scripts/send_mail.py reports/weekly/{end_date}.html --subject "AI 周报 · {start_date} ~ {end_date}"`
    - 退出码与异常处理同日报步骤 12
    - 若 dry-run 模式：**跳过此步**，在 run.log 写 `EMAIL skipped (dry-run)`
 
 9. **终端简版**
    - 结构同日报简版，章节名改为周报十章节，TL;DR 全部显示，落地建议全部显示
 
-10. **运行日志**：`cache/weekly/{iso_week}/run.log` 追加 `END weekly status=ok`
+10. **运行日志**：`cache/weekly/{end_date}/run.log` 追加 `END weekly status=ok`
 
 ## 时效性判断规则
 
@@ -478,7 +483,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 - 明显窗口外的内容：直接丢弃，**即使内容看起来重要或"接近"窗口也不例外**
 - 已被前一天日报覆盖的条目：由 Step 3-1 跨日去重处理，除非有实质性状态变更
 - 涉及版本号的条目：由 Step 3a 当前状态校验确认是否为最新版本
-- 周报：同理，窗口为本周一 00:00 ~ 本周日 23:59:59
+- 周报：同理，窗口为 `end_date` 往前 7 个自然日（`{end_date-6} 00:00 ~ {end_date} 23:59:59`）
 
 ## 归类规则
 
@@ -501,6 +506,8 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 - **finalize-weekly 校验失败**：若缺日报 JSON、`source_days` 不完整、引用无法回指或 `itemRef` 越界 → 停止流程，不归档不发信，先修正 JSON / 日报缓存
 - **send_mail.py 失败**：HTML 已归档 → 报告失败但不回滚归档。退出码 2（认证失败）→ 提示用户重新生成 Gmail 应用专用密码并更新 `.env`；退出码 3（网络/SMTP 错误）→ 建议稍后重跑 `send_mail.py` 单步重试
 - **追踪档案损坏**：`cache/tracking/` 下存在无法解析或不符合 schema 的档案 → finalize 校验失败（错误信息会点名该文件）。修复或删除该档案后重跑；过期超过 7 天的档案由 finalize 自动清理。
+- **深度专题缺失或损坏**：major_event 条目无对应 `cache/{date}/deep_dive_{slug}.json`、或该文件 schema 校验失败 → finalize-daily 失败，不归档不发信；补写/修复专题 JSON 后重跑。补发型专题（事后为历史事件单独生成）不要求当日日报存在对应 major_event 条目。
+- **专题邮件失败后重跑会重发**：`finalize-daily` 没有发送幂等护栏。日报邮件已发成功、随后某份深度专题邮件失败时，函数返回该专题的非零码；此时**重跑整个 finalize-daily 会重发日报正文与已成功的专题邮件**（deep dive 把可失败的发送步骤从 1 放大到 N+1）。要避免重复：失败后改用 `send_mail.py reports/deep_dives/{date}-{slug}.html` 单步只补发失败的那一份，不要整体重跑 finalize。
 
 ## 产出字段约束
 
@@ -517,7 +524,9 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 | `experiments_this_week.items[].time_budget_hours.max` | 日报 ≤ 8、周报 ≤ 16 |
 | `action_items.items[].recommendation_type` | 一期 items ≥ 3 时必须出现 ≥3 种 |
 | `action_items.items[].effort_person_days.max` | ≤ `min × 3` |
-| `expanded.what_shipped` | 50-400 字（仅 major_event 条目） |
+| `expanded.what_shipped` | 50-600 字（仅 major_event 条目） |
+| `expanded.benchmarks` | ≤600 字；`pricing_availability` / `comparison` / `third_party_reaction` 各 ≤400 字 |
+| `expanded.decision_relevance` / `expanded.quick_start` | 各 ≤300 字，可选 |
 | `expanded.open_questions` | 1-5 条，每条 ≤ 120 字 |
 | `major_event` 条目 | 仅 core；每日 0-2 条；必须同时有 `expanded` 与 `tracking_ref` |
 | `decision_radar` impact | ≤ 120 字，每决策 ≤ 4 条 |
@@ -525,6 +534,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 | `experiments_this_week.items[].audience` | team_pilot / personal_workflow；周报尽量两种各 ≥1 |
 | `practice_digest.items[].summary` | 200-400 字（schema 兜底 120-600） |
 | `practice_digest.items[]` | 0-2 篇/周；origin 必须回指本周某日日报 agent_ecosystem 条目 |
+| 深度专题 | 每个 major_event 一份；七小节必填；总篇幅 800-1500 字；references ≥1 |
 
 ## 终端输出格式
 

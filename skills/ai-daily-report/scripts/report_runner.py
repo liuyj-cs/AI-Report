@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
 from pathlib import Path
 import subprocess
@@ -13,12 +13,14 @@ from typing import Any
 from dotenv import dotenv_values
 
 from archive import archive as archive_html
+from deep_dive import deep_dive_path, major_event_slugs
 from discovery import (
     append_run_log,
     build_discovery_manifest,
     compute_daily_window,
     load_profile,
     load_whitelist,
+    rolling_week_dates,
     write_discovery_manifest,
 )
 from ecosystem import record_ecosystem_repos
@@ -102,7 +104,7 @@ def _qa_summary_line(qa_diff: dict[str, Any]) -> str:
     return "QA findings " + " ".join(f"{name}={categories.get(name, 0)}" for name in ordered)
 
 
-def _send_mail(project_root: Path, html_path: Path, target_date: str, env_path: Path) -> tuple[int, str]:
+def _send_mail(project_root: Path, html_path: Path, subject: str, env_path: Path) -> tuple[int, str]:
     script = SCRIPT_DIR / "send_mail.py"
     proc = subprocess.run(
         [
@@ -110,7 +112,7 @@ def _send_mail(project_root: Path, html_path: Path, target_date: str, env_path: 
             str(script),
             str(html_path),
             "--subject",
-            f"AI 日报 · {target_date}",
+            subject,
             "--env",
             str(env_path),
         ],
@@ -157,41 +159,60 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
     if recorded:
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} ECOSYSTEM seen_repos+={recorded}")
 
+    deep_dive_sends: list[tuple[Path, str]] = []
+    for _, slug in major_event_slugs(report):
+        if not slug:
+            continue
+        dd_json_path = deep_dive_path(project_root, target_date, slug)
+        dd_html_path = render(dd_json_path)
+        dd_archived = archive_html(dd_html_path, "deep_dive", f"{target_date}-{slug}", project_root)
+        append_run_log(
+            run_log,
+            f"{report.get('generated_at', datetime.now().isoformat())} DEEPDIVE {dd_archived.relative_to(project_root)} ok",
+        )
+        dd_payload = _load_json(dd_json_path)
+        deep_dive_sends.append((dd_archived, f"AI 深度 · {dd_payload['title']}"))
+
     if dry_run:
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL skipped (dry-run)")
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=ok")
         return 0, str(archived_path)
 
-    code, send_output = _send_mail(project_root, archived_path, target_date, env_path)
+    code, send_output = _send_mail(project_root, archived_path, f"AI 日报 · {target_date}", env_path)
     if code != 0:
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
         return code, send_output
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
+    for dd_archived, dd_subject in deep_dive_sends:
+        code, send_output = _send_mail(project_root, dd_archived, dd_subject, env_path)
+        if code != 0:
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
+            return code, send_output
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=ok")
     return 0, str(archived_path)
 
 
-def _iso_week_dates(iso_week: str) -> list[str]:
-    year_str, week_str = iso_week.split("-W", 1)
-    monday = datetime.fromisocalendar(int(year_str), int(week_str), 1)
-    return [(monday + timedelta(days=offset)).date().isoformat() for offset in range(7)]
-
-
-def run_weekly_init(project_root: Path, iso_week: str, now_iso: str, env_path: Path) -> tuple[int, str]:
+def run_weekly_init(project_root: Path, week_end: str, now_iso: str, env_path: Path) -> tuple[int, str]:
     env = _load_env(env_path)
     ok, message = _validate_email_env(env)
     if not ok:
         return 1, message
 
-    cache_dir = project_root / "cache" / "weekly" / iso_week
+    try:
+        source_days = rolling_week_dates(week_end)
+    except ValueError:
+        return 1, f"invalid --end-date {week_end!r}, expected YYYY-MM-DD"
+
+    cache_dir = project_root / "cache" / "weekly" / week_end
     cache_dir.mkdir(parents=True, exist_ok=True)
     run_log = cache_dir / "run.log"
-    append_run_log(run_log, f"{now_iso} START weekly iso_week={iso_week}")
+    append_run_log(run_log, f"{now_iso} START weekly week_end={week_end}")
     payload = {
         "version": "1.0",
         "type": "weekly_input_days",
-        "iso_week": iso_week,
-        "source_days": _iso_week_dates(iso_week),
+        "week_end": week_end,
+        "source_days": source_days,
     }
     path = cache_dir / "input_days.json"
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -199,21 +220,21 @@ def run_weekly_init(project_root: Path, iso_week: str, now_iso: str, env_path: P
     return 0, str(path)
 
 
-def run_weekly_finalize(project_root: Path, iso_week: str, dry_run: bool, env_path: Path) -> tuple[int, str]:
+def run_weekly_finalize(project_root: Path, week_end: str, dry_run: bool, env_path: Path) -> tuple[int, str]:
     env = _load_env(env_path)
     ok, message = _validate_email_env(env)
     if not ok:
         return 1, message
 
-    cache_dir = project_root / "cache" / "weekly" / iso_week
+    cache_dir = project_root / "cache" / "weekly" / week_end
     report_path = cache_dir / "report.json"
     run_log = cache_dir / "run.log"
     if not report_path.exists():
         return 1, "weekly report.json must exist before finalize"
 
     report = _load_json(report_path)
-    if report.get("iso_week") != iso_week:
-        return 1, f"weekly report.json iso_week {report.get('iso_week')!r} does not match requested {iso_week!r}"
+    if report.get("week_end") != week_end:
+        return 1, f"weekly report.json week_end {report.get('week_end')!r} does not match requested {week_end!r}"
     qa_diff = build_weekly_qa_diff(report, project_root)
     qa_path = _write_json(cache_dir / "qa_diff.json", qa_diff)
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} QA {qa_path.name} ok")
@@ -224,7 +245,7 @@ def run_weekly_finalize(project_root: Path, iso_week: str, dry_run: bool, env_pa
 
     html_path = render(report_path)
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} RENDER report.html ok")
-    archived_path = archive_html(html_path, "weekly", iso_week, project_root)
+    archived_path = archive_html(html_path, "weekly", week_end, project_root)
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} ARCHIVE {archived_path.relative_to(project_root)} ok")
 
     if dry_run:
@@ -232,26 +253,12 @@ def run_weekly_finalize(project_root: Path, iso_week: str, dry_run: bool, env_pa
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END weekly status=ok")
         return 0, str(archived_path)
 
-    script = SCRIPT_DIR / "send_mail.py"
-    proc = subprocess.run(
-        [
-            sys.executable,
-            str(script),
-            str(archived_path),
-            "--subject",
-            f"AI 周报 · {iso_week}",
-            "--env",
-            str(env_path),
-        ],
-        capture_output=True,
-        text=True,
-        cwd=project_root,
-    )
-    output = (proc.stdout or proc.stderr).strip()
-    if proc.returncode != 0:
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={proc.returncode}")
-        return proc.returncode, output
-    append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {output}")
+    week_start = rolling_week_dates(week_end)[0]
+    code, send_output = _send_mail(project_root, archived_path, f"AI 周报 · {week_start} ~ {week_end}", env_path)
+    if code != 0:
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
+        return code, send_output
+    append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END weekly status=ok")
     return 0, str(archived_path)
 
@@ -272,12 +279,12 @@ def main(argv: list[str] | None = None, project_root: Path | None = None) -> int
     finalize_daily.add_argument("--dry-run", action="store_true")
 
     init_weekly = subparsers.add_parser("init-weekly")
-    init_weekly.add_argument("--iso-week", required=True)
+    init_weekly.add_argument("--end-date", required=True, dest="end_date")
     init_weekly.add_argument("--now", required=True)
     init_weekly.add_argument("--env", type=Path, default=Path(".env"))
 
     finalize_weekly = subparsers.add_parser("finalize-weekly")
-    finalize_weekly.add_argument("--iso-week", required=True)
+    finalize_weekly.add_argument("--end-date", required=True, dest="end_date")
     finalize_weekly.add_argument("--env", type=Path, default=Path(".env"))
     finalize_weekly.add_argument("--dry-run", action="store_true")
 
@@ -289,9 +296,9 @@ def main(argv: list[str] | None = None, project_root: Path | None = None) -> int
     elif args.command == "finalize-daily":
         code, message = run_daily_finalize(root, args.date, args.dry_run, args.env)
     elif args.command == "init-weekly":
-        code, message = run_weekly_init(root, args.iso_week, args.now, args.env)
+        code, message = run_weekly_init(root, args.end_date, args.now, args.env)
     else:
-        code, message = run_weekly_finalize(root, args.iso_week, args.dry_run, args.env)
+        code, message = run_weekly_finalize(root, args.end_date, args.dry_run, args.env)
 
     if message:
         stream = sys.stderr if code else sys.stdout

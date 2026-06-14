@@ -1,3 +1,5 @@
+import pytest
+
 from discovery import (
     GENERAL_SEARCH_SURFACE_NAME,
     GOOGLE_SEARCH_PRODUCT_BLOG_NAME,
@@ -10,7 +12,28 @@ from discovery import (
     missing_fetch_status_coverage,
     required_discovery_names,
     required_source_family_names,
+    rolling_week_dates,
 )
+
+
+def test_rolling_week_dates_returns_seven_ascending_days_ending_at_week_end():
+    assert rolling_week_dates("2026-06-13") == [
+        "2026-06-07", "2026-06-08", "2026-06-09", "2026-06-10",
+        "2026-06-11", "2026-06-12", "2026-06-13",
+    ]
+
+
+def test_rolling_week_dates_crosses_month_boundary():
+    assert rolling_week_dates("2026-05-03") == [
+        "2026-04-27", "2026-04-28", "2026-04-29", "2026-04-30",
+        "2026-05-01", "2026-05-02", "2026-05-03",
+    ]
+
+
+def test_rolling_week_dates_rejects_iso_week_string():
+    # fromisoformat would silently accept "2026-W20"; the shared guard must reject it
+    with pytest.raises(ValueError):
+        rolling_week_dates("2026-W20")
 
 
 def test_initial_fetch_status_contains_all_required_sources_with_pending_skeleton(sample_whitelist):

@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "AIWeeklyReport",
   "type": "object",
-  "required": ["version", "type", "iso_week", "window", "generated_at", "sections", "source_days"],
+  "required": ["version", "type", "week_end", "window", "generated_at", "sections", "source_days"],
   "properties": {
     "version": {"const": "1.0"},
     "type": {"const": "weekly"},
-    "iso_week": {"type": "string", "pattern": "^\\d{4}-W\\d{2}$"},
+    "week_end": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
     "window": {
       "type": "object",
       "required": ["start", "end", "timezone"],

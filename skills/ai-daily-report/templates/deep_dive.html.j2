@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>AI 深度 · {{ report.title }}</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1f2328; --muted: #656d76;
+    --accent: #0969da; --accent-soft: #f0f7ff;
+    --card: #ffffff; --border: #d0d7de;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0;
+      --accent: #58a6ff; --accent-soft: #121d2f;
+      --card: #161b22; --border: #30363d;
+    }
+  }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; line-height: 1.7; }
+  .container { max-width: 720px; margin: 0 auto; padding: 20px 16px 48px; }
+  header { border-bottom: 2px solid var(--accent); padding-bottom: 12px; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .meta { color: var(--muted); font-size: 14px; }
+  h2 { font-size: 17px; margin: 24px 0 8px; border-left: 4px solid var(--accent); padding-left: 10px; }
+  section p { margin: 8px 0; font-size: 15px; }
+  ul { margin: 8px 0; padding-left: 22px; font-size: 15px; }
+  .role { font-weight: 600; }
+  .refs a { color: var(--accent); word-break: break-all; }
+  footer { margin-top: 32px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--border); padding-top: 12px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>AI 深度 · {{ report.title }}</h1>
+    <div class="meta">{{ report.date }} · 事件追踪：{{ report.event_slug }}</div>
+  </header>
+  <section><h2>背景与时间线</h2><p>{{ report.sections.background }}</p></section>
+  <section><h2>发布详述</h2><p>{{ report.sections.what_shipped_detail }}</p></section>
+  <section><h2>基准与定价</h2><p>{{ report.sections.benchmarks_pricing }}</p></section>
+  <section><h2>生态与第三方反应</h2><p>{{ report.sections.ecosystem_reaction }}</p></section>
+  <section>
+    <h2>对四个角色意味着什么</h2>
+    <ul>
+    {% for entry in report.sections.role_implications %}
+      <li><span class="role">{{ entry.role }}：</span>{{ entry.implication }}</li>
+    {% endfor %}
+    </ul>
+  </section>
+  <section><h2>快速上手</h2><p>{{ report.sections.quick_start }}</p></section>
+  <section>
+    <h2>待验证问题</h2>
+    <ul>
+    {% for q in report.sections.open_questions %}
+      <li>{{ q }}</li>
+    {% endfor %}
+    </ul>
+  </section>
+  <section class="refs">
+    <h2>引用</h2>
+    <ul>
+    {% for ref in report.references %}
+      <li>{{ ref.source }} — <a href="{{ ref.url }}">{{ ref.url }}</a></li>
+    {% endfor %}
+    </ul>
+  </section>
+  <footer>生成于 {{ report.generated_at }} · AI 日报深度专题</footer>
+</div>
+</body>
+</html>
