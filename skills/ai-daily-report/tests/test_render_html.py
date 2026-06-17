@@ -852,3 +852,21 @@ def test_render_deep_dive_rejects_non_http_reference_url(tmp_path, sample_deep_d
     result = run_render(src, tmp_path / "out.html")
     assert result.returncode == 1
     assert "url" in result.stderr or "pattern" in result.stderr
+
+
+def test_weekly_schema_recall_ack_accepts_valid_forms_rejects_string():
+    schema = json.loads((SCHEMAS / "weekly_report.schema.json").read_text(encoding="utf-8"))
+    weekly = json.loads((FIXTURES / "sample_weekly.json").read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema)
+    assert list(validator.iter_errors(weekly)) == []  # baseline (no recall_ack) is valid
+
+    for ack in (True, False, {"frontier": True}, {"cn_labs": True}, ["frontier"], []):
+        candidate = deepcopy(weekly)
+        candidate["source_days"]["recall_ack"] = ack
+        assert list(validator.iter_errors(candidate)) == [], f"{ack!r} should be schema-valid"
+
+    # bare string (YAML scalar footgun), int, and non-boolean object values must be rejected early
+    for bad in ("frontier", 5, {"frontier": "yes"}):
+        candidate = deepcopy(weekly)
+        candidate["source_days"]["recall_ack"] = bad
+        assert list(validator.iter_errors(candidate)), f"{bad!r} should be rejected by schema"

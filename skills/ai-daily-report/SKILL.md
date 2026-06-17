@@ -504,7 +504,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 - **核心源阈值**：`core_sources`（8 个，含 2 家 CN）整链失败数 ≥4 → 中止任务、不发邮件、不归档（仅保留 cache 里的 run.log 供排查）
 - **空结果**：仅在最终命中层是**倒序新闻/发布 feed 面**（或 `empty_is_conclusive`）时，窗口内无条目才算合法空，同时进 `succeeded` 与 `empty` 且不穿透下层；**静态/产品/文档/聚合面命中空必须继续下穿** HF/GitHub 倒序面与 websearch 后才能判空（cn_labs / hard_data 默认按此处理）。详见日报步骤 1「成功」判定。
 - **伪成功（CSS only / 登录墙 / JS shell）**：视为该层 error，立即进入下一层
-- **召回守门（finalize 自动校验，会阻断发送）**：① 日报 `cn_labs` / `hard_data` 源若停在 Layer-0 静态面且空、未跑搜索层 → qa_diff 记 `missed_discovery`（warn，不阻断）；② 周报若 frontier_models 在 7 天里 ≥3 天为空或日报缺失（缺失=盲天，不算通过；分母固定为窗口 7 天）、或全部 CN 一级厂商整周零产出 → finalize 校验失败、不渲染不发信。确为安静周时，在周报 `source_days.recall_ack` 留证后可放行：`true` 放行全部，或按信号分别放行 `{"frontier": true}` / `{"cn_labs": true}`（也接受列表 `["frontier"]`）——放行 frontier 不会连带掩盖真实的 CN 漏采。
+- **召回守门（finalize 自动校验，会阻断发送）**：① 日报 `cn_labs` / `hard_data` 源若停在 Layer-0 静态面且空、未跑搜索层 → qa_diff 记 `missed_discovery`（warn，不阻断）；② 周报若 frontier_models 在 7 天里 ≥3 天为空或日报缺失（缺失=盲天，不算通过；分母固定为窗口 7 天）、或全部 CN 一级厂商整周零产出 → finalize 校验失败、不渲染不发信。确为安静周时，在周报 `source_days.recall_ack` 留证后可放行：`true` 放行全部，或按信号分别放行 `{"frontier": true}` / `{"cn_labs": true}`（也接受列表 `["frontier"]`）——放行 frontier 不会连带掩盖真实的 CN 漏采。⚠️ `recall_ack` 只接受 **布尔 / 对象 / 列表**；裸字符串 `recall_ack: frontier`（YAML 标量）**不生效、会继续阻断**（属刻意 fail-closed；weekly schema 的 `recall_ack` 已加 `oneOf`，非法形态在渲染时即报错）。
 - **render_html.py 失败**：若退出码 1 → Claude 自检 JSON 格式（特别是新增 required 字段 `release_stage` / `published_at_confidence` / `authority_score` / `editorial_tier`，以及 `action_items.references[]` 的 `section` / `editorial_tier`）补齐后重试一次；仍失败则中止并报错
 - **archive.py 失败**：停止流程，但保留 cache HTML 供用户手动取用
 - **finalize-weekly 校验失败**：若缺日报 JSON、`source_days` 不完整、引用无法回指或 `itemRef` 越界 → 停止流程，不归档不发信，先修正 JSON / 日报缓存
