@@ -10,7 +10,12 @@
 #     * websearch_broad   {queries: []}      confidence 强制 medium + via_broad_search 标记
 #   - queries 占位符：{date}、{yesterday}、{week_range}
 #   - 「成功」判定：HTTP 200 且页面体感为真实内容（非纯 CSS 模板 / 空骨架 / 登录墙）。
-#     窗口内 0 条目（empty_in_window）属于合法成功，不应继续向下层穿透。
+#     窗口内 0 条目（empty_in_window）：仅当命中层是「倒序新闻/发布 feed 面」（官方
+#     news/blog 列表、release notes、GitHub releases、GitHub 组织 ?sort=updated、
+#     HuggingFace 组织 ?sort=created），或源标了 empty_is_conclusive: true 时，才算
+#     合法成功并停止；静态/产品/文档/聚合面（产品首页、API 介绍页、聊天入口、JS 壳）
+#     命中空必须继续下穿后续 HF/GitHub 倒序面与 websearch。cn_labs / hard_data 默认
+#     按「必须下穿」处理。详见 SKILL.md 日报步骤 1「成功」判定。
 #   - verify_before_use: true 表示该源 Layer 0 入口尚未被人工 verify 过，跑日报时
 #     首层若失败应直接落入 Layer 1+，不报警；近期需要做一次性人工巡检。
 #   - 对 OpenAI / OpenAI Codex：若 Layer 0 命中 `403`、Cloudflare、JS shell 或空骨架，
@@ -123,6 +128,11 @@ us_labs:
         queries:
           - "Meta AI announcement {date}"
 
+# CN 一级厂商多为开源权重模型：最可靠的「倒序新闻面」是 HuggingFace 组织页
+# （sort=created，新权重第一现场）+ GitHub 组织页（sort=updated）。官方产品/文档
+# 首页（如 bigmodel introduction、kimi 聊天首页）不是新闻面，empty 不代表无发布——
+# 详见 SKILL.md「成功」判定：非 feed 面命中空必须继续下穿。URL 于 2026-06-17 核实可达；
+# .cn 源仍标 verify_before_use（Layer-0 失败时容错降级、不报警，需定期人工巡检）。
 cn_labs:
   - name: DeepSeek
     category: cn_labs
@@ -131,10 +141,14 @@ cn_labs:
     fetch_chain:
       - type: webfetch
         url: https://api-docs.deepseek.com/updates
+      - type: webfetch
+        url: https://huggingface.co/deepseek-ai/models?sort=created
+      - type: webfetch
+        url: https://github.com/orgs/deepseek-ai/repositories?sort=updated
       - type: websearch_scoped
         queries:
-          - "DeepSeek release site:deepseek.com"
-          - "DeepSeek announcement site:api-docs.deepseek.com"
+          - "DeepSeek release site:deepseek.com {date}"
+          - "DeepSeek announcement site:api-docs.deepseek.com {date}"
       - type: websearch_broad
         queries:
           - "DeepSeek new model release {date}"
@@ -148,7 +162,11 @@ cn_labs:
     authority_tier: 1
     fetch_chain:
       - type: webfetch
-        url: https://qwen.ai/blog/
+        url: https://qwen.ai/research
+      - type: webfetch
+        url: https://huggingface.co/Qwen/models?sort=created
+      - type: webfetch
+        url: https://github.com/orgs/QwenLM/repositories?sort=updated
       - type: websearch_scoped
         queries:
           - "Qwen release site:qwen.ai/blog {date}"
@@ -165,14 +183,19 @@ cn_labs:
     verify_before_use: true
     fetch_chain:
       - type: webfetch
-        url: https://bigmodel.cn/dev/howuse/introduction
+        url: https://docs.bigmodel.cn/cn/update/new-releases
+      - type: webfetch
+        url: https://huggingface.co/zai-org/models?sort=created
+      - type: webfetch
+        url: https://github.com/orgs/zai-org/repositories?sort=updated
       - type: websearch_scoped
         queries:
-          - "智谱 GLM 发布 site:zhipuai.cn"
+          - "智谱 GLM 发布 site:zhipuai.cn {date}"
           - "智谱 GLM release {date}"
+          - "GLM new model site:z.ai {date}"
       - type: websearch_broad
         queries:
-          - "智谱 ZhipuAI 新模型 {date}"
+          - "智谱 ZhipuAI GLM 新模型 {date}"
 
   - name: 月之暗面 Kimi
     category: cn_labs
@@ -181,10 +204,16 @@ cn_labs:
     verify_before_use: true
     fetch_chain:
       - type: webfetch
-        url: https://kimi.moonshot.cn/
+        url: https://huggingface.co/moonshotai/models?sort=created
+      - type: webfetch
+        url: https://www.kimi.com/blog/
+      - type: webfetch
+        url: https://github.com/orgs/MoonshotAI/repositories?sort=updated
       - type: websearch_scoped
         queries:
-          - "Kimi 月之暗面 发布 site:moonshot.cn"
+          - "Kimi 月之暗面 发布 site:moonshot.cn {date}"
+          - "Kimi Moonshot release {date}"
+          - "Kimi K2 新模型 {date}"
       - type: websearch_broad
         queries:
           - "Kimi Moonshot 新模型 {date}"
@@ -196,13 +225,17 @@ cn_labs:
     verify_before_use: true
     fetch_chain:
       - type: webfetch
-        url: https://www.volcengine.com/docs/82379
+        url: https://www.volcengine.com/docs/82379/1159178
+      - type: webfetch
+        url: https://huggingface.co/ByteDance-Seed/models?sort=created
+      - type: webfetch
+        url: https://github.com/orgs/ByteDance-Seed/repositories?sort=updated
       - type: websearch_scoped
         queries:
-          - "豆包 火山引擎 发布 site:volcengine.com"
+          - "豆包 火山方舟 模型发布 site:volcengine.com"
       - type: websearch_broad
         queries:
-          - "字节 豆包 新模型 {date}"
+          - "字节 豆包 Doubao 新模型 {date}"
 
   - name: 腾讯混元
     category: cn_labs
@@ -211,10 +244,14 @@ cn_labs:
     verify_before_use: true
     fetch_chain:
       - type: webfetch
-        url: https://hunyuan.tencent.com/
+        url: https://hunyuan.tencent.com/research
+      - type: webfetch
+        url: https://huggingface.co/tencent/models?sort=created
+      - type: webfetch
+        url: https://github.com/orgs/Tencent-Hunyuan/repositories?sort=updated
       - type: websearch_scoped
         queries:
-          - "腾讯 混元 发布 site:tencent.com"
+          - "腾讯 混元 Hunyuan 发布 site:tencent.com"
       - type: websearch_broad
         queries:
           - "腾讯 混元 新模型 {date}"
@@ -227,6 +264,10 @@ cn_labs:
     fetch_chain:
       - type: webfetch
         url: https://www.minimaxi.com/news
+      - type: webfetch
+        url: https://huggingface.co/MiniMaxAI/models?sort=created
+      - type: webfetch
+        url: https://github.com/orgs/MiniMax-AI/repositories?sort=updated
       - type: websearch_scoped
         queries:
           - "MiniMax 发布 site:minimaxi.com"
@@ -410,6 +451,13 @@ recall_probe_queries:
   - "Microsoft 365 Copilot paid seats weekly engagement {date}"
   - "AI-native editor multiple agents Agent Client Protocol {date}"
   - "enterprise Copilot ARR paid seats weekly active users {date}"
+  # 中国开源权重模型召回探针：官方静态面常年为空，必须靠搜索 + HF/GitHub 倒序面兜底
+  - "China open-weight LLM release HuggingFace {date}"
+  - "中国 开源大模型 发布 {date}"
+  - "GLM Zhipu new model release {date}"
+  - "Kimi Moonshot new model release {date}"
+  - "Qwen new model release {date}"
+  - "MiniMax new model release {date}"
 
 ecosystem_search_queries:
   - "github trending claude code skill {date}"

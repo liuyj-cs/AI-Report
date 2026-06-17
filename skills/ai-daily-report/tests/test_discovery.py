@@ -127,8 +127,9 @@ def test_cursor_source_checks_blog_before_changelog_and_sdk_queries(sample_white
 
 def test_whitelist_contains_deepseek_vision_zed_and_adoption_surfaces(sample_whitelist):
     deepseek = next(item for item in sample_whitelist["cn_labs"] if item["name"] == "DeepSeek")
-    assert "DeepSeek vision multimodal {date}" in deepseek["fetch_chain"][2]["queries"]
-    assert "DeepSeek image recognition beta {date}" in deepseek["fetch_chain"][2]["queries"]
+    broad = next(layer for layer in deepseek["fetch_chain"] if layer.get("type") == "websearch_broad")
+    assert "DeepSeek vision multimodal {date}" in broad["queries"]
+    assert "DeepSeek image recognition beta {date}" in broad["queries"]
 
     watchlist_names = {item["name"] for item in sample_whitelist["general_agent_watchlist"]}
     assert "Zed" in watchlist_names

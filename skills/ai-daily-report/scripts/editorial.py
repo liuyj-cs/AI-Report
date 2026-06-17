@@ -11,7 +11,14 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-from discovery import RECALL_PROBE_SURFACE_NAME, missing_fetch_status_coverage, required_source_family_names, rolling_week_dates
+from discovery import (
+    RECALL_PROBE_SURFACE_NAME,
+    iter_named_sources,
+    load_whitelist,
+    missing_fetch_status_coverage,
+    required_source_family_names,
+    rolling_week_dates,
+)
 from ecosystem import load_seen_repos, validate_ecosystem_repeats
 from tracking import validate_tracking_refs
 from deep_dive import validate_deep_dives
@@ -34,6 +41,13 @@ QA_CATEGORIES = (
     "hard_data_gap",
     "reference_integrity_gap",
 )
+SEARCH_LAYER_TYPES = ("websearch_scoped", "websearch_broad")
+# Categories where an empty official surface almost never means "no news" (open-weight
+# model labs, continuously-updating leaderboards): empty here must escalate to search.
+HIGH_RECALL_CATEGORIES = ("cn_labs", "hard_data")
+# A whole week with frontier_models empty on this many days is never legitimately
+# "quiet" in this domain — it signals blind discovery, not a slow news week.
+FRONTIER_EMPTY_DAY_THRESHOLD = 3
 HARD_DATA_KEYWORDS = (
     "benchmark",
     "leaderboard",
@@ -775,6 +789,7 @@ def validate_weekly_artifacts(report: dict[str, Any], project_root: Path) -> lis
     errors.extend(validate_weekly_references(report, project_root))
     errors.extend(validate_practice_digest(report, project_root))
     errors.extend(validate_market_signals_consistency(report, "weekly"))
+    errors.extend(validate_weekly_recall(report, project_root))
     return errors
 
 
@@ -912,6 +927,45 @@ def recall_probe_findings(report: dict[str, Any], whitelist: dict[str, Any]) -> 
     return []
 
 
+def recall_fallback_findings(report: dict[str, Any], whitelist: dict[str, Any]) -> list[dict[str, Any]]:
+    """Flag sources that hit an empty official/static surface but never ran the
+    configured websearch fallback.
+
+    ``empty_in_window`` is only authoritative on a genuine reverse-chron feed.
+    On a static docs / product-home / aggregator surface it usually means "this
+    page can't show news", not "there is no news" — so the search layer must run.
+    Feeds whose emptiness is authoritative opt out via ``empty_is_conclusive: true``.
+    """
+    fetch_status = report.get("fetch_status", {})
+    empty = set(fetch_status.get("empty") or [])
+    if not empty:
+        return []
+    source_details = fetch_status.get("source_details", {})
+    findings: list[dict[str, Any]] = []
+    for source in iter_named_sources(whitelist):
+        name = source["name"]
+        if name not in empty or source.get("empty_is_conclusive"):
+            continue
+        if source.get("category") not in HIGH_RECALL_CATEGORIES:
+            continue
+        chain = source.get("fetch_chain", [])
+        if not any(layer.get("type") in SEARCH_LAYER_TYPES for layer in chain):
+            continue
+        attempts = source_details.get(name, {}).get("attempts") or []
+        if any(attempt.get("layer_type") in SEARCH_LAYER_TYPES for attempt in attempts):
+            continue
+        findings.append(
+            _make_finding(
+                "missed_discovery",
+                "medium",
+                f"{name} 在官方/静态面命中空后未下穿 websearch 兜底层；empty≠无新闻，可能漏采。",
+                source_name=name,
+                suggested_fix="对该源执行 websearch_scoped/broad 并把命中或空结果写入 attempts；确为倒序新闻面且空即权威时，在 whitelist 标 empty_is_conclusive: true。",
+            )
+        )
+    return findings
+
+
 def build_daily_qa_diff(report: dict[str, Any], ledger: dict[str, Any], whitelist: dict[str, Any]) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     source_details = report.get("fetch_status", {}).get("source_details", {})
@@ -939,6 +993,7 @@ def build_daily_qa_diff(report: dict[str, Any], ledger: dict[str, Any], whitelis
                     )
                 )
     findings.extend(recall_probe_findings(report, whitelist))
+    findings.extend(recall_fallback_findings(report, whitelist))
 
     for item in ledger.get("items", []):
         decision = item.get("decision")
@@ -995,6 +1050,129 @@ def build_daily_qa_diff(report: dict[str, Any], ledger: dict[str, Any], whitelis
     }
 
 
+def _load_weekly_daily_reports(report: dict[str, Any], project_root: Path) -> list[tuple[str, dict[str, Any]]]:
+    source_days = report.get("source_days", {})
+    ordered: list[str] = []
+    for key in ("daily_reports_used", "backfilled"):
+        for day in source_days.get(key, []):
+            if day not in ordered:
+                ordered.append(day)
+    dailies: list[tuple[str, dict[str, Any]]] = []
+    for day in ordered:
+        path = project_root / "cache" / day / "report.json"
+        if not path.exists():
+            continue
+        try:
+            dailies.append((day, _read_json(path)))
+        except (OSError, json.JSONDecodeError):
+            continue
+    return dailies
+
+
+def weekly_recall_findings(
+    report: dict[str, Any],
+    project_root: Path,
+    whitelist: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Detect systemic discovery-recall failure across the weekly window.
+
+    Two signals that are never legitimately "quiet" in this domain:
+      * ``frontier_models`` empty (or the daily missing entirely) on too many of
+        the declared 7 days, or
+      * every CN tier-1 lab silent across the whole window.
+    Both mean discovery went blind (e.g. static Layer-0 surfaces that returned
+    empty and never escalated to search). The denominator is the DECLARED 7-day
+    window, and a missing/corrupt daily counts as a blind day (not a free pass),
+    so the guard can't fail open just because dailies failed to load.
+
+    ``source_days.recall_ack`` downgrades findings to non-blocking so a genuinely
+    quiet week can still ship. It may be ``True`` (ack everything) or target a
+    single signal via a dict/list — e.g. ``{"frontier": true}`` or
+    ``["frontier"]`` — so acking a quiet frontier week does NOT also silence a
+    real CN-discovery breakage.
+    """
+    source_days = report.get("source_days", {})
+    declared: list[str] = []
+    for key in ("daily_reports_used", "backfilled"):
+        for day in source_days.get(key) or []:
+            if day not in declared:
+                declared.append(day)
+    if not declared:
+        return []
+    loaded = {day: daily for day, daily in _load_weekly_daily_reports(report, project_root)}
+
+    acks = source_days.get("recall_ack")
+
+    def _severity(signal: str) -> str:
+        if acks is True:
+            acked = True
+        elif isinstance(acks, dict):
+            acked = bool(acks.get(signal))
+        elif isinstance(acks, (list, tuple, set)):
+            acked = signal in acks
+        else:
+            acked = False
+        return "low" if acked else "high"
+
+    findings: list[dict[str, Any]] = []
+
+    # A missing/corrupt daily is a blind day, not a pass.
+    frontier_blind = [
+        day
+        for day in declared
+        if day not in loaded
+        or not loaded[day].get("sections", {}).get("frontier_models", {}).get("items")
+    ]
+    if len(frontier_blind) >= FRONTIER_EMPTY_DAY_THRESHOLD:
+        missing = [day for day in frontier_blind if day not in loaded]
+        note = f"（含 {len(missing)} 天日报缺失/损坏）" if missing else ""
+        findings.append(
+            _make_finding(
+                "missed_discovery",
+                _severity("frontier"),
+                f"前沿模型召回疑似失败：本周 {len(frontier_blind)}/{len(declared)} 天 frontier_models 为空或缺失{note}"
+                f"（{', '.join(frontier_blind)}）。",
+                section="frontier_models",
+                suggested_fix="对 cn_labs / hard_data 等静态 Layer-0 信源补跑 websearch 兜底再重算日报；补齐缺失日报；确为安静周可在 source_days.recall_ack 留证放行（可按 frontier / cn_labs 分别 ack）。",
+            )
+        )
+
+    whitelist = whitelist or load_whitelist()
+    cn_sources = {source["name"] for source in iter_named_sources(whitelist) if source.get("category") == "cn_labs"}
+    if cn_sources:
+        cn_produced = False
+        for day in declared:
+            daily = loaded.get(day)
+            if not daily:
+                continue
+            fetch_status = daily.get("fetch_status", {})
+            produced = set(fetch_status.get("succeeded") or []) - set(fetch_status.get("empty") or [])
+            if produced & cn_sources:
+                cn_produced = True
+                break
+        if not cn_produced:
+            findings.append(
+                _make_finding(
+                    "missed_discovery",
+                    _severity("cn_labs"),
+                    f"全部 {len(cn_sources)} 家 CN 一级厂商在本周 {len(declared)} 天内零产出，"
+                    "疑似 cn_labs 信源面失效（静态 Layer-0 命中空未下穿搜索）。",
+                    section="frontier_models",
+                    suggested_fix="检查 cn_labs 的 Layer-0 是否为倒序新闻/发布面，并确保 websearch 兜底层执行后重跑日报。",
+                )
+            )
+    return findings
+
+
+def validate_weekly_recall(report: dict[str, Any], project_root: Path) -> list[str]:
+    """Blocking view of weekly recall failure (only high-severity, i.e. not acked)."""
+    return [
+        finding["reason"]
+        for finding in weekly_recall_findings(report, project_root)
+        if finding["severity"] == "high"
+    ]
+
+
 def build_weekly_qa_diff(report: dict[str, Any], project_root: Path) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     reference_errors = []
@@ -1012,6 +1190,7 @@ def build_weekly_qa_diff(report: dict[str, Any], project_root: Path) -> dict[str
             )
         )
     findings.extend(market_signal_consistency_findings(report, "weekly"))
+    findings.extend(weekly_recall_findings(report, project_root))
     findings = _dedupe_findings(findings)
     return {
         "type": "qa_diff",
