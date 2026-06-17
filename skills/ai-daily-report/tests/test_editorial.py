@@ -7,13 +7,16 @@ from editorial import (
     build_daily_qa_diff,
     build_weekly_qa_diff,
     eligible_action_refs,
+    recall_fallback_findings,
     validate_candidate_ledger_schema,
     validate_daily_artifacts,
     validate_decision_radar,
     validate_major_event_consistency,
     validate_practice_digest,
     validate_weekly_artifacts,
+    validate_weekly_recall,
     validate_weekly_source_days,
+    weekly_recall_findings,
 )
 
 
@@ -1650,3 +1653,222 @@ def test_validate_weekly_artifacts_includes_practice_digest(tmp_path, normalized
     report["sections"]["practice_digest"]["items"][0]["origin"]["date"] = "1999-01-01"
     errors = validate_weekly_artifacts(report, tmp_path)
     assert any("not listed in source_days" in error for error in errors)
+
+
+# ---------------------------------------------------------------------------
+# Recall guardrail (L3): catch silent discovery-recall failure
+# ---------------------------------------------------------------------------
+RECALL_WEEK = [
+    "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-13",
+    "2026-06-14", "2026-06-15", "2026-06-16",
+]
+
+
+def _cn_source_names() -> list[str]:
+    from discovery import iter_named_sources
+
+    return [s["name"] for s in iter_named_sources(load_whitelist()) if s.get("category") == "cn_labs"]
+
+
+def _write_recall_dailies(tmp_path, days, *, frontier_nonempty, cn_produced) -> list[str]:
+    """Write minimal daily reports controlling frontier emptiness + CN production per day."""
+    cn = _cn_source_names()
+    for index, day in enumerate(days):
+        cache_dir = tmp_path / "cache" / day
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        items = [{"headline": f"模型动态 {day}"}] if frontier_nonempty[index] else []
+        if cn_produced[index]:
+            succeeded, empty = list(cn), []
+        else:
+            succeeded, empty = [], list(cn)
+        daily = {
+            "type": "daily",
+            "date": day,
+            "sections": {"frontier_models": {"items": items}},
+            "fetch_status": {"succeeded": succeeded, "empty": empty, "failed": [], "source_details": {}},
+        }
+        (cache_dir / "report.json").write_text(json.dumps(daily, ensure_ascii=False), encoding="utf-8")
+    return cn
+
+
+def _recall_weekly_report(days, *, recall_ack=False) -> dict:
+    source_days = {"daily_reports_used": list(days), "backfilled": []}
+    if recall_ack:
+        source_days["recall_ack"] = True
+    return {"week_end": days[-1], "source_days": source_days}
+
+
+def test_validate_weekly_recall_blocks_when_frontier_empty_most_days(tmp_path):
+    _write_recall_dailies(
+        tmp_path, RECALL_WEEK,
+        frontier_nonempty=[True, False, False, False, False, False, False],
+        cn_produced=[True] * 7,
+    )
+    errors = validate_weekly_recall(_recall_weekly_report(RECALL_WEEK), tmp_path)
+    assert any("前沿模型召回" in error for error in errors)
+
+
+def test_validate_weekly_recall_blocks_when_cn_labs_silent_all_week(tmp_path):
+    _write_recall_dailies(
+        tmp_path, RECALL_WEEK,
+        frontier_nonempty=[True] * 7,
+        cn_produced=[False] * 7,
+    )
+    errors = validate_weekly_recall(_recall_weekly_report(RECALL_WEEK), tmp_path)
+    assert any("CN 一级厂商" in error for error in errors)
+
+
+def test_validate_weekly_recall_passes_when_healthy(tmp_path):
+    _write_recall_dailies(
+        tmp_path, RECALL_WEEK,
+        frontier_nonempty=[True] * 7,
+        cn_produced=[True] * 7,
+    )
+    assert validate_weekly_recall(_recall_weekly_report(RECALL_WEEK), tmp_path) == []
+
+
+def test_validate_weekly_recall_ack_downgrades_to_nonblocking(tmp_path):
+    _write_recall_dailies(
+        tmp_path, RECALL_WEEK,
+        frontier_nonempty=[False] * 7,
+        cn_produced=[False] * 7,
+    )
+    report = _recall_weekly_report(RECALL_WEEK, recall_ack=True)
+    assert validate_weekly_recall(report, tmp_path) == []
+    findings = weekly_recall_findings(report, tmp_path)
+    assert findings
+    assert all(f["severity"] == "low" for f in findings)
+    assert all(f["category"] == "missed_discovery" for f in findings)
+
+
+def test_validate_weekly_artifacts_includes_recall_block(tmp_path):
+    _write_recall_dailies(
+        tmp_path, RECALL_WEEK,
+        frontier_nonempty=[False] * 7,
+        cn_produced=[False] * 7,
+    )
+    errors = validate_weekly_artifacts(_recall_weekly_report(RECALL_WEEK), tmp_path)
+    assert any(("前沿模型召回" in error) or ("CN 一级厂商" in error) for error in errors)
+
+
+def test_validate_weekly_recall_per_signal_ack(tmp_path):
+    # frontier empty AND cn silent all week; ack ONLY frontier -> cn still blocks.
+    _write_recall_dailies(tmp_path, RECALL_WEEK, frontier_nonempty=[False] * 7, cn_produced=[False] * 7)
+    report = _recall_weekly_report(RECALL_WEEK)
+    report["source_days"]["recall_ack"] = {"frontier": True}
+    errors = validate_weekly_recall(report, tmp_path)
+    assert any("CN 一级厂商" in error for error in errors)
+    assert not any("前沿模型召回" in error for error in errors)
+
+
+def test_validate_weekly_recall_counts_missing_dailies_as_blind(tmp_path):
+    # Declare 7 days but only write 2 healthy ones; the 5 missing must count as blind
+    # and the denominator must stay the 7-day window, not the loaded count.
+    _write_recall_dailies(tmp_path, RECALL_WEEK[:2], frontier_nonempty=[True, True], cn_produced=[True, True])
+    report = _recall_weekly_report(RECALL_WEEK)  # declares all 7
+    errors = validate_weekly_recall(report, tmp_path)
+    assert any("前沿模型召回" in error and "/7" in error for error in errors)
+
+
+def test_weekly_recall_findings_tolerates_null_fetch_status(tmp_path):
+    day = RECALL_WEEK[0]
+    (tmp_path / "cache" / day).mkdir(parents=True)
+    (tmp_path / "cache" / day / "report.json").write_text(
+        json.dumps(
+            {
+                "type": "daily",
+                "date": day,
+                "sections": {"frontier_models": {"items": []}},
+                "fetch_status": {"succeeded": None, "empty": None, "failed": None, "source_details": {}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    # must not raise on present-but-null lists
+    findings = weekly_recall_findings(_recall_weekly_report([day]), tmp_path)
+    assert isinstance(findings, list)
+
+
+def test_recall_fallback_findings_tolerates_null_attempts():
+    whitelist = {
+        "cn_labs": [
+            {
+                "name": "X",
+                "category": "cn_labs",
+                "fetch_chain": [{"type": "webfetch", "url": "u"}, {"type": "websearch_broad", "queries": ["q"]}],
+            }
+        ]
+    }
+    report = {
+        "fetch_status": {
+            "succeeded": [],
+            "failed": [],
+            "empty": ["X"],
+            "source_details": {"X": {"attempts": None}},
+        }
+    }
+    findings = recall_fallback_findings(report, whitelist)  # must not raise on attempts: null
+    assert any(f["source_name"] == "X" for f in findings)
+
+
+def test_recall_fallback_findings_flags_empty_static_source_without_search():
+    whitelist = {
+        "cn_labs": [
+            {
+                "name": "TestGLM",
+                "category": "cn_labs",
+                "fetch_chain": [{"type": "webfetch", "url": "x"}, {"type": "websearch_broad", "queries": ["q"]}],
+            },
+            {
+                "name": "TestConclusive",
+                "category": "cn_labs",
+                "empty_is_conclusive": True,
+                "fetch_chain": [{"type": "webfetch", "url": "y"}, {"type": "websearch_broad", "queries": ["q"]}],
+            },
+            {
+                "name": "TestSearched",
+                "category": "cn_labs",
+                "fetch_chain": [{"type": "webfetch", "url": "z"}, {"type": "websearch_broad", "queries": ["q"]}],
+            },
+        ],
+        "us_labs": [
+            {
+                "name": "TestUSFeed",
+                "category": "us_labs",
+                "fetch_chain": [{"type": "webfetch", "url": "u"}, {"type": "websearch_broad", "queries": ["q"]}],
+            },
+        ],
+    }
+    report = {
+        "fetch_status": {
+            "succeeded": [],
+            "failed": [],
+            "empty": ["TestGLM", "TestConclusive", "TestSearched", "TestUSFeed"],
+            "source_details": {
+                "TestGLM": {"attempts": [{"layer_type": "webfetch", "result": "empty"}]},
+                "TestConclusive": {"attempts": [{"layer_type": "webfetch", "result": "empty"}]},
+                "TestSearched": {
+                    "attempts": [
+                        {"layer_type": "webfetch", "result": "empty"},
+                        {"layer_type": "websearch_broad", "result": "empty"},
+                    ]
+                },
+                "TestUSFeed": {"attempts": [{"layer_type": "webfetch", "result": "empty"}]},
+            },
+        }
+    }
+    findings = recall_fallback_findings(report, whitelist)
+    flagged = {f["source_name"] for f in findings}
+    assert "TestGLM" in flagged           # cn_labs, static, no search escalation
+    assert "TestConclusive" not in flagged  # empty_is_conclusive override
+    assert "TestSearched" not in flagged    # already escalated to websearch
+    assert "TestUSFeed" not in flagged      # out of high-recall categories
+    assert all(f["category"] == "missed_discovery" for f in findings)
+
+
+def test_build_daily_qa_diff_surfaces_recall_fallback(sample_daily_report, sample_candidate_ledger, finalized_fetch_status):
+    whitelist = load_whitelist()
+    report = deepcopy(sample_daily_report)
+    report["fetch_status"] = finalized_fetch_status(whitelist)
+    qa_diff = build_daily_qa_diff(report, sample_candidate_ledger, whitelist)
+    assert qa_diff["summary"]["categories"]["missed_discovery"] >= 1
