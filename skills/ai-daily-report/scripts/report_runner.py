@@ -14,6 +14,7 @@ from dotenv import dotenv_values
 
 from archive import archive as archive_html
 from deep_dive import deep_dive_path, major_event_slugs
+from interview import iter_interview_files, interview_already_sent, record_interview_sent
 from discovery import (
     append_run_log,
     build_discovery_manifest,
@@ -24,6 +25,7 @@ from discovery import (
     write_discovery_manifest,
 )
 from ecosystem import record_ecosystem_repos
+from methodology import load_seen_methodology, record_methodology, validate_methodology_repeats
 from editorial import build_daily_qa_diff, build_weekly_qa_diff, validate_daily_artifacts, validate_weekly_artifacts
 from render_html import render
 from tracking import active_tracking_events, cleanup_expired_tracking
@@ -139,6 +141,8 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
 
     report = _load_json(report_path)
     ledger = _load_json(ledger_path)
+    if report.get("date") != target_date:
+        return 1, f"daily report.json date {report.get('date')!r} does not match requested --date {target_date!r}"
     whitelist = load_whitelist()
     qa_diff = build_daily_qa_diff(report, ledger, whitelist)
     qa_path = _write_json(cache_dir / "qa_diff.json", qa_diff)
@@ -155,9 +159,13 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
     removed_tracking = cleanup_expired_tracking(project_root, target_date)
     if removed_tracking:
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} TRACKING cleanup removed={removed_tracking}")
-    recorded = record_ecosystem_repos(report, project_root, target_date)
-    if recorded:
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} ECOSYSTEM seen_repos+={recorded}")
+    # methodology cooldown is advisory only: warn (non-blocking) so a repeated slug is
+    # visible, but never let it stop delivery. The seen-ledgers are written AFTER a
+    # successful send (below), so dry-run / a failed send never burns a cooldown slot.
+    for cooldown_warning in validate_methodology_repeats(
+        report, load_seen_methodology(project_root), target_date
+    ):
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} METHODOLOGY cooldown(advisory) {cooldown_warning}")
 
     deep_dive_sends: list[tuple[Path, str]] = []
     for _, slug in major_event_slugs(report):
@@ -173,6 +181,19 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
         dd_payload = _load_json(dd_json_path)
         deep_dive_sends.append((dd_archived, f"AI 深度 · {dd_payload['title']}"))
 
+    interview_sends: list[tuple[Path, str, dict[str, Any]]] = []
+    for iv_json_path in iter_interview_files(project_root, target_date):
+        iv_payload = _load_json(iv_json_path)
+        slug = str(iv_payload.get("slug", ""))
+        iv_html_path = render(iv_json_path)
+        iv_archived = archive_html(iv_html_path, "interview", f"{target_date}-{slug}", project_root)
+        append_run_log(
+            run_log,
+            f"{report.get('generated_at', datetime.now().isoformat())} INTERVIEW {iv_archived.relative_to(project_root)} ok",
+        )
+        subject = f"AI 访谈 · {iv_payload.get('person', '')}（{iv_payload.get('org', '')}）"
+        interview_sends.append((iv_archived, subject, iv_payload))
+
     if dry_run:
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL skipped (dry-run)")
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=ok")
@@ -183,12 +204,37 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
         return code, send_output
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
+    # Record seen-ledgers only after the daily body (which carries the ecosystem +
+    # methodology content) actually went out, so dry-run / a failed send never burns a
+    # cooldown slot. Mirrors the interview track's send-then-record discipline.
+    recorded = record_ecosystem_repos(report, project_root, target_date)
+    if recorded:
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} ECOSYSTEM seen_repos+={recorded}")
+    recorded_methodology = record_methodology(report, project_root, target_date)
+    if recorded_methodology:
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} METHODOLOGY seen+={recorded_methodology}")
     for dd_archived, dd_subject in deep_dive_sends:
         code, send_output = _send_mail(project_root, dd_archived, dd_subject, env_path)
         if code != 0:
             append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
             return code, send_output
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
+    for iv_archived, iv_subject, iv_payload in interview_sends:
+        slug = str(iv_payload.get("slug", ""))
+        if interview_already_sent(project_root, slug):
+            append_run_log(
+                run_log,
+                f"{report.get('generated_at', datetime.now().isoformat())} INTERVIEW skip already-sent slug={slug}",
+            )
+            continue
+        code, send_output = _send_mail(project_root, iv_archived, iv_subject, env_path)
+        if code != 0:
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
+            return code, send_output
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
+        record_interview_sent(
+            project_root, iv_payload, target_date, str(iv_archived.relative_to(project_root))
+        )
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=ok")
     return 0, str(archived_path)
 

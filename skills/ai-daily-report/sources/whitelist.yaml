@@ -809,6 +809,138 @@ hard_data:
         queries:
           - "popular open source LLM release {date}"
 
+leader_interviews:
+  - name: Latent Space Podcast
+    category: leader_interviews
+    weight: high
+    authority_tier: 3
+    fetch_chain:
+      - type: webfetch
+        url: https://www.latent.space/podcast
+      - type: websearch_scoped
+        queries:
+          - "Latent Space interview Anthropic OpenAI {date}"
+      - type: websearch_broad
+        queries:
+          - "Latent Space podcast AI lab interview {date}"
+  - name: Dwarkesh Patel
+    category: leader_interviews
+    weight: high
+    authority_tier: 3
+    fetch_chain:
+      - type: webfetch
+        url: https://www.dwarkesh.com/podcast
+      - type: websearch_scoped
+        queries:
+          - "Dwarkesh Patel interview {date}"
+  - name: No Priors
+    category: leader_interviews
+    weight: medium
+    authority_tier: 3
+    fetch_chain:
+      - type: webfetch
+        url: https://www.no-priors.com/
+      - type: websearch_scoped
+        queries:
+          - "No Priors podcast AI {date}"
+  - name: Big Technology Podcast
+    category: leader_interviews
+    weight: medium
+    authority_tier: 2
+    fetch_chain:
+      - type: webfetch
+        url: https://www.bigtechnology.com/
+      - type: websearch_scoped
+        queries:
+          - "Big Technology podcast Anthropic OpenAI {date}"
+  - name: Anthropic YouTube
+    category: leader_interviews
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://www.youtube.com/@anthropic-ai/videos
+      - type: websearch_scoped
+        queries:
+          - "Anthropic interview podcast {date}"
+  - name: OpenAI YouTube
+    category: leader_interviews
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://www.youtube.com/@OpenAI/videos
+      - type: websearch_scoped
+        queries:
+          - "OpenAI interview podcast {date}"
+
+interview_search_queries:
+  - "Anthropic interview {date}"
+  - "OpenAI interview {date}"
+  - "Claude Code engineering lead interview {date}"
+  - "Anthropic researcher podcast {date}"
+  - "OpenAI product lead interview {date}"
+  - "Google DeepMind interview {date}"
+  - "Dario Amodei interview {date}"
+  - "Sam Altman interview {date}"
+  - "Demis Hassabis interview {date}"
+
+interview_zh_transcript_queries:
+  - "Anthropic 访谈 中文 全文 {date}"
+  - "OpenAI 专访 中文 整理 {date}"
+  - "Claude Code 负责人 访谈 中文 {date}"
+  - "AI 实验室 创始人 访谈 中文实录 {date}"
+
+methodology_radar_sources:
+  - name: Anthropic Engineering (Methodology)
+    category: methodology_radar_sources
+    weight: high
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://www.anthropic.com/engineering
+      - type: websearch_scoped
+        queries:
+          - "site:anthropic.com/engineering agent workflow {date}"
+  - name: Latent Space (Methodology)
+    category: methodology_radar_sources
+    weight: medium
+    authority_tier: 3
+    fetch_chain:
+      - type: webfetch
+        url: https://www.latent.space/
+      - type: websearch_scoped
+        queries:
+          - "Latent Space AI engineering methodology {date}"
+  - name: Simon Willison (Methodology)
+    category: methodology_radar_sources
+    weight: medium
+    authority_tier: 3
+    fetch_chain:
+      - type: webfetch
+        url: https://simonwillison.net/
+      - type: websearch_scoped
+        queries:
+          - "site:simonwillison.net agentic coding {date}"
+  - name: GitHub spec-kit
+    category: methodology_radar_sources
+    weight: medium
+    authority_tier: 2
+    fetch_chain:
+      - type: github_releases
+        repo: github/spec-kit
+      - type: websearch_scoped
+        queries:
+          - "spec-driven development spec-kit {date}"
+
+methodology_search_queries:
+  - "spec-driven development AI agent {date}"
+  - "harness engineering LLM agent {date}"
+  - "loop engineering agent {date}"
+  - "context engineering {date}"
+  - "agentic coding workflow methodology {date}"
+  - "spec-kit {date}"
+
 # 核心源清单：fetch_chain 全层失败 ≥4 时中止运行（约 50% 容错率，含 2 家 CN 一级厂商）
 # hard_data 不入 core_sources：失败时 market_signals 走 empty_message，不阻塞日报。
 core_sources:

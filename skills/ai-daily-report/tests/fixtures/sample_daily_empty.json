@@ -63,7 +63,8 @@
     "unverified": {
       "title": "待核实区",
       "items": []
-    }
+    },
+    "methodology_radar": {"title": "方法论雷达", "items": [], "empty_message": "今日无方法论新信号"}
   },
   "fetch_status": {
     "succeeded": ["OpenAI", "Anthropic"],

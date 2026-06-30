@@ -241,6 +241,29 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - 生态条目不进入 `action_items` 依据，可作为 `experiments_this_week` 的素材
    - 空则 `items: []` + `empty_message`，不凑数
 
+3d. **负责人访谈发现与文稿（interview，独立邮件，非核心源、不阻塞日报）**
+
+   - 跑 `whitelist.yaml > leader_interviews` 面 + `interview_search_queries`；每场候选抽 `{person, org, role, interview_title, outlet, original_url, published_at}`，尝试照常写入 `fetch_status.source_details["Leader Interview Discovery"].attempts[]`。
+   - **关注范围**：`profile.yaml > interview_watchlist`（Anthropic/OpenAI 高管创始人首席科学家 + 两家产品/工程负责人 + DeepMind/其他前沿实验室 + 头部 coding agent 产品负责人）；seeds 是种子，可顺名追人。
+   - **新鲜度 + 去重门（两层职责，别混淆）**：
+     - **AI 立项层（语义去重）**：先读 `cache/interview_seen.json`（其中每条已存 `original_url` / `person` / `title`）。`published_at`（或首次被权威源提及）≤14 天 **且** 当前候选与台账中任何一条都不构成「同一场访谈」（按归一化 `original_url`、或 person+title 近似判断）→ 立项；否则跳过并在 run.log 记命中原因。这一步的「同场」判断由 AI 完成，不是脚本规则。
+     - **脚本幂等层（slug 兜底）**：finalize 的 `interview_already_sent` 只按 `slug` 判定，防止「同一个 `interview_{slug}.json` 重跑 finalize 时重发」。它**不**做 URL/person 级语义去重——那是上一层 AI 的职责。
+     - 因此**永久去重的有效性依赖 AI 为同一对象复用稳定 slug**：同一场访谈即使改天被重新发现，也必须沿用首次的 `slug`（如 `fiona-fung-claude-code`），否则换 slug 会绕过脚本幂等导致重发。起 slug 前先在台账里核对该对象是否已有既有 slug。
+   - **找中文整理稿**（跑 `interview_zh_transcript_queries`）：
+     - 命中高质量中文稿 → `mode=linked_zh_transcript`：`chinese_transcript.{available:true,url,outlet}` + 300-500 字 `lede` 导读 + `key_points` + 可选 `notable_quotes` + `role_implications`（四角色）。
+     - 未命中 → 尝试取原文逐字稿（YouTube 字幕 / show notes / 文字访谈正文）：取到 → `mode=self_translated_full`：填 `full_translation`（分段中译）+ `lede` 要点；取不到逐字稿 → `mode=deep_summary_fallback`：`lede` + `key_points` 写 800-1500 字结构化深度摘要，并在 `lede` 显式标注「无逐字稿，基于公开报道/节选」。
+   - **来源闭环**：`references ≥1`，全部回溯当日 fetch 留痕；禁止臆测。
+   - 落盘 `cache/{date}/interview_{slug}.json`（schema `schemas/interview_brief.schema.json`，`slug` 小写连字符）。当日无新访谈 → 不产出任何 interview JSON、不发访谈邮件。访谈不进 `action_items` 依据。
+   - finalize-daily 会渲染 `reports/interviews/{date}-{slug}.html` 并以「**AI 访谈 · {person}（{org}）**」独立邮件发送；发送成功后写 `interview_seen.json`，对已发 slug 幂等跳过。
+
+3e. **方法论雷达（methodology_radar，日报捕获，允许空）**
+
+   - 来源：`whitelist.yaml > methodology_radar_sources` + `methodology_search_queries`，结合当日 `agent_ecosystem` / 实践信号。写入 `fetch_status.source_details["Methodology Radar Discovery"].attempts[]`。
+   - **准入窗口宽口径**：与 `agent_ecosystem` 一致——「7 天内首见 / 首次被收录」，不走严格当日新闻硬卡（方法论是慢信号）；靠 `cache/methodology_seen.json` 的 30 天 cooldown 防止天天复读。cooldown 是 **advisory**：冲突只在 run.log 记 `METHODOLOGY cooldown(advisory)` 告警、**不阻断**日报投递；台账在日报正文发送成功后才写入（dry-run / 发送失败不烧冷却）。复用稳定 slug 才能让 cooldown 生效。
+   - 每天 0-3 条，**允许空**（`items:[] + empty_message`）。每条字段：`slug`（小写连字符）/ `title` / `kind`（`paradigm_shift` / `framework_tool` / `practice_pattern`）/ `what_it_is` / `why_trending`（+ 证据）/ `how_team_can_use` / `depth_link` / 可选 `hook`（回指当日 `experiments_this_week[i]` 或 `action_items[i]`）/ `references`（≥1，回溯 fetch 留痕）。
+   - 锚定 `profile.yaml > practice_focus` + 范式网（spec-driven / harness / loop engineering 等），不泛收一切 AI 热点。
+   - **不进 `action_items` 依据**；`hook` 是单向的（radar → experiment/建议）。
+
 4. **产出 coding_agents 深度观察**
    - 从 coding_agents.items 中挑最值得关注的 1 条
    - 写 150-250 字中文分析，填入 `deep_dive.body`
@@ -306,7 +329,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
 9. **产出结构化 JSON**
    - 严格遵循 `schemas/daily_report.schema.json`
-   - 字段约束：`version: "1.0"`、`type: "daily"`、`date`、`window`（带时区）、`generated_at`、**十个 `sections`**（frontier_models / coding_agents / general_agents / agent_ecosystem / market_signals / pattern_observations / experiments_this_week / decision_radar / action_items / unverified）、`fetch_status`
+   - 字段约束：`version: "1.0"`、`type: "daily"`、`date`、`window`（带时区）、`generated_at`、**十一个 `sections`**（frontier_models / coding_agents / general_agents / agent_ecosystem / methodology_radar / market_signals / pattern_observations / experiments_this_week / decision_radar / action_items / unverified）、`fetch_status`
    - **每条正文章目必须填 `release_stage` / `published_at_confidence` / `authority_score` / `editorial_tier`**（schema required，缺失会被 render 阶段拒绝）
    - **`fetch_status.source_details`** 必须记录所有走过 fetch_chain 的源（含降级路径），渲染层会展示降级路径供巡检
    - **来源闭环要求**：进入正文（前三节 + market_signals）的每条信息，都必须能回溯到某次具体抓取尝试；若无法在 `fetch_status.source_details` 中解释它是怎么来的，要么补记该尝试，要么降到 `unverified`，不要保留“正文比日志更聪明”的状态
@@ -370,6 +393,10 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
         · {item 1 title}（{item_type 中文标签}）
         ...（最多 2 条）
 
+      三b、方法论雷达
+        · {item 1 title}（{kind 中文标签}）
+        ...（最多 2 条；空显示 empty_message）
+
       四、硬数据信号
         {若有 benchmark/pricing/gap 各取 1 条；空则显示 empty_message}
 
@@ -384,6 +411,8 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
       七、今日落地建议
         {全部逐条打印}（若为空则显示 empty_message）
+
+      负责人访谈：{有/无}{若有：· {person}（{org}）· 已独立邮件发送/Dry-run 未发送}
 
       抓取状态：{succeeded 数} 成功 / {failed 数} 失败 / {empty 数} 无内容
 
@@ -442,13 +471,19 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - 每篇必须带 `origin: {date, title}`，date 在本周 `source_days` 内，title 与该日日报 `agent_ecosystem` 条目的 title 完全一致（finalize 校验，校验不过会阻塞发送）
    - 当周日报生态板块没有值得深读的内容 → `items: []` + `empty_message`，不硬凑
 
+3e. **方法论雷达聚合（methodology_radar）**
+
+   - 聚合本周 7 份日报的 `methodology_radar` 条目 + 周级 `methodology_search_queries` 补充 + 跨日范式归纳。
+   - 1-3 条/周，**允许空**（`items:[] + empty_message`）；字段同日报。周报版可写更深的「为何是趋势」与团队落地路径。
+   - 周报**不做 cooldown 去重**（它是日报的聚合，cooldown 由日报捕获时已执行）；只做 `hook` 越界校验与 `references` 闭环。
+
 4. **补充搜索（兜底）**
    - 3-5 条搜索，query 形如 "AI industry week summary {week_range}"（以窗口日期区间替换，如 2026-06-07..2026-06-13）、"top AI agent news this week" 等
    - 对比日报聚合结果，补齐遗漏内容
 
 5. **产出周报 JSON**
    - 严格遵循 `schemas/weekly_report.schema.json`
-   - **十章节**：`tldr / frontier_models / coding_agents / general_agents / market_signals / pattern_observations / experiments_this_week / practice_digest / action_items / next_week_signals`
+   - **十一章节**：`tldr / frontier_models / coding_agents / general_agents / market_signals / pattern_observations / experiments_this_week / practice_digest / methodology_radar / action_items / next_week_signals`
    - 顶层必填 `week_end`（YYYY-MM-DD，窗口结束日）
    - TL;DR 3-5 条
    - **落地建议**：3-5 条体系化建议，每条字段与日报 `actionItem` 完全一致：
@@ -475,7 +510,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - 若 dry-run 模式：**跳过此步**，在 run.log 写 `EMAIL skipped (dry-run)`
 
 9. **终端简版**
-   - 结构同日报简版，章节名改为周报十章节，TL;DR 全部显示，落地建议全部显示
+   - 结构同日报简版，章节名改为周报十一章节（含方法论雷达），TL;DR 全部显示，落地建议全部显示
 
 10. **运行日志**：`cache/weekly/{end_date}/run.log` 追加 `END weekly status=ok`
 
@@ -497,6 +532,8 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 - **落地建议**：仅从 frontier_models / coding_agents / general_agents 推导。`unverified` 里的内容**不作为**建议依据。
 - **agent_ecosystem**：生态与实践信号（热门仓库、skills/插件、实践案例、工具发布）。不是新闻，准入窗口放宽到 7 天首见；不作为 action_items 依据。
 - **decision_radar**：编辑结论层，只引用当日 core/watch 正文条目，按 profile.yaml 在途决策分组。
+- **methodology_radar**：方法论/范式/工具思潮（spec-driven / harness / loop engineering 等）。日报捕获 + 周报聚合，宽准入窗口（7 天首见）+ 30 天 cooldown（advisory，不阻断投递）；不作为 action_items 依据，hook 单向连到 experiments/建议。
+- **interview（负责人访谈）**：独立邮件产物（非 section），复用 deep_dive 发送骨架；不进日报正文、不进 action_items 依据。
 
 ## 异常处理
 
@@ -512,6 +549,11 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 - **追踪档案损坏**：`cache/tracking/` 下存在无法解析或不符合 schema 的档案 → finalize 校验失败（错误信息会点名该文件）。修复或删除该档案后重跑；过期超过 7 天的档案由 finalize 自动清理。
 - **深度专题缺失或损坏**：major_event 条目无对应 `cache/{date}/deep_dive_{slug}.json`、或该文件 schema 校验失败 → finalize-daily 失败，不归档不发信；补写/修复专题 JSON 后重跑。补发型专题（事后为历史事件单独生成）不要求当日日报存在对应 major_event 条目。
 - **专题邮件失败后重跑会重发**：`finalize-daily` 没有发送幂等护栏。日报邮件已发成功、随后某份深度专题邮件失败时，函数返回该专题的非零码；此时**重跑整个 finalize-daily 会重发日报正文与已成功的专题邮件**（deep dive 把可失败的发送步骤从 1 放大到 N+1）。要避免重复：失败后改用 `send_mail.py reports/deep_dives/{date}-{slug}.html` 单步只补发失败的那一份，不要整体重跑 finalize。
+- **逐字稿取不到（访谈）**：降级 `mode=deep_summary_fallback`，`lede` 标注来源限制，不报错、不阻塞日报。
+- **访谈面整链失败**：记 `fetch_status.failed`，日报照常（`leader_interviews` 非 core_source）。
+- **访谈 JSON 损坏 / schema 不合 / mode 与字段不一致**：`validate_interviews` 报错点名文件 → finalize-daily 失败、不归档不发信；修复或删除该 `cache/{date}/interview_{slug}.json` 后重跑。
+- **发送非幂等放大（含访谈）**：finalize-daily 现在依次发「日报正文 + N 份 deep_dive + M 份访谈」。日报正文与 deep_dive 仍非幂等（整体重跑会重发）；**访谈通过 `interview_seen.json` 幂等**——已成功发送的 slug 重跑会跳过。某封失败时，优先用 `send_mail.py reports/interviews/{date}-{slug}.html` 或 `reports/deep_dives/{date}-{slug}.html` 单步只补发失败那一份，不要整体重跑 finalize。
+- **方法论 cooldown 台账损坏**：`methodology_seen.json` 无法解析 → 视为空台账（不阻塞）；如需重置删除该文件即可（删除会让历史范式可能重新进入冷却计算）。
 
 ## 产出字段约束
 
@@ -539,6 +581,12 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 | `practice_digest.items[].summary` | 200-400 字（schema 兜底 120-600） |
 | `practice_digest.items[]` | 0-2 篇/周；origin 必须回指本周某日日报 agent_ecosystem 条目 |
 | 深度专题 | 每个 major_event 一份；七小节必填；总篇幅 800-1500 字；references ≥1 |
+| 访谈 `lede` | 300-500 字（schema 兜底 200-700） |
+| 访谈 `key_points` | 2-8 条；`role_implications` 恰好 4 条 |
+| 访谈 `mode` | `self_translated_full` 必须有 `full_translation`；`linked_zh_transcript` 必须有 `chinese_transcript.url` |
+| 访谈新鲜度 | 发布 ≤14 天且首次发现；台账 `interview_seen.json` 按 slug 防重发，URL/person 级语义去重由 AI 立项时完成（须为同一对象复用稳定 slug） |
+| `methodology_radar` items | 日报 0-3 条 / 周报 1-3 条，均允许空；每条必须 `references ≥1`；`slug` 30 天 cooldown 为 **advisory**（daily-only，冲突写 run.log 告警、不阻断投递；同一范式须复用稳定 slug 才有效） |
+| `methodology_radar.hook` | 可选；只能指向 `experiments_this_week[i]` / `action_items[i]`，i 不得越界 |
 
 ## 终端输出格式
 

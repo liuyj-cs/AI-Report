@@ -27,6 +27,9 @@ SHARED_DEFS = [
     "experimentsSection",
     "actionItem",
     "reference",
+    "methodologyHook",
+    "methodologyRadarItem",
+    "methodologyRadarSection",
 ]
 
 
@@ -870,3 +873,125 @@ def test_weekly_schema_recall_ack_accepts_valid_forms_rejects_string():
         candidate = deepcopy(weekly)
         candidate["source_days"]["recall_ack"] = bad
         assert list(validator.iter_errors(candidate)), f"{bad!r} should be rejected by schema"
+
+
+# ---------- interview ----------
+
+
+def test_render_interview_basic(tmp_path):
+    src = tmp_path / "interview_fiona-fung-claude-code.json"
+    src.write_text((FIXTURES / "sample_interview.json").read_text(encoding="utf-8"), encoding="utf-8")
+    output = tmp_path / "interview_fiona-fung-claude-code.html"
+    result = run_render(src, output)
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    text = BeautifulSoup(output.read_text(encoding="utf-8"), "html.parser").get_text()
+    assert "AI 访谈" in text
+    assert "Fiona Fung" in text
+    assert "Anthropic" in text
+    assert "核心观点" in text
+    assert "对四个角色" in text
+    assert "全文中译" in text
+    assert "harness" in text
+
+
+def test_render_interview_default_output_next_to_json(tmp_path):
+    src = tmp_path / "interview_fiona-fung-claude-code.json"
+    src.write_text((FIXTURES / "sample_interview.json").read_text(encoding="utf-8"), encoding="utf-8")
+    result = run_render(src)
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+    assert (tmp_path / "interview_fiona-fung-claude-code.html").exists()
+
+
+def test_render_interview_missing_lede_fails_schema(tmp_path):
+    data = json.loads((FIXTURES / "sample_interview.json").read_text(encoding="utf-8"))
+    del data["lede"]
+    src = tmp_path / "interview_x.json"
+    src.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    result = run_render(src, tmp_path / "out.html")
+    assert result.returncode == 1
+    assert "schema validation" in result.stderr.lower()
+
+
+def test_render_interview_rejects_non_http_reference_url(tmp_path):
+    data = json.loads((FIXTURES / "sample_interview.json").read_text(encoding="utf-8"))
+    data["references"][0]["url"] = "not-a-url"
+    src = tmp_path / "interview_x.json"
+    src.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    result = run_render(src, tmp_path / "out.html")
+    assert result.returncode == 1
+    assert "url" in result.stderr or "pattern" in result.stderr
+
+
+# ---------- methodology_radar ----------
+
+
+def test_daily_schema_requires_methodology_radar_section():
+    schema = _load_daily_schema()
+    assert "methodology_radar" in schema["properties"]["sections"]["required"]
+
+
+def test_weekly_schema_requires_methodology_radar_section():
+    schema = json.loads((SCHEMAS / "weekly_report.schema.json").read_text(encoding="utf-8"))
+    assert "methodology_radar" in schema["properties"]["sections"]["required"]
+
+
+def test_daily_schema_rejects_methodology_invalid_hook():
+    data = json.loads((FIXTURES / "sample_daily.json").read_text(encoding="utf-8"))
+    data["sections"]["methodology_radar"]["items"][0]["hook"] = "frontier_models[0]"
+    validator = Draft202012Validator(_load_daily_schema())
+    assert any("hook" in "/".join(str(p) for p in e.path) for e in validator.iter_errors(data))
+
+
+def test_daily_schema_rejects_methodology_missing_kind():
+    data = json.loads((FIXTURES / "sample_daily.json").read_text(encoding="utf-8"))
+    data["sections"]["methodology_radar"]["items"][0].pop("kind")
+    validator = Draft202012Validator(_load_daily_schema())
+    assert any("kind" in e.message for e in validator.iter_errors(data))
+
+
+def test_render_daily_methodology_radar(tmp_path):
+    html = _render_daily(tmp_path)
+    soup = BeautifulSoup(html, "html.parser")
+    text = soup.get_text()
+    assert "方法论雷达" in text
+    assert "Spec-driven development 升温" in text
+    assert "为何是趋势" in text
+    assert "你团队怎么用" in text
+    assert soup.select(".badge-method-paradigm_shift"), "expect methodology kind badge"
+    # hook resolved: title of experiments_this_week[0]
+    assert "Plan Mode 双盲对比" in text, "hook should resolve to experiment title"
+    assert "experiments_this_week[0]" not in text, "raw hook token must not appear in output"
+
+
+def test_render_daily_methodology_out_of_bounds_hook_does_not_leak_token(tmp_path):
+    """#8: render 独立路径不过 editorial 越界校验；越界 hook 不得把机器 token 渲染给读者。"""
+    data = json.loads((FIXTURES / "sample_daily.json").read_text(encoding="utf-8"))
+    data["sections"]["methodology_radar"]["items"][0]["hook"] = "action_items[9]"
+    src = tmp_path / "report.json"
+    src.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    output = tmp_path / "report.html"
+    result = run_render(src, output)
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+    text = BeautifulSoup(output.read_text(encoding="utf-8"), "html.parser").get_text()
+    assert "action_items[9]" not in text, "out-of-bounds hook token must not leak to reader"
+
+
+def test_render_daily_methodology_radar_empty(tmp_path):
+    fixture = FIXTURES / "sample_daily_empty.json"
+    output = tmp_path / "report.html"
+    run_render(fixture, output)
+    text = BeautifulSoup(output.read_text(encoding="utf-8"), "html.parser").get_text()
+    assert "今日无方法论新信号" in text
+
+
+def test_render_weekly_methodology_radar(tmp_path):
+    html = _render_weekly(tmp_path)
+    soup = BeautifulSoup(html, "html.parser")
+    text = soup.get_text()
+    assert "方法论雷达" in text
+    assert "Harness engineering 成显学" in text
+    assert soup.select(".badge-method-framework_tool"), "expect methodology kind badge"
+    # hook resolved: recommendation of action_items[0]
+    assert "在核心研发团队推广 Claude Code Plan Mode，建立 plan-review-execute 标准工作流" in text, "hook should resolve to action_items recommendation"
+    assert "action_items[0]" not in text, "raw hook token must not appear in output"

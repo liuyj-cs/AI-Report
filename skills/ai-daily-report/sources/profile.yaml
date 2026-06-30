@@ -26,3 +26,18 @@ practice_focus:
   - 团队级 agent 工作流（code review / 测试 / CI 集成 / 多 agent 编排）
   - Claude Code / Codex 的 skills、插件、MCP 生态
   - AI coding 推广度量与治理（采纳率、效率度量、权限管控）
+
+# 访谈关注对象：interview 轨道的发现参数化输入。seeds 是种子，AI 可顺名追人/追新职位。
+interview_watchlist:
+  - id: anthropic_leadership
+    org: Anthropic
+    seeds: [Dario Amodei, Daniela Amodei, Jared Kaplan, Tom Brown, Chris Olah]
+  - id: openai_leadership
+    org: OpenAI
+    seeds: [Sam Altman, Greg Brockman]
+  - id: product_eng_leads
+    org: Anthropic/OpenAI
+    note: Claude Code / Codex / ChatGPT / API 产品线工程与产品负责人（如 Fiona Fung）
+  - id: frontier_lab_others
+    org: DeepMind 等
+    note: DeepMind（Demis Hassabis 等）+ 头部 coding agent 产品负责人（Cursor / GitHub 等）
