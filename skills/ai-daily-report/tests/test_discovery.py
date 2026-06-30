@@ -275,3 +275,21 @@ def test_required_discovery_names_include_interview_surface():
     from discovery import load_whitelist, required_discovery_names
 
     assert "Leader Interview Discovery" in required_discovery_names(load_whitelist())
+
+
+def test_manifest_includes_methodology_queries():
+    from discovery import build_discovery_manifest, compute_daily_window, load_whitelist
+
+    whitelist = load_whitelist()
+    window = compute_daily_window("2026-06-30", "2026-06-30T10:00:00+08:00")
+    manifest = build_discovery_manifest("2026-06-30", window, whitelist)
+    assert "methodology_search_queries" in manifest
+    assert "Methodology Radar Discovery" in manifest["required_discovery_surfaces"]
+
+
+def test_initial_fetch_status_has_methodology_surface():
+    from discovery import initial_fetch_status, load_whitelist
+
+    payload = initial_fetch_status(load_whitelist())
+    assert "Methodology Radar Discovery" in payload["source_details"]
+    assert "Methodology Radar Discovery" in __import__("discovery").required_discovery_names(load_whitelist())

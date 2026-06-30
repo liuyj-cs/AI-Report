@@ -891,6 +891,56 @@ interview_zh_transcript_queries:
   - "Claude Code 负责人 访谈 中文 {date}"
   - "AI 实验室 创始人 访谈 中文实录 {date}"
 
+methodology_radar_sources:
+  - name: Anthropic Engineering (Methodology)
+    category: methodology_radar_sources
+    weight: high
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://www.anthropic.com/engineering
+      - type: websearch_scoped
+        queries:
+          - "site:anthropic.com/engineering agent workflow {date}"
+  - name: Latent Space (Methodology)
+    category: methodology_radar_sources
+    weight: medium
+    authority_tier: 3
+    fetch_chain:
+      - type: webfetch
+        url: https://www.latent.space/
+      - type: websearch_scoped
+        queries:
+          - "Latent Space AI engineering methodology {date}"
+  - name: Simon Willison (Methodology)
+    category: methodology_radar_sources
+    weight: medium
+    authority_tier: 3
+    fetch_chain:
+      - type: webfetch
+        url: https://simonwillison.net/
+      - type: websearch_scoped
+        queries:
+          - "site:simonwillison.net agentic coding {date}"
+  - name: GitHub spec-kit
+    category: methodology_radar_sources
+    weight: medium
+    authority_tier: 2
+    fetch_chain:
+      - type: github_releases
+        repo: github/spec-kit
+      - type: websearch_scoped
+        queries:
+          - "spec-driven development spec-kit {date}"
+
+methodology_search_queries:
+  - "spec-driven development AI agent {date}"
+  - "harness engineering LLM agent {date}"
+  - "loop engineering agent {date}"
+  - "context engineering {date}"
+  - "agentic coding workflow methodology {date}"
+  - "spec-kit {date}"
+
 # 核心源清单：fetch_chain 全层失败 ≥4 时中止运行（约 50% 容错率，含 2 家 CN 一级厂商）
 # hard_data 不入 core_sources：失败时 market_signals 走 empty_message，不阻塞日报。
 core_sources:

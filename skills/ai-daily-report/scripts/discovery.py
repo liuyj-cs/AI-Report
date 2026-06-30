@@ -23,6 +23,7 @@ HIGH_SIGNAL_MEDIA_DISCOVERY_NAME = "High-Signal Media Discovery"
 RECALL_PROBE_SURFACE_NAME = "High-Recall Product/Adoption Probes"
 ECOSYSTEM_DISCOVERY_NAME = "Agent Ecosystem Discovery"
 LEADER_INTERVIEW_DISCOVERY_NAME = "Leader Interview Discovery"
+METHODOLOGY_DISCOVERY_NAME = "Methodology Radar Discovery"
 HACKER_NEWS_NAME = "Hacker News front page"
 DEFAULT_SOURCE_FAMILIES = {
     "official_release_surface": {
@@ -132,6 +133,7 @@ def required_discovery_names(whitelist: dict[str, Any]) -> list[str]:
             RECALL_PROBE_SURFACE_NAME,
             ECOSYSTEM_DISCOVERY_NAME,
             LEADER_INTERVIEW_DISCOVERY_NAME,
+            METHODOLOGY_DISCOVERY_NAME,
         ]
     )
     names.extend(required_source_family_names(whitelist))
@@ -287,6 +289,21 @@ def initial_fetch_status(whitelist: dict[str, Any]) -> dict[str, Any]:
             }
         ],
     }
+    source_details[METHODOLOGY_DISCOVERY_NAME] = {
+        "final_layer_index": 0,
+        "final_layer_type": "websearch_broad",
+        "via_broad_search": True,
+        "confidence_policy": "force_medium_plus_flag",
+        "attempts": [
+            {
+                "layer_index": 0,
+                "layer_type": "websearch_broad",
+                "target": "methodology_search_queries",
+                "result": "empty",
+                "reason": "pending discovery",
+            }
+        ],
+    }
     source_details[HACKER_NEWS_NAME] = {
         "final_layer_index": 0,
         "final_layer_type": "webfetch",
@@ -379,6 +396,7 @@ def build_discovery_manifest(
         "ecosystem_search_queries": whitelist.get("ecosystem_search_queries", []),
         "interview_search_queries": whitelist.get("interview_search_queries", []),
         "interview_zh_transcript_queries": whitelist.get("interview_zh_transcript_queries", []),
+        "methodology_search_queries": whitelist.get("methodology_search_queries", []),
         "required_discovery_surfaces": [
             "white-list first pass",
             *required_source_family_names(whitelist),
@@ -391,6 +409,7 @@ def build_discovery_manifest(
             RECALL_PROBE_SURFACE_NAME,
             ECOSYSTEM_DISCOVERY_NAME,
             LEADER_INTERVIEW_DISCOVERY_NAME,
+            METHODOLOGY_DISCOVERY_NAME,
         ],
     }
 
