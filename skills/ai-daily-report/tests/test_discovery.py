@@ -251,3 +251,27 @@ def test_discovery_manifest_includes_ecosystem_surface(sample_whitelist):
     manifest = build_discovery_manifest("2026-06-12", window, sample_whitelist)
     assert manifest["ecosystem_search_queries"] == sample_whitelist["ecosystem_search_queries"]
     assert ECOSYSTEM_DISCOVERY_NAME in manifest["required_discovery_surfaces"]
+
+
+def test_manifest_includes_interview_queries():
+    from discovery import build_discovery_manifest, compute_daily_window, load_whitelist
+
+    whitelist = load_whitelist()
+    window = compute_daily_window("2026-06-30", "2026-06-30T10:00:00+08:00")
+    manifest = build_discovery_manifest("2026-06-30", window, whitelist)
+    assert "interview_search_queries" in manifest
+    assert "interview_zh_transcript_queries" in manifest
+    assert "Leader Interview Discovery" in manifest["required_discovery_surfaces"]
+
+
+def test_initial_fetch_status_has_interview_surface():
+    from discovery import initial_fetch_status, load_whitelist
+
+    payload = initial_fetch_status(load_whitelist())
+    assert "Leader Interview Discovery" in payload["source_details"]
+
+
+def test_required_discovery_names_include_interview_surface():
+    from discovery import load_whitelist, required_discovery_names
+
+    assert "Leader Interview Discovery" in required_discovery_names(load_whitelist())

@@ -22,6 +22,7 @@ GOOGLE_SEARCH_PRODUCT_BLOG_NAME = "Google Search Product Blog"
 HIGH_SIGNAL_MEDIA_DISCOVERY_NAME = "High-Signal Media Discovery"
 RECALL_PROBE_SURFACE_NAME = "High-Recall Product/Adoption Probes"
 ECOSYSTEM_DISCOVERY_NAME = "Agent Ecosystem Discovery"
+LEADER_INTERVIEW_DISCOVERY_NAME = "Leader Interview Discovery"
 HACKER_NEWS_NAME = "Hacker News front page"
 DEFAULT_SOURCE_FAMILIES = {
     "official_release_surface": {
@@ -130,6 +131,7 @@ def required_discovery_names(whitelist: dict[str, Any]) -> list[str]:
             HIGH_SIGNAL_MEDIA_DISCOVERY_NAME,
             RECALL_PROBE_SURFACE_NAME,
             ECOSYSTEM_DISCOVERY_NAME,
+            LEADER_INTERVIEW_DISCOVERY_NAME,
         ]
     )
     names.extend(required_source_family_names(whitelist))
@@ -270,6 +272,21 @@ def initial_fetch_status(whitelist: dict[str, Any]) -> dict[str, Any]:
             }
         ],
     }
+    source_details[LEADER_INTERVIEW_DISCOVERY_NAME] = {
+        "final_layer_index": 0,
+        "final_layer_type": "websearch_broad",
+        "via_broad_search": True,
+        "confidence_policy": "force_medium_plus_flag",
+        "attempts": [
+            {
+                "layer_index": 0,
+                "layer_type": "websearch_broad",
+                "target": "interview_search_queries",
+                "result": "empty",
+                "reason": "pending discovery",
+            }
+        ],
+    }
     source_details[HACKER_NEWS_NAME] = {
         "final_layer_index": 0,
         "final_layer_type": "webfetch",
@@ -360,6 +377,8 @@ def build_discovery_manifest(
         "high_signal_media_queries": whitelist.get("high_signal_media_queries", []),
         "recall_probe_queries": whitelist.get("recall_probe_queries", []),
         "ecosystem_search_queries": whitelist.get("ecosystem_search_queries", []),
+        "interview_search_queries": whitelist.get("interview_search_queries", []),
+        "interview_zh_transcript_queries": whitelist.get("interview_zh_transcript_queries", []),
         "required_discovery_surfaces": [
             "white-list first pass",
             *required_source_family_names(whitelist),
@@ -371,6 +390,7 @@ def build_discovery_manifest(
             HIGH_SIGNAL_MEDIA_DISCOVERY_NAME,
             RECALL_PROBE_SURFACE_NAME,
             ECOSYSTEM_DISCOVERY_NAME,
+            LEADER_INTERVIEW_DISCOVERY_NAME,
         ],
     }
 
