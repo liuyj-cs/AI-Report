@@ -762,3 +762,53 @@ def test_init_daily_manifest_includes_reader_profile(tmp_path):
     )
     decision_names = [d["name"] for d in manifest["reader_profile"]["decisions_in_flight"]]
     assert "coding-agent-2026H2" in decision_names
+
+
+def _write_interview_file(cache_dir, slug="fiona-fung-claude-code"):
+    skill_fixtures = Path(__file__).resolve().parent / "fixtures" / "sample_interview.json"
+    payload = json.loads(skill_fixtures.read_text(encoding="utf-8"))
+    payload["date"] = "2026-04-18"
+    payload["slug"] = slug
+    (cache_dir / f"interview_{slug}.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return slug
+
+
+def test_finalize_daily_renders_and_archives_interview_dry_run(
+    tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+):
+    cache_dir, env_path = _build_passing_finalize_setup(
+        tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+    )
+    slug = _write_interview_file(cache_dir)
+
+    exit_code, message = run_daily_finalize(tmp_path, "2026-04-18", True, env_path)
+
+    assert exit_code == 0, message
+    assert (tmp_path / "reports" / "interviews" / f"2026-04-18-{slug}.html").exists()
+    run_log = (cache_dir / "run.log").read_text(encoding="utf-8")
+    assert "INTERVIEW" in run_log
+    # dry-run 不写台账
+    assert not (tmp_path / "cache" / "interview_seen.json").exists()
+
+
+def test_finalize_daily_rejects_bad_interview_json(
+    tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+):
+    cache_dir, env_path = _build_passing_finalize_setup(
+        tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+    )
+    skill_fixtures = Path(__file__).resolve().parent / "fixtures" / "sample_interview.json"
+    payload = json.loads(skill_fixtures.read_text(encoding="utf-8"))
+    payload["date"] = "2026-04-18"
+    payload.pop("lede")  # schema 必填缺失
+    (cache_dir / "interview_fiona-fung-claude-code.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    exit_code, message = run_daily_finalize(tmp_path, "2026-04-18", True, env_path)
+
+    assert exit_code == 1
+    assert "interview" in message.lower()
+    assert not (tmp_path / "reports" / "interviews" / "2026-04-18-fiona-fung-claude-code.html").exists()

@@ -14,6 +14,7 @@ from dotenv import dotenv_values
 
 from archive import archive as archive_html
 from deep_dive import deep_dive_path, major_event_slugs
+from interview import iter_interview_files, interview_already_sent, record_interview_sent
 from discovery import (
     append_run_log,
     build_discovery_manifest,
@@ -173,6 +174,19 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
         dd_payload = _load_json(dd_json_path)
         deep_dive_sends.append((dd_archived, f"AI 深度 · {dd_payload['title']}"))
 
+    interview_sends: list[tuple[Path, str, dict[str, Any]]] = []
+    for iv_json_path in iter_interview_files(project_root, target_date):
+        iv_payload = _load_json(iv_json_path)
+        slug = str(iv_payload.get("slug", ""))
+        iv_html_path = render(iv_json_path)
+        iv_archived = archive_html(iv_html_path, "interview", f"{target_date}-{slug}", project_root)
+        append_run_log(
+            run_log,
+            f"{report.get('generated_at', datetime.now().isoformat())} INTERVIEW {iv_archived.relative_to(project_root)} ok",
+        )
+        subject = f"AI 访谈 · {iv_payload.get('person', '')}（{iv_payload.get('org', '')}）"
+        interview_sends.append((iv_archived, subject, iv_payload))
+
     if dry_run:
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL skipped (dry-run)")
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=ok")
@@ -189,6 +203,22 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
             append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
             return code, send_output
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
+    for iv_archived, iv_subject, iv_payload in interview_sends:
+        slug = str(iv_payload.get("slug", ""))
+        if interview_already_sent(project_root, slug):
+            append_run_log(
+                run_log,
+                f"{report.get('generated_at', datetime.now().isoformat())} INTERVIEW skip already-sent slug={slug}",
+            )
+            continue
+        code, send_output = _send_mail(project_root, iv_archived, iv_subject, env_path)
+        if code != 0:
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
+            return code, send_output
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
+        record_interview_sent(
+            project_root, iv_payload, target_date, str(iv_archived.relative_to(project_root))
+        )
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=ok")
     return 0, str(archived_path)
 

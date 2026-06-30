@@ -22,6 +22,7 @@ from discovery import (
 from ecosystem import load_seen_repos, validate_ecosystem_repeats
 from tracking import validate_tracking_refs
 from deep_dive import validate_deep_dives
+from interview import validate_interviews
 
 DAILY_REFERENCE_SECTIONS = ("frontier_models", "coding_agents", "general_agents")
 ITEM_REF_PATTERN = re.compile(r"^(?P<section>frontier_models|coding_agents|general_agents)\[(?P<index>\d+)\]$")
@@ -816,6 +817,7 @@ def validate_daily_artifacts(
     if project_root is not None:
         errors.extend(validate_tracking_refs(report, project_root))
         errors.extend(validate_deep_dives(report, project_root))
+        errors.extend(validate_interviews(str(report.get("date", "")), project_root))
         errors.extend(
             validate_ecosystem_repeats(report, load_seen_repos(project_root), str(report.get("date", "")))
         )
