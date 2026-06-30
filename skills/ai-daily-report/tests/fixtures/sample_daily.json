@@ -278,6 +278,23 @@
           "reason_unverified": "无官方声明，单一中文媒体来源"
         }
       ]
+    },
+    "methodology_radar": {
+      "title": "方法论雷达",
+      "items": [
+        {
+          "slug": "spec-driven-development",
+          "title": "Spec-driven development 升温",
+          "kind": "paradigm_shift",
+          "what_it_is": "先写规格再让 agent 实现，把人类判断前移到 spec 评审。",
+          "why_trending": "多个团队公开了 spec→plan→implement 的工作流与配套工具。",
+          "how_team_can_use": "在一个中型需求上试跑 spec 驱动，对比直接编码的返工率。",
+          "depth_link": "https://example.com/spec-driven",
+          "hook": "experiments_this_week[0]",
+          "references": [{"source": "Example", "url": "https://example.com/spec-driven"}]
+        }
+      ],
+      "empty_message": ""
     }
   },
     "fetch_status": {

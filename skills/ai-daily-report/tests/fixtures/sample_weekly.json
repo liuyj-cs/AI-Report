@@ -254,6 +254,23 @@
       "threads": [
         {"headline": "OpenAI 通用 agent 是否会本月落地", "url": ""}
       ]
+    },
+    "methodology_radar": {
+      "title": "方法论雷达",
+      "items": [
+        {
+          "slug": "harness-engineering",
+          "title": "Harness engineering 成显学",
+          "kind": "framework_tool",
+          "what_it_is": "围绕模型搭脚手架（读改验证循环、权限分级）决定 agent 体验上限。",
+          "why_trending": "头部 coding agent 团队访谈与工程博客密集讨论 harness 设计。",
+          "how_team_can_use": "盘点自有 agent 工作流的 harness 缺口，优先补评测回归。",
+          "depth_link": "https://example.com/harness",
+          "hook": "action_items[0]",
+          "references": [{"source": "Example", "url": "https://example.com/harness"}]
+        }
+      ],
+      "empty_message": ""
     }
   },
   "source_days": {

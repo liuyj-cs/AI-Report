@@ -29,7 +29,8 @@
         "experiments_this_week",
         "decision_radar",
         "action_items",
-        "unverified"
+        "unverified",
+        "methodology_radar"
       ],
       "properties": {
         "frontier_models": {"$ref": "#/$defs/itemSection"},
@@ -129,7 +130,8 @@
               }
             }
           }
-        }
+        },
+        "methodology_radar": {"$ref": "#/$defs/methodologyRadarSection"}
       }
     },
     "fetch_status": {
@@ -541,6 +543,34 @@
         "authority_score": {"type": "integer", "minimum": 1, "maximum": 5},
         "evidence_quote": {"type": "string", "maxLength": 120},
         "via_broad_search": {"type": "boolean"}
+      }
+    },
+    "methodologyHook": {
+      "type": "string",
+      "pattern": "^(experiments_this_week|action_items)\\[(0|[1-9][0-9]*)\\]$"
+    },
+    "methodologyRadarItem": {
+      "type": "object",
+      "required": ["slug", "title", "kind", "what_it_is", "why_trending", "how_team_can_use", "depth_link", "references"],
+      "properties": {
+        "slug": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,63}$"},
+        "title": {"type": "string", "minLength": 1, "maxLength": 60},
+        "kind": {"enum": ["paradigm_shift", "framework_tool", "practice_pattern"]},
+        "what_it_is": {"type": "string", "minLength": 1, "maxLength": 200},
+        "why_trending": {"type": "string", "minLength": 1, "maxLength": 240},
+        "how_team_can_use": {"type": "string", "minLength": 1, "maxLength": 240},
+        "depth_link": {"type": "string", "pattern": "^https?://"},
+        "hook": {"$ref": "#/$defs/methodologyHook"},
+        "references": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["source", "url"], "properties": {"source": {"type": "string", "minLength": 1}, "url": {"type": "string", "pattern": "^https?://"}}}}
+      }
+    },
+    "methodologyRadarSection": {
+      "type": "object",
+      "required": ["title", "items", "empty_message"],
+      "properties": {
+        "title": {"type": "string"},
+        "items": {"type": "array", "maxItems": 3, "items": {"$ref": "#/$defs/methodologyRadarItem"}},
+        "empty_message": {"type": "string"}
       }
     }
   }

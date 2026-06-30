@@ -27,6 +27,9 @@ SHARED_DEFS = [
     "experimentsSection",
     "actionItem",
     "reference",
+    "methodologyHook",
+    "methodologyRadarItem",
+    "methodologyRadarSection",
 ]
 
 
@@ -918,3 +921,30 @@ def test_render_interview_rejects_non_http_reference_url(tmp_path):
     result = run_render(src, tmp_path / "out.html")
     assert result.returncode == 1
     assert "url" in result.stderr or "pattern" in result.stderr
+
+
+# ---------- methodology_radar ----------
+
+
+def test_daily_schema_requires_methodology_radar_section():
+    schema = _load_daily_schema()
+    assert "methodology_radar" in schema["properties"]["sections"]["required"]
+
+
+def test_weekly_schema_requires_methodology_radar_section():
+    schema = json.loads((SCHEMAS / "weekly_report.schema.json").read_text(encoding="utf-8"))
+    assert "methodology_radar" in schema["properties"]["sections"]["required"]
+
+
+def test_daily_schema_rejects_methodology_invalid_hook():
+    data = json.loads((FIXTURES / "sample_daily.json").read_text(encoding="utf-8"))
+    data["sections"]["methodology_radar"]["items"][0]["hook"] = "frontier_models[0]"
+    validator = Draft202012Validator(_load_daily_schema())
+    assert any("hook" in "/".join(str(p) for p in e.path) for e in validator.iter_errors(data))
+
+
+def test_daily_schema_rejects_methodology_missing_kind():
+    data = json.loads((FIXTURES / "sample_daily.json").read_text(encoding="utf-8"))
+    data["sections"]["methodology_radar"]["items"][0].pop("kind")
+    validator = Draft202012Validator(_load_daily_schema())
+    assert any("kind" in e.message for e in validator.iter_errors(data))
