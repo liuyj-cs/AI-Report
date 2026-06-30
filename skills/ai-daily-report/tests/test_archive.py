@@ -152,3 +152,13 @@ def test_cleanup_cache_preserves_tracking_dir(tmp_path):
     assert not old_daily.exists()
     assert tracking.exists()
     assert (tracking / "claude-fable-5.json").exists()
+
+
+def test_archive_interview_goes_to_interviews_dir(tmp_path):
+    from archive import archive
+
+    src = tmp_path / "interview_fiona-fung-claude-code.html"
+    src.write_text("<html>x</html>", encoding="utf-8")
+    dst = archive(src, "interview", "2026-06-30-fiona-fung-claude-code", tmp_path)
+    assert dst == tmp_path / "reports" / "interviews" / "2026-06-30-fiona-fung-claude-code.html"
+    assert dst.read_text(encoding="utf-8") == "<html>x</html>"
