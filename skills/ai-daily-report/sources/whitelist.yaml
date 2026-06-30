@@ -810,7 +810,7 @@ hard_data:
           - "popular open source LLM release {date}"
 
 leader_interviews:
-  - name: Latent Space
+  - name: Latent Space Podcast
     category: leader_interviews
     weight: high
     authority_tier: 3
