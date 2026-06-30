@@ -12,10 +12,6 @@ SKILL_ROOT = Path(__file__).resolve().parent.parent
 INTERVIEW_SCHEMA_PATH = SKILL_ROOT / "schemas" / "interview_brief.schema.json"
 
 
-def interview_path(project_root: Path, date: str, slug: str) -> Path:
-    return project_root / "cache" / date / f"interview_{slug}.json"
-
-
 def iter_interview_files(project_root: Path, date: str) -> list[Path]:
     cache_dir = project_root / "cache" / date
     if not cache_dir.exists():

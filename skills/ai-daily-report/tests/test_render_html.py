@@ -959,6 +959,9 @@ def test_render_daily_methodology_radar(tmp_path):
     assert "为何是趋势" in text
     assert "你团队怎么用" in text
     assert soup.select(".badge-method-paradigm_shift"), "expect methodology kind badge"
+    # hook resolved: title of experiments_this_week[0]
+    assert "Plan Mode 双盲对比" in text, "hook should resolve to experiment title"
+    assert "experiments_this_week[0]" not in text, "raw hook token must not appear in output"
 
 
 def test_render_daily_methodology_radar_empty(tmp_path):
@@ -976,3 +979,6 @@ def test_render_weekly_methodology_radar(tmp_path):
     assert "方法论雷达" in text
     assert "Harness engineering 成显学" in text
     assert soup.select(".badge-method-framework_tool"), "expect methodology kind badge"
+    # hook resolved: recommendation of action_items[0]
+    assert "在核心研发团队推广 Claude Code Plan Mode，建立 plan-review-execute 标准工作流" in text, "hook should resolve to action_items recommendation"
+    assert "action_items[0]" not in text, "raw hook token must not appear in output"

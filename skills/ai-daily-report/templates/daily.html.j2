@@ -412,7 +412,17 @@
       <div class="summary">{{ item.what_it_is }}</div>
       <div class="eco-meta">为何是趋势：{{ item.why_trending }}</div>
       <div class="eco-meta">你团队怎么用：{{ item.how_team_can_use }}</div>
-      {% if item.hook %}<div class="eco-meta">落地钩子：{{ item.hook }}</div>{% endif %}
+      {% if item.hook %}
+      {% set hsec = item.hook.split('[')[0] %}
+      {% set hidx = item.hook.split('[')[1].rstrip(']') | int %}
+      {% if hsec == 'experiments_this_week' and report.sections.experiments_this_week['items'] | length > hidx %}
+      <div class="eco-meta">落地钩子：本期实验《{{ report.sections.experiments_this_week['items'][hidx].title }}》</div>
+      {% elif hsec == 'action_items' and report.sections.action_items['items'] | length > hidx %}
+      <div class="eco-meta">落地钩子：本期建议「{{ report.sections.action_items['items'][hidx].recommendation }}」</div>
+      {% else %}
+      <div class="eco-meta">落地钩子：{{ item.hook }}</div>
+      {% endif %}
+      {% endif %}
       <div class="source"><a href="{{ item.depth_link }}">推荐深读</a></div>
     </article>
     {% else %}
