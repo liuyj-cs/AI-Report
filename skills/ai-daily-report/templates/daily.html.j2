@@ -138,6 +138,9 @@
   .badge-eco-skill_plugin  { background: #dafbe1; color: #1a7f37; }
   .badge-eco-practice_case { background: #ddf4ff; color: #0969da; }
   .badge-eco-tool_release  { background: #fbefff; color: #8250df; }
+  .badge-method-paradigm_shift { background: #fbefff; color: #8250df; }
+  .badge-method-framework_tool { background: #dafbe1; color: #1a7f37; }
+  .badge-method-practice_pattern { background: #ddf4ff; color: #0969da; }
   .eco-meta { color: var(--muted); font-size: 14px; margin-top: 4px; }
   @media (prefers-color-scheme: dark) {
     .badge-rec-patch      { background: #21262d; color: #8b949e; }
@@ -156,6 +159,7 @@
 {% set eco_type_labels = {"trending_repo": "热门仓库", "skill_plugin": "技能/插件", "practice_case": "实践案例", "tool_release": "工具发布"} %}
 {% set eco_cost_labels = {"ready_to_use": "即装即用", "needs_config": "需配置", "needs_build": "需自建"} %}
 {% set audience_labels = {"team_pilot": "团队试点", "personal_workflow": "个人工作流"} %}
+{% set method_kind_labels = {"paradigm_shift": "范式演进", "framework_tool": "框架/工具", "practice_pattern": "实践范式"} %}
 {% macro item_meta(item) -%}
   {% if item.editorial_tier == "core" %}<span class="badge badge-tier badge-tier-core">核心发布</span>{% endif %}
   {% if item.editorial_tier == "watch" %}<span class="badge badge-tier badge-tier-watch">重要观察</span>{% endif %}
@@ -300,12 +304,13 @@
       <li><a href="#coding">二、{{ report.sections.coding_agents.title }}</a></li>
       <li><a href="#general">三、{{ report.sections.general_agents.title }}</a></li>
       <li><a href="#ecosystem">四、{{ report.sections.agent_ecosystem.title }}</a></li>
-      <li><a href="#market">五、{{ report.sections.market_signals.title }}</a></li>
-      <li><a href="#patterns">六、{{ report.sections.pattern_observations.title }}</a></li>
-      <li><a href="#experiments">七、{{ report.sections.experiments_this_week.title }}</a></li>
-      <li><a href="#radar">八、{{ report.sections.decision_radar.title }}</a></li>
-      <li><a href="#action"><strong>九、{{ report.sections.action_items.title }}</strong></a></li>
-      <li><a href="#unverified">十、{{ report.sections.unverified.title }}</a></li>
+      <li><a href="#methodology">五、{{ report.sections.methodology_radar.title }}</a></li>
+      <li><a href="#market">六、{{ report.sections.market_signals.title }}</a></li>
+      <li><a href="#patterns">七、{{ report.sections.pattern_observations.title }}</a></li>
+      <li><a href="#experiments">八、{{ report.sections.experiments_this_week.title }}</a></li>
+      <li><a href="#radar">九、{{ report.sections.decision_radar.title }}</a></li>
+      <li><a href="#action"><strong>十、{{ report.sections.action_items.title }}</strong></a></li>
+      <li><a href="#unverified">十一、{{ report.sections.unverified.title }}</a></li>
     </ul>
   </nav>
 
@@ -398,23 +403,40 @@
     {% endfor %}
   </section>
 
+  <section id="methodology">
+    <h2>五、{{ report.sections.methodology_radar.title }}</h2>
+    {% for item in report.sections.methodology_radar["items"] %}
+    <article class="card">
+      <div><span class="badge badge-method-{{ item.kind }}">{{ method_kind_labels[item.kind] }}</span></div>
+      <div class="headline">{{ item.title }}</div>
+      <div class="summary">{{ item.what_it_is }}</div>
+      <div class="eco-meta">为何是趋势：{{ item.why_trending }}</div>
+      <div class="eco-meta">你团队怎么用：{{ item.how_team_can_use }}</div>
+      {% if item.hook %}<div class="eco-meta">落地钩子：{{ item.hook }}</div>{% endif %}
+      <div class="source"><a href="{{ item.depth_link }}">推荐深读</a></div>
+    </article>
+    {% else %}
+    <p class="unverified">{{ report.sections.methodology_radar.empty_message }}</p>
+    {% endfor %}
+  </section>
+
   <section id="market">
-    <h2>五、{{ report.sections.market_signals.title }}</h2>
+    <h2>六、{{ report.sections.market_signals.title }}</h2>
     {{ market_signals_block(report.sections.market_signals) }}
   </section>
 
   <section id="patterns">
-    <h2>六、{{ report.sections.pattern_observations.title }}</h2>
+    <h2>七、{{ report.sections.pattern_observations.title }}</h2>
     {{ pattern_observations_block(report.sections.pattern_observations) }}
   </section>
 
   <section id="experiments">
-    <h2>七、{{ report.sections.experiments_this_week.title }}</h2>
+    <h2>八、{{ report.sections.experiments_this_week.title }}</h2>
     {{ experiments_block(report.sections.experiments_this_week) }}
   </section>
 
   <section id="radar">
-    <h2>八、{{ report.sections.decision_radar.title }}</h2>
+    <h2>九、{{ report.sections.decision_radar.title }}</h2>
     {% if report.sections.decision_radar.decisions %}
       {% for group in report.sections.decision_radar.decisions %}
       <div class="radar-group">
@@ -430,7 +452,7 @@
   </section>
 
   <section id="action">
-    <h2>九、{{ report.sections.action_items.title }}</h2>
+    <h2>十、{{ report.sections.action_items.title }}</h2>
     <div class="action-items">
       {% if report.sections.action_items["items"] %}
         {% for item in report.sections.action_items["items"] %}
@@ -443,7 +465,7 @@
   </section>
 
   <section id="unverified" class="unverified">
-    <h2>十、{{ report.sections.unverified.title }}</h2>
+    <h2>十一、{{ report.sections.unverified.title }}</h2>
     {% for item in report.sections.unverified["items"] %}
     <article class="card">
       <div class="headline">{{ item.headline }}</div>

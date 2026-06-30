@@ -948,3 +948,31 @@ def test_daily_schema_rejects_methodology_missing_kind():
     data["sections"]["methodology_radar"]["items"][0].pop("kind")
     validator = Draft202012Validator(_load_daily_schema())
     assert any("kind" in e.message for e in validator.iter_errors(data))
+
+
+def test_render_daily_methodology_radar(tmp_path):
+    html = _render_daily(tmp_path)
+    soup = BeautifulSoup(html, "html.parser")
+    text = soup.get_text()
+    assert "方法论雷达" in text
+    assert "Spec-driven development 升温" in text
+    assert "为何是趋势" in text
+    assert "你团队怎么用" in text
+    assert soup.select(".badge-method-paradigm_shift"), "expect methodology kind badge"
+
+
+def test_render_daily_methodology_radar_empty(tmp_path):
+    fixture = FIXTURES / "sample_daily_empty.json"
+    output = tmp_path / "report.html"
+    run_render(fixture, output)
+    text = BeautifulSoup(output.read_text(encoding="utf-8"), "html.parser").get_text()
+    assert "今日无方法论新信号" in text
+
+
+def test_render_weekly_methodology_radar(tmp_path):
+    html = _render_weekly(tmp_path)
+    soup = BeautifulSoup(html, "html.parser")
+    text = soup.get_text()
+    assert "方法论雷达" in text
+    assert "Harness engineering 成显学" in text
+    assert soup.select(".badge-method-framework_tool"), "expect methodology kind badge"

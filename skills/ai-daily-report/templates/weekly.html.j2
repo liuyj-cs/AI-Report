@@ -89,6 +89,9 @@
   .badge-apt-adopt_now      { background: #dafbe1; color: #1a7f37; }
   .badge-apt-wait_mature    { background: #fff8c5; color: #9a6700; }
   .badge-apt-reference_only { background: #eaeef2; color: #57606a; }
+  .badge-method-paradigm_shift { background: #fbefff; color: #8250df; }
+  .badge-method-framework_tool { background: #dafbe1; color: #1a7f37; }
+  .badge-method-practice_pattern { background: #ddf4ff; color: #0969da; }
   .badge-rec-patch      { background: #eaeef2; color: #57606a; }
   .badge-rec-experiment { background: #fff8c5; color: #9a6700; }
   .badge-rec-adopt      { background: #dafbe1; color: #1a7f37; }
@@ -180,6 +183,7 @@
 {%- endmacro %}
 {% set audience_labels = {"team_pilot": "团队试点", "personal_workflow": "个人工作流"} %}
 {% set applicability_labels = {"adopt_now": "适合现在引入", "wait_mature": "等工具成熟", "reference_only": "仅参考思路"} %}
+{% set method_kind_labels = {"paradigm_shift": "范式演进", "framework_tool": "框架/工具", "practice_pattern": "实践范式"} %}
 {% macro experiments_block(ex) -%}
 {% if ex["items"] %}
   {% for e in ex["items"] %}
@@ -337,7 +341,26 @@
   </section>
 
   <section>
-    <h2>九、{{ report.sections.action_items.title }}</h2>
+    <h2>九、{{ report.sections.methodology_radar.title }}</h2>
+    {% for item in report.sections.methodology_radar["items"] %}
+    <div class="group">
+      <div><span class="badge badge-method-{{ item.kind }}">{{ method_kind_labels[item.kind] }}</span></div>
+      <div class="head">{{ item.title }}</div>
+      <div class="label">是什么</div>
+      <div class="body">{{ item.what_it_is }}</div>
+      <div class="label">为何是趋势</div>
+      <div class="trend">{{ item.why_trending }}</div>
+      <div class="label">你团队怎么用</div>
+      <div class="implication">{{ item.how_team_can_use }}{% if item.hook %}（落地钩子：{{ item.hook }}）{% endif %}</div>
+      <div class="refs">推荐深读：<a href="{{ item.depth_link }}">{{ item.depth_link }}</a></div>
+    </div>
+    {% else %}
+    <p>{{ report.sections.methodology_radar.empty_message }}</p>
+    {% endfor %}
+  </section>
+
+  <section>
+    <h2>十、{{ report.sections.action_items.title }}</h2>
     <div class="action-items">
       {% for item in report.sections.action_items["items"] %}
       {{ action_item_block(item) }}
@@ -346,7 +369,7 @@
   </section>
 
   <section>
-    <h2>十、{{ report.sections.next_week_signals.title }}</h2>
+    <h2>十一、{{ report.sections.next_week_signals.title }}</h2>
     {% if report.sections.next_week_signals.announced %}
     <h3>已官宣</h3>
     <ul>
