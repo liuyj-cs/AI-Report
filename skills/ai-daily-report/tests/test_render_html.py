@@ -870,3 +870,51 @@ def test_weekly_schema_recall_ack_accepts_valid_forms_rejects_string():
         candidate = deepcopy(weekly)
         candidate["source_days"]["recall_ack"] = bad
         assert list(validator.iter_errors(candidate)), f"{bad!r} should be rejected by schema"
+
+
+# ---------- interview ----------
+
+
+def test_render_interview_basic(tmp_path):
+    src = tmp_path / "interview_fiona-fung-claude-code.json"
+    src.write_text((FIXTURES / "sample_interview.json").read_text(encoding="utf-8"), encoding="utf-8")
+    output = tmp_path / "interview_fiona-fung-claude-code.html"
+    result = run_render(src, output)
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    text = BeautifulSoup(output.read_text(encoding="utf-8"), "html.parser").get_text()
+    assert "AI 访谈" in text
+    assert "Fiona Fung" in text
+    assert "Anthropic" in text
+    assert "核心观点" in text
+    assert "对四个角色" in text
+    assert "全文中译" in text
+    assert "harness" in text
+
+
+def test_render_interview_default_output_next_to_json(tmp_path):
+    src = tmp_path / "interview_fiona-fung-claude-code.json"
+    src.write_text((FIXTURES / "sample_interview.json").read_text(encoding="utf-8"), encoding="utf-8")
+    result = run_render(src)
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+    assert (tmp_path / "interview_fiona-fung-claude-code.html").exists()
+
+
+def test_render_interview_missing_lede_fails_schema(tmp_path):
+    data = json.loads((FIXTURES / "sample_interview.json").read_text(encoding="utf-8"))
+    del data["lede"]
+    src = tmp_path / "interview_x.json"
+    src.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    result = run_render(src, tmp_path / "out.html")
+    assert result.returncode == 1
+    assert "schema validation" in result.stderr.lower()
+
+
+def test_render_interview_rejects_non_http_reference_url(tmp_path):
+    data = json.loads((FIXTURES / "sample_interview.json").read_text(encoding="utf-8"))
+    data["references"][0]["url"] = "not-a-url"
+    src = tmp_path / "interview_x.json"
+    src.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    result = run_render(src, tmp_path / "out.html")
+    assert result.returncode == 1
+    assert "url" in result.stderr or "pattern" in result.stderr

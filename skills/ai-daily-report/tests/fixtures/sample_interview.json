@@ -1,0 +1,44 @@
+{
+  "version": "1.0",
+  "type": "interview",
+  "date": "2026-06-30",
+  "slug": "fiona-fung-claude-code",
+  "person": "Fiona Fung",
+  "org": "Anthropic",
+  "role": "Claude Code 工程负责人",
+  "interview_title": "How Claude Code Is Built",
+  "outlet": "Latent Space",
+  "original_url": "https://www.latent.space/p/claude-code",
+  "published_at": "2026-06-28",
+  "published_at_confidence": "exact",
+  "first_seen_date": "2026-06-30",
+  "mode": "self_translated_full",
+  "chinese_transcript": {"available": false},
+  "lede": "Anthropic 的 Claude Code 工程负责人 Fiona Fung 在本期访谈里复盘了团队如何把一个内部脚本工具迭代成今天的 Claude Code：从最早只为跑长任务写的脚本，到 harness 脚手架设计、按可逆性分级的权限模型，再到 skills 与插件生态的取舍。她反复强调，真正的杠杆不在模型本身，而在围绕模型搭起来的循环——让 agent 能稳定地读代码、改代码、跑测试验证，并把人放在最该把关的检查点上。她也谈到评测驱动迭代：每个改动都要能跑回归用例，否则体验的稳定性无从保证。",
+  "key_points": [
+    "Claude Code 的核心是 harness（脚手架），而不是某个 prompt 技巧",
+    "权限模型按可逆性分级：低风险自动放行，高风险显式确认",
+    "skills 与插件让团队把自己的工作流沉淀成可复用资产",
+    "评测驱动迭代：每个改动都要能跑回归用例"
+  ],
+  "notable_quotes": [
+    {"quote_zh": "模型是引擎，harness 才是底盘——底盘决定了你能开多快。", "src": "约 12:30"}
+  ],
+  "role_implications": [
+    {"role": "选型负责人", "implication": "评估 coding agent 时要看 harness 与权限模型，而不仅是底层模型分数。"},
+    {"role": "workplace AI", "implication": "skills/插件的可沉淀性意味着非技术团队也能逐步积累自有工作流资产。"},
+    {"role": "技术总监", "implication": "把评测回归纳入团队 AI coding 流程，是稳定迭代的前提。"},
+    {"role": "深度使用工程师", "implication": "优先掌握权限分级与 skills 编排，是放大个人产出的杠杆点。"}
+  ],
+  "full_translation": [
+    {"heading": "从内部工具到产品", "body": "Fiona：最早 Claude Code 只是我们内部用来跑长任务的脚本……（此处为示例译文段落，正文以实际逐句翻译为准）。"},
+    {"heading": "harness 的设计哲学", "body": "我们很早就意识到，决定体验上限的不是单次回答质量，而是循环的稳定性……（示例译文）。"}
+  ],
+  "references": [
+    {"source": "Latent Space", "url": "https://www.latent.space/p/claude-code"}
+  ],
+  "follow_ups": [
+    "skills marketplace 的审核与安全模型细节",
+    "权限分级在企业 SSO/审计下的落地形态"
+  ]
+}
