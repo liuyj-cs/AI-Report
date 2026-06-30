@@ -1916,3 +1916,45 @@ def test_validate_methodology_radar_allows_no_hook():
     report = _report_with_methodology("experiments_this_week[0]")
     report["sections"]["methodology_radar"]["items"][0].pop("hook")
     assert validate_methodology_radar(report) == []
+
+
+def test_validate_methodology_radar_rejects_leading_zero_hook():
+    """#6: editorial hook 正则必须与 schema 一致——拒绝前导零，避免 editorial 放行而 render schema 拒。"""
+    from editorial import validate_methodology_radar
+
+    errors = validate_methodology_radar(_report_with_methodology("action_items[01]", n_actions=3))
+    assert any("invalid hook" in e for e in errors)
+
+
+def test_daily_methodology_cooldown_is_not_a_blocking_artifact_error(
+    tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+):
+    """#3: methodology cooldown 冲突不得硬阻断整封日报投递（它是 advisory，不进 validate_daily_artifacts）。"""
+    from copy import deepcopy
+    import json as _json
+    from discovery import load_whitelist
+    from editorial import validate_daily_artifacts
+    from methodology import record_methodology
+
+    whitelist = load_whitelist()
+    report = deepcopy(sample_daily_report)
+    report["date"] = "2026-06-30"
+    report["fetch_status"] = finalized_fetch_status(whitelist)
+    # methodology item with a slug + in-bounds hook
+    report["sections"]["methodology_radar"] = {
+        "title": "方法论雷达",
+        "items": [{
+            "slug": "spec-driven-development", "title": "t", "kind": "paradigm_shift",
+            "what_it_is": "a", "why_trending": "b", "how_team_can_use": "c",
+            "depth_link": "https://e.com", "hook": "action_items[0]",
+            "references": [{"source": "E", "url": "https://e.com"}],
+        }],
+        "empty_message": "",
+    }
+    ledger = deepcopy(sample_candidate_ledger)
+    # 预先把该 slug 写进冷却台账（模拟昨天已收录）
+    record_methodology({"date": "2026-06-29", "sections": report["sections"]}, tmp_path, "2026-06-29")
+    assert (tmp_path / "cache" / "methodology_seen.json").exists()
+
+    errors = validate_daily_artifacts(report, ledger, whitelist, tmp_path)
+    assert not any("cooldown" in e for e in errors), f"cooldown must not block finalize, got: {errors}"

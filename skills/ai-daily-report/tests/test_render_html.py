@@ -964,6 +964,19 @@ def test_render_daily_methodology_radar(tmp_path):
     assert "experiments_this_week[0]" not in text, "raw hook token must not appear in output"
 
 
+def test_render_daily_methodology_out_of_bounds_hook_does_not_leak_token(tmp_path):
+    """#8: render 独立路径不过 editorial 越界校验；越界 hook 不得把机器 token 渲染给读者。"""
+    data = json.loads((FIXTURES / "sample_daily.json").read_text(encoding="utf-8"))
+    data["sections"]["methodology_radar"]["items"][0]["hook"] = "action_items[9]"
+    src = tmp_path / "report.json"
+    src.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    output = tmp_path / "report.html"
+    result = run_render(src, output)
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+    text = BeautifulSoup(output.read_text(encoding="utf-8"), "html.parser").get_text()
+    assert "action_items[9]" not in text, "out-of-bounds hook token must not leak to reader"
+
+
 def test_render_daily_methodology_radar_empty(tmp_path):
     fixture = FIXTURES / "sample_daily_empty.json"
     output = tmp_path / "report.html"

@@ -351,7 +351,7 @@
       <div class="label">为何是趋势</div>
       <div class="trend">{{ item.why_trending }}</div>
       <div class="label">你团队怎么用</div>
-      <div class="implication">{{ item.how_team_can_use }}{% if item.hook %}{% set hsec = item.hook.split('[')[0] %}{% set hidx = item.hook.split('[')[1].rstrip(']') | int %}{% if hsec == 'experiments_this_week' and report.sections.experiments_this_week['items'] | length > hidx %}（落地钩子：本期实验《{{ report.sections.experiments_this_week['items'][hidx].title }}》）{% elif hsec == 'action_items' and report.sections.action_items['items'] | length > hidx %}（落地钩子：本期建议「{{ report.sections.action_items['items'][hidx].recommendation }}」）{% else %}（落地钩子：{{ item.hook }}）{% endif %}{% endif %}</div>
+      <div class="implication">{{ item.how_team_can_use }}{% if item.hook %}{% set hsec = item.hook.split('[')[0] %}{% set hidx = item.hook.split('[')[1].rstrip(']') | int %}{% if hsec == 'experiments_this_week' and report.sections.experiments_this_week['items'] | length > hidx %}（落地钩子：本期实验《{{ report.sections.experiments_this_week['items'][hidx].title }}》）{% elif hsec == 'action_items' and report.sections.action_items['items'] | length > hidx %}（落地钩子：本期建议「{{ report.sections.action_items['items'][hidx].recommendation }}」）{% endif %}{% endif %}</div>
       <div class="refs">推荐深读：<a href="{{ item.depth_link }}">{{ item.depth_link }}</a></div>
     </div>
     {% else %}

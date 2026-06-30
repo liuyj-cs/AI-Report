@@ -245,7 +245,10 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
    - 跑 `whitelist.yaml > leader_interviews` 面 + `interview_search_queries`；每场候选抽 `{person, org, role, interview_title, outlet, original_url, published_at}`，尝试照常写入 `fetch_status.source_details["Leader Interview Discovery"].attempts[]`。
    - **关注范围**：`profile.yaml > interview_watchlist`（Anthropic/OpenAI 高管创始人首席科学家 + 两家产品/工程负责人 + DeepMind/其他前沿实验室 + 头部 coding agent 产品负责人）；seeds 是种子，可顺名追人。
-   - **新鲜度 + 去重门**：`published_at`（或首次被权威源提及）≤14 天 **且** 去重指纹不在 `cache/interview_seen.json` → 立项；否则跳过并在 run.log 记命中原因。去重指纹 = 归一化 `original_url` + person+title。
+   - **新鲜度 + 去重门（两层职责，别混淆）**：
+     - **AI 立项层（语义去重）**：先读 `cache/interview_seen.json`（其中每条已存 `original_url` / `person` / `title`）。`published_at`（或首次被权威源提及）≤14 天 **且** 当前候选与台账中任何一条都不构成「同一场访谈」（按归一化 `original_url`、或 person+title 近似判断）→ 立项；否则跳过并在 run.log 记命中原因。这一步的「同场」判断由 AI 完成，不是脚本规则。
+     - **脚本幂等层（slug 兜底）**：finalize 的 `interview_already_sent` 只按 `slug` 判定，防止「同一个 `interview_{slug}.json` 重跑 finalize 时重发」。它**不**做 URL/person 级语义去重——那是上一层 AI 的职责。
+     - 因此**永久去重的有效性依赖 AI 为同一对象复用稳定 slug**：同一场访谈即使改天被重新发现，也必须沿用首次的 `slug`（如 `fiona-fung-claude-code`），否则换 slug 会绕过脚本幂等导致重发。起 slug 前先在台账里核对该对象是否已有既有 slug。
    - **找中文整理稿**（跑 `interview_zh_transcript_queries`）：
      - 命中高质量中文稿 → `mode=linked_zh_transcript`：`chinese_transcript.{available:true,url,outlet}` + 300-500 字 `lede` 导读 + `key_points` + 可选 `notable_quotes` + `role_implications`（四角色）。
      - 未命中 → 尝试取原文逐字稿（YouTube 字幕 / show notes / 文字访谈正文）：取到 → `mode=self_translated_full`：填 `full_translation`（分段中译）+ `lede` 要点；取不到逐字稿 → `mode=deep_summary_fallback`：`lede` + `key_points` 写 800-1500 字结构化深度摘要，并在 `lede` 显式标注「无逐字稿，基于公开报道/节选」。
@@ -256,7 +259,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 3e. **方法论雷达（methodology_radar，日报捕获，允许空）**
 
    - 来源：`whitelist.yaml > methodology_radar_sources` + `methodology_search_queries`，结合当日 `agent_ecosystem` / 实践信号。写入 `fetch_status.source_details["Methodology Radar Discovery"].attempts[]`。
-   - **准入窗口宽口径**：与 `agent_ecosystem` 一致——「7 天内首见 / 首次被收录」，不走严格当日新闻硬卡（方法论是慢信号）；靠 `cache/methodology_seen.json` 的 30 天 cooldown 防止天天复读。
+   - **准入窗口宽口径**：与 `agent_ecosystem` 一致——「7 天内首见 / 首次被收录」，不走严格当日新闻硬卡（方法论是慢信号）；靠 `cache/methodology_seen.json` 的 30 天 cooldown 防止天天复读。cooldown 是 **advisory**：冲突只在 run.log 记 `METHODOLOGY cooldown(advisory)` 告警、**不阻断**日报投递；台账在日报正文发送成功后才写入（dry-run / 发送失败不烧冷却）。复用稳定 slug 才能让 cooldown 生效。
    - 每天 0-3 条，**允许空**（`items:[] + empty_message`）。每条字段：`slug`（小写连字符）/ `title` / `kind`（`paradigm_shift` / `framework_tool` / `practice_pattern`）/ `what_it_is` / `why_trending`（+ 证据）/ `how_team_can_use` / `depth_link` / 可选 `hook`（回指当日 `experiments_this_week[i]` 或 `action_items[i]`）/ `references`（≥1，回溯 fetch 留痕）。
    - 锚定 `profile.yaml > practice_focus` + 范式网（spec-driven / harness / loop engineering 等），不泛收一切 AI 热点。
    - **不进 `action_items` 依据**；`hook` 是单向的（radar → experiment/建议）。
@@ -529,7 +532,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 - **落地建议**：仅从 frontier_models / coding_agents / general_agents 推导。`unverified` 里的内容**不作为**建议依据。
 - **agent_ecosystem**：生态与实践信号（热门仓库、skills/插件、实践案例、工具发布）。不是新闻，准入窗口放宽到 7 天首见；不作为 action_items 依据。
 - **decision_radar**：编辑结论层，只引用当日 core/watch 正文条目，按 profile.yaml 在途决策分组。
-- **methodology_radar**：方法论/范式/工具思潮（spec-driven / harness / loop engineering 等）。日报捕获 + 周报聚合，宽准入窗口（7 天首见）+ 30 天 cooldown；不作为 action_items 依据，hook 单向连到 experiments/建议。
+- **methodology_radar**：方法论/范式/工具思潮（spec-driven / harness / loop engineering 等）。日报捕获 + 周报聚合，宽准入窗口（7 天首见）+ 30 天 cooldown（advisory，不阻断投递）；不作为 action_items 依据，hook 单向连到 experiments/建议。
 - **interview（负责人访谈）**：独立邮件产物（非 section），复用 deep_dive 发送骨架；不进日报正文、不进 action_items 依据。
 
 ## 异常处理
@@ -581,8 +584,8 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 | 访谈 `lede` | 300-500 字（schema 兜底 200-700） |
 | 访谈 `key_points` | 2-8 条；`role_implications` 恰好 4 条 |
 | 访谈 `mode` | `self_translated_full` 必须有 `full_translation`；`linked_zh_transcript` 必须有 `chinese_transcript.url` |
-| 访谈新鲜度 | 发布 ≤14 天且首次发现；`interview_seen.json` 永久去重 |
-| `methodology_radar` items | 日报 0-3 条 / 周报 1-3 条，均允许空；每条必须 `references ≥1`；`slug` 30 天 cooldown（daily-only） |
+| 访谈新鲜度 | 发布 ≤14 天且首次发现；台账 `interview_seen.json` 按 slug 防重发，URL/person 级语义去重由 AI 立项时完成（须为同一对象复用稳定 slug） |
+| `methodology_radar` items | 日报 0-3 条 / 周报 1-3 条，均允许空；每条必须 `references ≥1`；`slug` 30 天 cooldown 为 **advisory**（daily-only，冲突写 run.log 告警、不阻断投递；同一范式须复用稳定 slug 才有效） |
 | `methodology_radar.hook` | 可选；只能指向 `experiments_this_week[i]` / `action_items[i]`，i 不得越界 |
 
 ## 终端输出格式

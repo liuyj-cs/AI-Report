@@ -306,7 +306,9 @@ def validate_decision_radar(report: dict[str, Any], profile: dict[str, Any] | No
     return errors
 
 
-METHODOLOGY_HOOK_PATTERN = re.compile(r"^(?P<section>experiments_this_week|action_items)\[(?P<index>\d+)\]$")
+# Index alternation matches the schema's methodologyHook pattern verbatim (rejects
+# leading zeros) so editorial never accepts a hook that render's schema check rejects.
+METHODOLOGY_HOOK_PATTERN = re.compile(r"^(?P<section>experiments_this_week|action_items)\[(?P<index>0|[1-9][0-9]*)\]$")
 
 
 def validate_methodology_radar(report: dict[str, Any]) -> list[str]:
@@ -849,9 +851,9 @@ def validate_daily_artifacts(
         errors.extend(
             validate_ecosystem_repeats(report, load_seen_repos(project_root), str(report.get("date", "")))
         )
-        errors.extend(
-            validate_methodology_repeats(report, load_seen_methodology(project_root), str(report.get("date", "")))
-        )
+        # methodology cooldown is advisory (a 0-3 item, action-irrelevant panel must not
+        # hard-block the whole daily/deep-dive/interview delivery). It surfaces in qa_diff
+        # via build_daily_qa_diff instead. See #3 in PR #3 review.
     return errors
 
 

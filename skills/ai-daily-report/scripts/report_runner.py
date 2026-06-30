@@ -25,7 +25,7 @@ from discovery import (
     write_discovery_manifest,
 )
 from ecosystem import record_ecosystem_repos
-from methodology import record_methodology
+from methodology import load_seen_methodology, record_methodology, validate_methodology_repeats
 from editorial import build_daily_qa_diff, build_weekly_qa_diff, validate_daily_artifacts, validate_weekly_artifacts
 from render_html import render
 from tracking import active_tracking_events, cleanup_expired_tracking
@@ -141,6 +141,8 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
 
     report = _load_json(report_path)
     ledger = _load_json(ledger_path)
+    if report.get("date") != target_date:
+        return 1, f"daily report.json date {report.get('date')!r} does not match requested --date {target_date!r}"
     whitelist = load_whitelist()
     qa_diff = build_daily_qa_diff(report, ledger, whitelist)
     qa_path = _write_json(cache_dir / "qa_diff.json", qa_diff)
@@ -157,12 +159,13 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
     removed_tracking = cleanup_expired_tracking(project_root, target_date)
     if removed_tracking:
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} TRACKING cleanup removed={removed_tracking}")
-    recorded = record_ecosystem_repos(report, project_root, target_date)
-    if recorded:
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} ECOSYSTEM seen_repos+={recorded}")
-    recorded_methodology = record_methodology(report, project_root, target_date)
-    if recorded_methodology:
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} METHODOLOGY seen+={recorded_methodology}")
+    # methodology cooldown is advisory only: warn (non-blocking) so a repeated slug is
+    # visible, but never let it stop delivery. The seen-ledgers are written AFTER a
+    # successful send (below), so dry-run / a failed send never burns a cooldown slot.
+    for cooldown_warning in validate_methodology_repeats(
+        report, load_seen_methodology(project_root), target_date
+    ):
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} METHODOLOGY cooldown(advisory) {cooldown_warning}")
 
     deep_dive_sends: list[tuple[Path, str]] = []
     for _, slug in major_event_slugs(report):
@@ -201,6 +204,15 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
         return code, send_output
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
+    # Record seen-ledgers only after the daily body (which carries the ecosystem +
+    # methodology content) actually went out, so dry-run / a failed send never burns a
+    # cooldown slot. Mirrors the interview track's send-then-record discipline.
+    recorded = record_ecosystem_repos(report, project_root, target_date)
+    if recorded:
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} ECOSYSTEM seen_repos+={recorded}")
+    recorded_methodology = record_methodology(report, project_root, target_date)
+    if recorded_methodology:
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} METHODOLOGY seen+={recorded_methodology}")
     for dd_archived, dd_subject in deep_dive_sends:
         code, send_output = _send_mail(project_root, dd_archived, dd_subject, env_path)
         if code != 0:

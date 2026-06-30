@@ -419,8 +419,6 @@
       <div class="eco-meta">落地钩子：本期实验《{{ report.sections.experiments_this_week['items'][hidx].title }}》</div>
       {% elif hsec == 'action_items' and report.sections.action_items['items'] | length > hidx %}
       <div class="eco-meta">落地钩子：本期建议「{{ report.sections.action_items['items'][hidx].recommendation }}」</div>
-      {% else %}
-      <div class="eco-meta">落地钩子：{{ item.hook }}</div>
       {% endif %}
       {% endif %}
       <div class="source"><a href="{{ item.depth_link }}">推荐深读</a></div>
