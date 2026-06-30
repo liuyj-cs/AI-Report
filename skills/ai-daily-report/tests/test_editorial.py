@@ -50,6 +50,7 @@ def _minimal_report_with_fetch_status(sample_daily_report, finalized_fetch_statu
     report["sections"]["experiments_this_week"]["items"] = []
     report["sections"]["experiments_this_week"]["empty_message"] = "今日无适合 1 日内验证的实验"
     report["sections"]["decision_radar"]["decisions"] = []
+    report["sections"]["methodology_radar"]["items"] = []
     return report
 
 
@@ -1872,3 +1873,46 @@ def test_build_daily_qa_diff_surfaces_recall_fallback(sample_daily_report, sampl
     report["fetch_status"] = finalized_fetch_status(whitelist)
     qa_diff = build_daily_qa_diff(report, sample_candidate_ledger, whitelist)
     assert qa_diff["summary"]["categories"]["missed_discovery"] >= 1
+
+
+def _report_with_methodology(hook, n_experiments=1, n_actions=1):
+    return {
+        "date": "2026-06-30",
+        "sections": {
+            "experiments_this_week": {"items": [{} for _ in range(n_experiments)]},
+            "action_items": {"items": [{} for _ in range(n_actions)]},
+            "methodology_radar": {
+                "title": "方法论雷达",
+                "items": [{"slug": "x", "title": "t", "kind": "paradigm_shift", "what_it_is": "a", "why_trending": "b", "how_team_can_use": "c", "depth_link": "https://e.com", "hook": hook, "references": [{"source": "E", "url": "https://e.com"}]}],
+                "empty_message": "",
+            },
+        },
+    }
+
+
+def test_validate_methodology_radar_accepts_valid_hook():
+    from editorial import validate_methodology_radar
+
+    assert validate_methodology_radar(_report_with_methodology("experiments_this_week[0]")) == []
+
+
+def test_validate_methodology_radar_flags_out_of_range_hook():
+    from editorial import validate_methodology_radar
+
+    errors = validate_methodology_radar(_report_with_methodology("action_items[3]", n_actions=1))
+    assert any("points past" in e for e in errors)
+
+
+def test_validate_methodology_radar_flags_invalid_hook_shape():
+    from editorial import validate_methodology_radar
+
+    errors = validate_methodology_radar(_report_with_methodology("frontier_models[0]"))
+    assert any("invalid hook" in e for e in errors)
+
+
+def test_validate_methodology_radar_allows_no_hook():
+    from editorial import validate_methodology_radar
+
+    report = _report_with_methodology("experiments_this_week[0]")
+    report["sections"]["methodology_radar"]["items"][0].pop("hook")
+    assert validate_methodology_radar(report) == []

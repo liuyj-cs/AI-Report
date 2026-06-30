@@ -25,6 +25,7 @@ from discovery import (
     write_discovery_manifest,
 )
 from ecosystem import record_ecosystem_repos
+from methodology import record_methodology
 from editorial import build_daily_qa_diff, build_weekly_qa_diff, validate_daily_artifacts, validate_weekly_artifacts
 from render_html import render
 from tracking import active_tracking_events, cleanup_expired_tracking
@@ -159,6 +160,9 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
     recorded = record_ecosystem_repos(report, project_root, target_date)
     if recorded:
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} ECOSYSTEM seen_repos+={recorded}")
+    recorded_methodology = record_methodology(report, project_root, target_date)
+    if recorded_methodology:
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} METHODOLOGY seen+={recorded_methodology}")
 
     deep_dive_sends: list[tuple[Path, str]] = []
     for _, slug in major_event_slugs(report):

@@ -20,6 +20,7 @@ from discovery import (
     rolling_week_dates,
 )
 from ecosystem import load_seen_repos, validate_ecosystem_repeats
+from methodology import load_seen_methodology, validate_methodology_repeats
 from tracking import validate_tracking_refs
 from deep_dive import validate_deep_dives
 from interview import validate_interviews
@@ -302,6 +303,31 @@ def validate_decision_radar(report: dict[str, Any], profile: dict[str, Any] | No
             errors.append(f"{label} decision_name {name!r} not found in profile decisions_in_flight")
         for item_index, item in enumerate(group.get("items", [])):
             errors.extend(_validate_item_ref(f"{label}.items[{item_index}].ref", item.get("ref", ""), counts))
+    return errors
+
+
+METHODOLOGY_HOOK_PATTERN = re.compile(r"^(?P<section>experiments_this_week|action_items)\[(?P<index>\d+)\]$")
+
+
+def validate_methodology_radar(report: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    sections = report.get("sections", {})
+    counts = {
+        "experiments_this_week": len(sections.get("experiments_this_week", {}).get("items", [])),
+        "action_items": len(sections.get("action_items", {}).get("items", [])),
+    }
+    for index, item in enumerate(sections.get("methodology_radar", {}).get("items", [])):
+        hook = item.get("hook")
+        if not hook:
+            continue
+        match = METHODOLOGY_HOOK_PATTERN.match(hook)
+        if not match:
+            errors.append(f"methodology_radar.items[{index}] has invalid hook {hook!r}")
+            continue
+        section_name = match.group("section")
+        hook_index = int(match.group("index"))
+        if hook_index >= counts[section_name]:
+            errors.append(f"methodology_radar.items[{index}] hook points past {section_name}[{hook_index}]")
     return errors
 
 
@@ -790,6 +816,7 @@ def validate_weekly_artifacts(report: dict[str, Any], project_root: Path) -> lis
     errors.extend(validate_weekly_references(report, project_root))
     errors.extend(validate_practice_digest(report, project_root))
     errors.extend(validate_market_signals_consistency(report, "weekly"))
+    errors.extend(validate_methodology_radar(report))
     errors.extend(validate_weekly_recall(report, project_root))
     return errors
 
@@ -814,12 +841,16 @@ def validate_daily_artifacts(
     errors.extend(validate_recall_probe_coverage(report, whitelist))
     errors.extend(validate_major_event_consistency(report))
     errors.extend(validate_decision_radar(report, profile))
+    errors.extend(validate_methodology_radar(report))
     if project_root is not None:
         errors.extend(validate_tracking_refs(report, project_root))
         errors.extend(validate_deep_dives(report, project_root))
         errors.extend(validate_interviews(str(report.get("date", "")), project_root))
         errors.extend(
             validate_ecosystem_repeats(report, load_seen_repos(project_root), str(report.get("date", "")))
+        )
+        errors.extend(
+            validate_methodology_repeats(report, load_seen_methodology(project_root), str(report.get("date", "")))
         )
     return errors
 
@@ -1030,6 +1061,7 @@ def build_daily_qa_diff(report: dict[str, Any], ledger: dict[str, Any], whitelis
     reference_errors.extend(validate_candidate_ledger_alignment(report, ledger))
     reference_errors.extend(validate_daily_market_signal_refs(report))
     reference_errors.extend(validate_source_closure(report, ledger))
+    reference_errors.extend(validate_methodology_radar(report))
     for error in reference_errors:
         findings.append(
             _make_finding(
@@ -1182,6 +1214,7 @@ def build_weekly_qa_diff(report: dict[str, Any], project_root: Path) -> dict[str
     reference_errors.extend(validate_weekly_item_refs(report))
     reference_errors.extend(validate_weekly_references(report, project_root))
     reference_errors.extend(validate_practice_digest(report, project_root))
+    reference_errors.extend(validate_methodology_radar(report))
     for error in reference_errors:
         findings.append(
             _make_finding(
