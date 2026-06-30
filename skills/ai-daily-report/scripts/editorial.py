@@ -852,8 +852,9 @@ def validate_daily_artifacts(
             validate_ecosystem_repeats(report, load_seen_repos(project_root), str(report.get("date", "")))
         )
         # methodology cooldown is advisory (a 0-3 item, action-irrelevant panel must not
-        # hard-block the whole daily/deep-dive/interview delivery). It surfaces in qa_diff
-        # via build_daily_qa_diff instead. See #3 in PR #3 review.
+        # hard-block the whole daily/deep-dive/interview delivery), so it is intentionally
+        # NOT in this blocking list. run_daily_finalize logs any cooldown conflict to
+        # run.log as "METHODOLOGY cooldown(advisory)" instead. See #3 in PR #3 review.
     return errors
 
 
