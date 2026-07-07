@@ -957,3 +957,28 @@ def test_init_daily_logs_tracking_load_errors(tmp_path):
     run_log = (tmp_path / "cache" / "2026-04-18" / "run.log").read_text(encoding="utf-8")
     assert "TRACKING warning" in run_log
     assert "broken.json" in run_log
+
+
+def test_finalize_daily_rerun_skips_already_sent_daily(
+    tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status, monkeypatch
+):
+    import report_runner
+
+    cache_dir, env_path = _build_passing_finalize_setup(
+        tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+    )
+    sent: list[str] = []
+
+    def _fake_send(project_root, html_path, subject, env_path_arg):
+        sent.append(subject)
+        return 0, f"sent to=a@example.com subject={subject!r}"
+
+    monkeypatch.setattr(report_runner, "_send_mail", _fake_send)
+
+    code1, _ = run_daily_finalize(tmp_path, "2026-04-18", dry_run=False, env_path=env_path)
+    code2, _ = run_daily_finalize(tmp_path, "2026-04-18", dry_run=False, env_path=env_path)
+
+    assert code1 == 0 and code2 == 0
+    assert len([s for s in sent if s.startswith("AI 日报")]) == 1
+    log_text = (tmp_path / "cache" / "2026-04-18" / "run.log").read_text(encoding="utf-8")
+    assert "EMAIL skip already-sent daily" in log_text

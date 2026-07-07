@@ -29,6 +29,7 @@ from hard_data import SNAPSHOT_FILENAME, compute_hard_data_delta, find_previous_
 from methodology import load_seen_methodology, record_methodology, validate_methodology_repeats
 from editorial import build_daily_qa_diff, build_weekly_qa_diff, validate_daily_artifacts, validate_weekly_artifacts
 from render_html import render
+from send_state import already_sent, record_sent
 from tracking import cleanup_expired_tracking, load_tracking_events
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -199,7 +200,7 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
     ):
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} METHODOLOGY cooldown(advisory) {cooldown_warning}")
 
-    deep_dive_sends: list[tuple[Path, str]] = []
+    deep_dive_sends: list[tuple[Path, str, str]] = []
     for _, slug in major_event_slugs(report):
         if not slug:
             continue
@@ -211,7 +212,7 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
             f"{report.get('generated_at', datetime.now().isoformat())} DEEPDIVE {dd_archived.relative_to(project_root)} ok",
         )
         dd_payload = _load_json(dd_json_path)
-        deep_dive_sends.append((dd_archived, f"AI 深度 · {dd_payload['title']}"))
+        deep_dive_sends.append((dd_archived, f"AI 深度 · {dd_payload['title']}", slug))
 
     interview_sends: list[tuple[Path, str, dict[str, Any]]] = []
     for iv_json_path in iter_interview_files(project_root, target_date):
@@ -231,28 +232,38 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=ok")
         return 0, str(archived_path)
 
-    code, send_output = _send_mail(project_root, archived_path, f"AI 日报 · {target_date}", env_path)
-    if code != 0:
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=email_failed")
-        return code, send_output
-    append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
-    # Record seen-ledgers only after the daily body (which carries the ecosystem +
-    # methodology content) actually went out, so dry-run / a failed send never burns a
-    # cooldown slot. Mirrors the interview track's send-then-record discipline.
-    recorded = record_ecosystem_repos(report, project_root, target_date)
-    if recorded:
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} ECOSYSTEM seen_repos+={recorded}")
-    recorded_methodology = record_methodology(report, project_root, target_date)
-    if recorded_methodology:
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} METHODOLOGY seen+={recorded_methodology}")
-    for dd_archived, dd_subject in deep_dive_sends:
+    daily_subject = f"AI 日报 · {target_date}"
+    if already_sent(cache_dir, "daily"):
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL skip already-sent daily")
+    else:
+        code, send_output = _send_mail(project_root, archived_path, daily_subject, env_path)
+        if code != 0:
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=email_failed")
+            return code, send_output
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
+        record_sent(cache_dir, "daily", daily_subject)
+        # Record seen-ledgers only after the daily body (which carries the ecosystem +
+        # methodology content) actually went out, so dry-run / a failed send never burns a
+        # cooldown slot. Mirrors the interview track's send-then-record discipline.
+        recorded = record_ecosystem_repos(report, project_root, target_date)
+        if recorded:
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} ECOSYSTEM seen_repos+={recorded}")
+        recorded_methodology = record_methodology(report, project_root, target_date)
+        if recorded_methodology:
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} METHODOLOGY seen+={recorded_methodology}")
+    for dd_archived, dd_subject, dd_slug in deep_dive_sends:
+        state_key = f"deep_dive:{dd_slug}"
+        if already_sent(cache_dir, state_key):
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL skip already-sent {state_key}")
+            continue
         code, send_output = _send_mail(project_root, dd_archived, dd_subject, env_path)
         if code != 0:
             append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
             append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=email_failed")
             return code, send_output
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
+        record_sent(cache_dir, state_key, dd_subject)
     for iv_archived, iv_subject, iv_payload in interview_sends:
         slug = str(iv_payload.get("slug", ""))
         if interview_already_sent(project_root, slug):
@@ -335,12 +346,17 @@ def run_weekly_finalize(project_root: Path, week_end: str, dry_run: bool, env_pa
         return 0, str(archived_path)
 
     week_start = rolling_week_dates(week_end)[0]
-    code, send_output = _send_mail(project_root, archived_path, f"AI 周报 · {week_start} ~ {week_end}", env_path)
-    if code != 0:
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END weekly status=email_failed")
-        return code, send_output
-    append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
+    weekly_subject = f"AI 周报 · {week_start} ~ {week_end}"
+    if already_sent(cache_dir, "weekly"):
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL skip already-sent weekly")
+    else:
+        code, send_output = _send_mail(project_root, archived_path, weekly_subject, env_path)
+        if code != 0:
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END weekly status=email_failed")
+            return code, send_output
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
+        record_sent(cache_dir, "weekly", weekly_subject)
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END weekly status=ok")
     return 0, str(archived_path)
 
