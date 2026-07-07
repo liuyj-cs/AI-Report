@@ -20,6 +20,12 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - 日报：`python skills/ai-daily-report/scripts/report_runner.py init-daily --date {YYYY-MM-DD} --now {ISO8601} --env .env`
    - 周报：`python skills/ai-daily-report/scripts/report_runner.py init-weekly --end-date {YYYY-MM-DD} --now {ISO8601} --env .env`
    - 作用：提前校验 `.env`、创建 `cache/.../run.log`。日报入口只负责生成 `discovery_manifest.json` 与窗口；周报入口会写 `input_days.json`。若邮件环境变量缺失，此步即失败并停止。
+0a. **昨日送达自检**：`init-daily` 输出若含 `DELIVERY_ALERT`（昨日有邮件失败或仅 dry-run），优先重跑
+   `python skills/ai-daily-report/scripts/report_runner.py finalize-daily --date {昨日} --env .env`
+   续发（send_state 幂等：已送达的跳过；失败点之后从未尝试的深度/访谈也会一并补发）。
+   仅确需单发一封时才用 send_mail.py（单发不写 send_state，之后重跑 finalize 会重复投递）。
+   补发也失败则停止并提示用户检查网络/凭据。
+0b. **昨日 QA 复盘**：读 `cache/{昨日}/qa_diff.json`（若存在）。昨日 `missed_discovery` 点名的源，今天首轮必须完成下穿（搜索层留痕）；连续出现的同名告警视为流程缺陷，当天必须消化，不允许再顺延。
 1. **读取 sources/whitelist.yaml**：按类别枚举所有信源和搜索 query
 1b. **读取 sources/profile.yaml**：读者画像（四个角色、在途决策、实践关注点）。它是编辑判断的输入：相关性、决策雷达分组、生态板块取舍都要回答"这条信息服务哪个角色/哪个在途决策"。
 2. **读取 .env**：确保 `GMAIL_USER`、`GMAIL_APP_PASSWORD`、`REPORT_RECIPIENTS`（或回退 `RECIPIENT_EMAIL`）三项都已配置；任何一项缺失 → **立刻停止并提示用户**补齐。`report_runner.py` 与 `send_mail.py` 都会校验，runner 的职责是让错误尽早暴露。
@@ -57,7 +63,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - **窗口内 0 条目（empty_in_window）按信源面类型分两类处理（关键，否则长尾信源会集体静默漏采）**：
        - **倒序新闻/发布 feed 面**——官方 news/blog 列表、release notes、GitHub releases、GitHub 组织 `?sort=updated`、HuggingFace 组织 `?sort=created` 等"会随新发布更新、每条都带日期"的列表页：empty 属于**合法成功**，**不**继续下层；这类源可在 whitelist 标 `empty_is_conclusive: true`
        - **静态/产品/文档/聚合面**——产品首页、API/使用介绍页、聊天入口、JS 壳、看板/排行榜首屏：empty **不代表"无新闻"，只代表"这个面展示不了新闻"** → **必须继续下穿** 该源 fetch_chain 里后续的 HF/GitHub 倒序面与 websearch_scoped/broad；跑完搜索层仍空，才能判为该源空
-     - **cn_labs 与 hard_data 源默认按"静态/必须下穿"处理**：官方静态面命中空后，必须走完 HuggingFace 组织(sort=created) / GitHub 组织(sort=updated) 倒序面 + websearch + 媒体一跳，才能判定"窗口内无发布"。开源权重模型的"发布"第一现场通常是 HF 上的新权重，不是官网博客——HF/GitHub 倒序面比官网更可靠。这两类源若整链停在 Layer-0 静态面且空，会被 finalize 的召回 QA 记为 `missed_discovery`
+     - **cn_labs 与 hard_data 源默认按"静态/必须下穿"处理**：官方静态面命中空后，必须走完 HuggingFace 组织(sort=created) / GitHub 组织(sort=updated) 倒序面 + websearch + 媒体一跳，才能判定"窗口内无发布"。开源权重模型的"发布"第一现场通常是 HF 上的新权重，不是官网博客——HF/GitHub 倒序面比官网更可靠。**此规则自 2026-07 起为 finalize 阻塞项**：这两类源若整链停在 Layer-0 静态面且空、无搜索层 attempt，`finalize-daily` 直接失败（不再只是 qa_diff 告警）
      - 反例：Google AI Blog 经常返回纯 CSS 模板 → 视为 error，进入下一层
      - 反例：HTTP 200 但页面内容是「Please enable JavaScript」/「Cloudflare verification」→ 视为 error
 
@@ -223,7 +229,9 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - `open_questions`（1-5 条，必填）：待验证问题清单，将转入事件追踪
    - **撰写深度专题（每个 major_event 一份）**：落盘 `cache/{date}/deep_dive_{event_slug}.json`（schema `schemas/deep_dive.schema.json`）。七个小节全部必填：`background`（背景与时间线）/ `what_shipped_detail`（发布详述）/ `benchmarks_pricing`（基准与定价）/ `ecosystem_reaction`（生态与第三方反应）/ `role_implications`（profile.yaml 四个角色各 1-2 句）/ `quick_start`（上手指引）/ `open_questions`；`references` ≥1 条且全部来自当日 fetch 已留痕的证据，禁止臆测。总篇幅 800-1500 字。素材不足以撑起全部小节 → 说明该事件不够格 major_event，只走 expanded。finalize 渲染为 `reports/deep_dives/{date}-{slug}.html` 并以「AI 深度 · {title}」**独立邮件**发送（日报正文保持紧凑）。
    - **开追踪档案**：写 `cache/tracking/{event_slug}.json`（schema `schemas/event_tracking.schema.json`）。`event_slug` 用小写连字符（如 `claude-fable-5`），`expires_on` 距 `opened_date` 不超过 5 天，`watch_items` 直接继承 `open_questions`。条目同时写 `tracking_ref: {event_slug}`；finalize 会校验 `major_event` 条目必须有 expanded + tracking_ref，且 tracking_ref 能解析到活跃档案。
-   - **追踪期内的后续日报**：`discovery_manifest.json` 的 `active_tracking` 会列出活跃追踪事件。对每个活跃事件至少执行一轮定向搜索（第三方评测 / 实测反馈 / 价格与配额变化）。命中的增量条目：
+   - **追踪期内的后续日报**：`discovery_manifest.json` 的 `active_tracking` 会列出活跃追踪事件。对每个活跃事件至少执行一轮定向搜索（第三方评测 / 实测反馈 / 价格与配额变化）。
+     - **跟进留痕（finalize 强制）**：把当天定向搜索写入 `fetch_status.source_details["Event Tracking: {event_slug}"].attempts[]`（无增量也要记一条空结果 attempt）。开档当天豁免；追踪期内缺该 surface 会导致 finalize-daily 失败。
+     命中的增量条目：
      - 豁免 3-1 跨日去重（见该节例外 2），headline 必须体现增量（如「Fable 5 第三方评测首批出炉」）
      - 条目带 `tracking_ref`，并把 `{date, headline, ref}` 追加进追踪档案的 `updates[]`
      - 没有增量就不写条目，不为追踪而凑数
@@ -272,6 +280,12 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
 5. **抓取并解析硬数据（market_signals）**
    - 对 `whitelist.yaml > hard_data` 4 个源走标准 fetch_chain（LMArena / Artificial Analysis / OpenRouter / HuggingFace Trending）
+   - **快照纪律（必做）**：抓取 hard_data 面时，把读到的原始数字写入 `cache/{date}/hard_data_snapshot.json`：
+     `{"version":"1.0","date":"{date}","sources":{"lmarena":{"observed_at":...,"url":...,"models":[{"model":...,"elo":...,"rank":...}]},"artificial_analysis":{"models":[{"model":...,"index_score":...}]},"openrouter":{"models":[{"model":...,"input_price_per_mtok":...,"output_price_per_mtok":...}]}}}`。
+     抓不到的源可缺省；有啥记啥，不做判断。
+   - 然后跑 `python skills/ai-daily-report/scripts/report_runner.py hard-data-delta --date {date}`：
+     `deltas` 里 `status=changed` 的条目是有真实基线的变化 → 据此写 `benchmark_changes` / `pricing_changes`；
+     `status=new_entry`（首见/无基线）→ 只能进 `benchmark_watch`，不得写成"变化"。当天缺快照会被 qa_diff 记 `hard_data_gap` 告警。
    - LMArena / Artificial Analysis：
      - 若窗口内存在可明确归因的显著变化（如 Elo 变化 > 10 或 > 5%）→ 进入 `market_signals.benchmark_changes`
      - 若当天出现新的 benchmark / score snapshot、榜单进入、或新模型评分首曝，但缺稳定前一日基线、尚不足以写成严格 delta → 进入 `market_signals.benchmark_watch`
@@ -325,6 +339,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - **多样性硬约束**：items ≥ 3 时 `recommendation_type` 必须出现 ≥3 种不同值；不允许全 patch / 全 monitor
    - **范围约束**：`effort_person_days.max ≤ effort_person_days.min × 3`
    - 写作语气必须回答"是否下注 / 何时下注 / 下注多少人日"，不是"怎么打补丁"
+   - **稀薄日纪律（finalize 强制）**：前三节合计 ≤2 条时，action_items 最多 1 条；decision_radar 允许空。宁可写"今日信号不足，延续近期建议"，不允许把单条更新放大成成套建议
    - 空时 `items: []` + `empty_message: "今日无明显行动项，延续近期建议。"`
 
 9. **产出结构化 JSON**
@@ -423,7 +438,8 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
       ```
 
 14. **运行日志收尾**
-    - 在 `cache/{date}/run.log` 追加 `END daily status=ok`
+    - `END daily status=ok` / `status=email_failed` 由 `finalize-daily` 写入，**AI 不要手写 END 行**。
+    - finalize 返回非零且 run.log 有 `END daily status=email_failed` 时：邮件未送达。用 `send_mail.py` 单步补发（脚本自带 3 次重试），补发成功后终端简版如实报告"邮件经补发成功"。
 
 ## 周报工作流
 
@@ -534,6 +550,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 - **decision_radar**：编辑结论层，只引用当日 core/watch 正文条目，按 profile.yaml 在途决策分组。
 - **methodology_radar**：方法论/范式/工具思潮（spec-driven / harness / loop engineering 等）。日报捕获 + 周报聚合，宽准入窗口（7 天首见）+ 30 天 cooldown（advisory，不阻断投递）；不作为 action_items 依据，hook 单向连到 experiments/建议。
 - **interview（负责人访谈）**：独立邮件产物（非 section），复用 deep_dive 发送骨架；不进日报正文、不进 action_items 依据。
+- **政策与合规信号**（policy_compliance_sources）：按影响对象归类——模型/算力可用性（出口管制、备案通过/下架）→ frontier_models；企业部署合规、行业准入 → general_agents；事实链不完整 → unverified。窗口硬卡与来源闭环同标准；对在途决策有影响时必须进 decision_radar。
 
 ## 异常处理
 
@@ -541,18 +558,20 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 - **核心源阈值**：`core_sources`（8 个，含 2 家 CN）整链失败数 ≥4 → 中止任务、不发邮件、不归档（仅保留 cache 里的 run.log 供排查）
 - **空结果**：仅在最终命中层是**倒序新闻/发布 feed 面**（或 `empty_is_conclusive`）时，窗口内无条目才算合法空，同时进 `succeeded` 与 `empty` 且不穿透下层；**静态/产品/文档/聚合面命中空必须继续下穿** HF/GitHub 倒序面与 websearch 后才能判空（cn_labs / hard_data 默认按此处理）。详见日报步骤 1「成功」判定。
 - **伪成功（CSS only / 登录墙 / JS shell）**：视为该层 error，立即进入下一层
-- **召回守门（finalize 自动校验，会阻断发送）**：① 日报 `cn_labs` / `hard_data` 源若停在 Layer-0 静态面且空、未跑搜索层 → qa_diff 记 `missed_discovery`（warn，不阻断）；② 周报若 frontier_models 在 7 天里 ≥3 天为空或日报缺失（缺失=盲天，不算通过；分母固定为窗口 7 天）、或全部 CN 一级厂商整周零产出 → finalize 校验失败、不渲染不发信。确为安静周时，在周报 `source_days.recall_ack` 留证后可放行：`true` 放行全部，或按信号分别放行 `{"frontier": true}` / `{"cn_labs": true}`（也接受列表 `["frontier"]`）——放行 frontier 不会连带掩盖真实的 CN 漏采。⚠️ `recall_ack` 只接受 **布尔 / 对象 / 列表**；裸字符串 `recall_ack: frontier`（YAML 标量）**不生效、会继续阻断**（属刻意 fail-closed；weekly schema 的 `recall_ack` 已加 `oneOf`，非法形态在渲染时即报错）。
+- **召回守门（finalize 自动校验，会阻断发送）**：① 日报 `cn_labs` / `hard_data` 源若停在 Layer-0 静态面且空、未跑搜索层 → **finalize-daily 校验失败（阻断发送）**，错误信息点名源；确属倒序 feed 面空即权威的，在 whitelist 标 `empty_is_conclusive: true`；② 周报若 frontier_models 在 7 天里 ≥3 天为空或日报缺失（缺失=盲天，不算通过；分母固定为窗口 7 天）、或全部 CN 一级厂商整周零产出 → finalize 校验失败、不渲染不发信。确为安静周时，在周报 `source_days.recall_ack` 留证后可放行：`true` 放行全部，或按信号分别放行 `{"frontier": true}` / `{"cn_labs": true}`（也接受列表 `["frontier"]`）——放行 frontier 不会连带掩盖真实的 CN 漏采。⚠️ `recall_ack` 只接受 **布尔 / 对象 / 列表**；裸字符串 `recall_ack: frontier`（YAML 标量）**不生效、会继续阻断**（属刻意 fail-closed；weekly schema 的 `recall_ack` 已加 `oneOf`，非法形态在渲染时即报错）。
 - **render_html.py 失败**：若退出码 1 → Claude 自检 JSON 格式（特别是新增 required 字段 `release_stage` / `published_at_confidence` / `authority_score` / `editorial_tier`，以及 `action_items.references[]` 的 `section` / `editorial_tier`）补齐后重试一次；仍失败则中止并报错
 - **archive.py 失败**：停止流程，但保留 cache HTML 供用户手动取用
 - **finalize-weekly 校验失败**：若缺日报 JSON、`source_days` 不完整、引用无法回指或 `itemRef` 越界 → 停止流程，不归档不发信，先修正 JSON / 日报缓存
 - **send_mail.py 失败**：HTML 已归档 → 报告失败但不回滚归档。退出码 2（认证失败）→ 提示用户重新生成 Gmail 应用专用密码并更新 `.env`；退出码 3（网络/SMTP 错误）→ 建议稍后重跑 `send_mail.py` 单步重试
 - **追踪档案损坏**：`cache/tracking/` 下存在无法解析或不符合 schema 的档案 → finalize 校验失败（错误信息会点名该文件）。修复或删除该档案后重跑；过期超过 7 天的档案由 finalize 自动清理。
 - **深度专题缺失或损坏**：major_event 条目无对应 `cache/{date}/deep_dive_{slug}.json`、或该文件 schema 校验失败 → finalize-daily 失败，不归档不发信；补写/修复专题 JSON 后重跑。补发型专题（事后为历史事件单独生成）不要求当日日报存在对应 major_event 条目。
-- **专题邮件失败后重跑会重发**：`finalize-daily` 没有发送幂等护栏。日报邮件已发成功、随后某份深度专题邮件失败时，函数返回该专题的非零码；此时**重跑整个 finalize-daily 会重发日报正文与已成功的专题邮件**（deep dive 把可失败的发送步骤从 1 放大到 N+1）。要避免重复：失败后改用 `send_mail.py reports/deep_dives/{date}-{slug}.html` 单步只补发失败的那一份，不要整体重跑 finalize。
+- **发送幂等（send_state.json）**：`finalize-daily` / `finalize-weekly` 通过 `cache/{date}/send_state.json`（周报为 `cache/weekly/{end}/send_state.json`）记录已发送的日报正文 / 每份 deep_dive / 周报。发送中途失败后**直接重跑 finalize 即可**：已发的封不会重发（run.log 记 `EMAIL skip already-sent ...`），只补发失败的。访谈仍由全局 `interview_seen.json` 幂等。dry-run 不写 send_state。
+- **send_mail 自动重试**：瞬时 SMTP/网络错误自动重试 2 次（5s/20s 退避）；认证错误（code=2）不重试，提示更新应用专用密码。
+- **DELIVERY_ALERT**：init-daily 检测到昨日有邮件失败（按 kind 区分日报/深度/访谈）或仅 dry-run 时输出告警并写 run.log。注意发送链首个失败即中断，失败点之后的邮件从未尝试、日志里不会出现——所以恢复必须以「重跑 finalize-daily」为主，见「运行前检查 0a」。
 - **逐字稿取不到（访谈）**：降级 `mode=deep_summary_fallback`，`lede` 标注来源限制，不报错、不阻塞日报。
 - **访谈面整链失败**：记 `fetch_status.failed`，日报照常（`leader_interviews` 非 core_source）。
 - **访谈 JSON 损坏 / schema 不合 / mode 与字段不一致**：`validate_interviews` 报错点名文件 → finalize-daily 失败、不归档不发信；修复或删除该 `cache/{date}/interview_{slug}.json` 后重跑。
-- **发送非幂等放大（含访谈）**：finalize-daily 现在依次发「日报正文 + N 份 deep_dive + M 份访谈」。日报正文与 deep_dive 仍非幂等（整体重跑会重发）；**访谈通过 `interview_seen.json` 幂等**——已成功发送的 slug 重跑会跳过。某封失败时，优先用 `send_mail.py reports/interviews/{date}-{slug}.html` 或 `reports/deep_dives/{date}-{slug}.html` 单步只补发失败那一份，不要整体重跑 finalize。
+- **单封补发（可选）**：send_state 幂等已使整体重跑安全；若只想补发单独一封，也可用 `send_mail.py reports/interviews/{date}-{slug}.html` 或 `reports/deep_dives/{date}-{slug}.html` 单步发送（注意单步发送不会写 send_state，之后重跑 finalize 会再发一次该封——优先用整体重跑）。
 - **方法论 cooldown 台账损坏**：`methodology_seen.json` 无法解析 → 视为空台账（不阻塞）；如需重置删除该文件即可（删除会让历史范式可能重新进入冷却计算）。
 
 ## 产出字段约束

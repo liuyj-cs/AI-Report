@@ -32,3 +32,5 @@
 - `cache/tracking/`：重大事件追踪档案（最长 5 天有效期，驱动跨日追踪报道，运行时生成）
 - `skills/ai-daily-report/sources/profile.yaml`：读者画像（角色、在途决策、实践关注点）
 - `cache/seen_repos.json`：生态板块已收录仓库台账（30 天冷却，运行时生成）
+- `cache/{date}/hard_data_snapshot.json`：硬数据当日快照（运行时生成，`hard-data-delta` 用它算跨日变化）
+- `cache/{date}/send_state.json`：发送幂等台账（运行时生成，finalize 重跑不重发）

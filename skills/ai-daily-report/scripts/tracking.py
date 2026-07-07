@@ -12,6 +12,7 @@ from jsonschema import Draft202012Validator
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 TRACKING_SCHEMA_PATH = SKILL_ROOT / "schemas" / "event_tracking.schema.json"
 MAX_TRACKING_DAYS = 5
+TRACKING_SURFACE_PREFIX = "Event Tracking: "
 
 
 def tracking_dir(project_root: Path) -> Path:
@@ -53,19 +54,24 @@ def load_tracking_events(project_root: Path) -> tuple[list[dict[str, Any]], list
     return events, errors
 
 
+def is_active_event(event: dict[str, Any], target: date) -> bool:
+    """活跃窗口唯一谓词：opened_date <= target <= expires_on（三处调用共享，改语义只改这里）。"""
+    return date.fromisoformat(event["opened_date"]) <= target <= date.fromisoformat(event["expires_on"])
+
+
 def active_tracking_events(project_root: Path, target_date: str) -> list[dict[str, Any]]:
     events, _ = load_tracking_events(project_root)
     target = date.fromisoformat(target_date)
-    return [
-        event
-        for event in events
-        if date.fromisoformat(event["opened_date"]) <= target <= date.fromisoformat(event["expires_on"])
-    ]
+    return [event for event in events if is_active_event(event, target)]
 
 
-def validate_tracking_refs(report: dict[str, Any], project_root: Path) -> list[str]:
+def validate_tracking_refs(
+    report: dict[str, Any],
+    project_root: Path,
+    preloaded: tuple[list[dict[str, Any]], list[str]] | None = None,
+) -> list[str]:
     errors: list[str] = []
-    events, load_errors = load_tracking_events(project_root)
+    events, load_errors = preloaded if preloaded is not None else load_tracking_events(project_root)
     errors.extend(load_errors)
     target_date = str(report.get("date", ""))
     try:
@@ -74,16 +80,41 @@ def validate_tracking_refs(report: dict[str, Any], project_root: Path) -> list[s
         errors.append(f"report date {target_date!r} is not a valid date")
         return errors
 
-    active = {
-        event["event_slug"]
-        for event in events
-        if date.fromisoformat(event["opened_date"]) <= target <= date.fromisoformat(event["expires_on"])
-    }
+    active = {event["event_slug"] for event in events if is_active_event(event, target)}
     for section_name in ("frontier_models", "coding_agents", "general_agents"):
         for index, item in enumerate(report.get("sections", {}).get(section_name, {}).get("items", [])):
             slug = item.get("tracking_ref")
             if slug and slug not in active:
                 errors.append(f"{section_name}[{index}] tracking_ref {slug!r} has no active tracking file")
+    return errors
+
+
+def validate_tracking_followup(
+    report: dict[str, Any],
+    project_root: Path,
+    preloaded: tuple[list[dict[str, Any]], list[str]] | None = None,
+) -> list[str]:
+    """追踪期内（开档次日起）每个活跃事件必须有定向搜索留痕，否则 5 天追踪期只是摆设。"""
+    errors: list[str] = []
+    target_date = str(report.get("date", ""))
+    try:
+        target = date.fromisoformat(target_date)
+    except ValueError:
+        return errors  # 日期非法由 validate_tracking_refs 负责报错
+    events, _ = preloaded if preloaded is not None else load_tracking_events(project_root)
+    source_details = report.get("fetch_status", {}).get("source_details", {})
+    for event in events:
+        opened = date.fromisoformat(event["opened_date"])
+        if not (is_active_event(event, target) and opened < target):
+            continue
+        surface = f"{TRACKING_SURFACE_PREFIX}{event['event_slug']}"
+        attempts = (source_details.get(surface) or {}).get("attempts") or []
+        real_attempts = [a for a in attempts if a.get("reason") != "pending discovery"]
+        if not real_attempts:
+            errors.append(
+                f"active tracking {event['event_slug']!r} has no follow-up attempt "
+                f"in fetch_status.source_details[{surface!r}]"
+            )
     return errors
 
 

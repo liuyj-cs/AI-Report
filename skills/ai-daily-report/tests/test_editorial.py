@@ -1871,6 +1871,12 @@ def test_build_daily_qa_diff_surfaces_recall_fallback(sample_daily_report, sampl
     whitelist = load_whitelist()
     report = deepcopy(sample_daily_report)
     report["fetch_status"] = finalized_fetch_status(whitelist)
+    # 人为去掉 DeepSeek 的搜索兜底 attempt，模拟「静态面空即停」的漏采场景
+    report["fetch_status"]["source_details"]["DeepSeek"]["attempts"] = [
+        attempt
+        for attempt in report["fetch_status"]["source_details"]["DeepSeek"]["attempts"]
+        if attempt.get("layer_type") not in ("websearch_scoped", "websearch_broad")
+    ]
     qa_diff = build_daily_qa_diff(report, sample_candidate_ledger, whitelist)
     assert qa_diff["summary"]["categories"]["missed_discovery"] >= 1
 
@@ -1958,3 +1964,118 @@ def test_daily_methodology_cooldown_is_not_a_blocking_artifact_error(
 
     errors = validate_daily_artifacts(report, ledger, whitelist, tmp_path)
     assert not any("cooldown" in e for e in errors), f"cooldown must not block finalize, got: {errors}"
+
+
+def _high_recall_whitelist():
+    return {
+        "cn_labs": [
+            {
+                "name": "DeepSeek",
+                "category": "cn_labs",
+                "fetch_chain": [
+                    {"type": "webfetch", "url": "https://api-docs.deepseek.com/news"},
+                    {"type": "websearch_scoped", "queries": ["DeepSeek release {date}"]},
+                ],
+            }
+        ]
+    }
+
+
+def _empty_static_report(attempts):
+    return {
+        "fetch_status": {
+            "empty": ["DeepSeek"],
+            "source_details": {"DeepSeek": {"attempts": attempts}},
+        }
+    }
+
+
+def test_recall_fallback_blocks_when_search_layer_skipped():
+    from editorial import validate_recall_fallback_coverage
+
+    report = _empty_static_report(
+        [{"layer_index": 0, "layer_type": "webfetch", "target": "x", "result": "success_but_empty"}]
+    )
+    errors = validate_recall_fallback_coverage(report, _high_recall_whitelist())
+    assert len(errors) == 1
+    assert "DeepSeek" in errors[0]
+
+
+def test_recall_fallback_passes_when_search_attempted():
+    from editorial import validate_recall_fallback_coverage
+
+    report = _empty_static_report(
+        [
+            {"layer_index": 0, "layer_type": "webfetch", "target": "x", "result": "success_but_empty"},
+            {"layer_index": 1, "layer_type": "websearch_scoped", "target": "DeepSeek release", "result": "success_but_empty"},
+        ]
+    )
+    assert validate_recall_fallback_coverage(report, _high_recall_whitelist()) == []
+
+
+def test_recall_fallback_respects_empty_is_conclusive():
+    from editorial import validate_recall_fallback_coverage
+
+    whitelist = _high_recall_whitelist()
+    whitelist["cn_labs"][0]["empty_is_conclusive"] = True
+    report = _empty_static_report(
+        [{"layer_index": 0, "layer_type": "webfetch", "target": "x", "result": "success_but_empty"}]
+    )
+    assert validate_recall_fallback_coverage(report, whitelist) == []
+
+
+def test_recall_fallback_findings_are_high_severity():
+    from editorial import recall_fallback_findings
+
+    report = _empty_static_report(
+        [{"layer_index": 0, "layer_type": "webfetch", "target": "x", "result": "success_but_empty"}]
+    )
+    findings = recall_fallback_findings(report, _high_recall_whitelist())
+    assert findings and findings[0]["severity"] == "high"
+
+
+def _sparse_report(core_counts, action_count):
+    sections = {
+        "frontier_models": {"items": [{"headline": f"f{i}"} for i in range(core_counts[0])]},
+        "coding_agents": {"items": [{"headline": f"c{i}"} for i in range(core_counts[1])]},
+        "general_agents": {"items": [{"headline": f"g{i}"} for i in range(core_counts[2])]},
+        "action_items": {"items": [{"recommendation": f"a{i}"} for i in range(action_count)]},
+    }
+    return {"sections": sections}
+
+
+def test_sparse_day_blocks_multiple_action_items():
+    from editorial import validate_sparse_day_restraint
+
+    errors = validate_sparse_day_restraint(_sparse_report((0, 1, 1), 3))
+    assert len(errors) == 1
+    assert "sparse day" in errors[0]
+
+
+def test_sparse_day_allows_single_action_item():
+    from editorial import validate_sparse_day_restraint
+
+    assert validate_sparse_day_restraint(_sparse_report((0, 1, 1), 1)) == []
+
+
+def test_normal_day_not_restricted():
+    from editorial import validate_sparse_day_restraint
+
+    assert validate_sparse_day_restraint(_sparse_report((2, 1, 1), 4)) == []
+
+
+def test_ledger_orphan_selected_item_missing_from_body_warns():
+    from editorial import ledger_orphan_findings
+
+    report = {"sections": {"frontier_models": {"items": [{"headline": "在正文里"}]}}}
+    ledger = {
+        "items": [
+            {"decision": "selected_core", "proposed_section": "frontier_models", "headline": "在正文里"},
+            {"decision": "selected_core", "proposed_section": "frontier_models", "headline": "被静默丢掉"},
+            {"decision": "rejected_window", "proposed_section": "frontier_models", "headline": "无所谓"},
+        ]
+    }
+    findings = ledger_orphan_findings(report, ledger)
+    assert len(findings) == 1
+    assert findings[0]["headline"] == "被静默丢掉"
+    assert findings[0]["severity"] == "medium"

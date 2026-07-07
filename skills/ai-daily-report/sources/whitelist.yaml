@@ -809,6 +809,50 @@ hard_data:
         queries:
           - "popular open source LLM release {date}"
 
+# 政策与合规 watch：出口管制 / AI 法案 / 中国备案与监管。
+# 依据：在途决策 criteria 含「CN 可用性」「数据合规」；Fable 5 出口管制停用是政策面
+# 直接冲击选型的真实案例。官方页面结构多变，首层即用 scoped 搜索，不做脆弱的深层 webfetch。
+# 命中信号按影响对象归类（模型可用性→frontier_models 等），走同样的窗口硬卡与证据闭环。
+policy_compliance_sources:
+  - name: AI Export Controls Watch
+    category: policy_compliance
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: websearch_scoped
+        queries:
+          - "BIS export control AI model {date}"
+          - "US export restrictions frontier AI model {date}"
+      - type: websearch_broad
+        queries:
+          - "AI model chip export control announcement {date}"
+
+  - name: EU AI Act Watch
+    category: policy_compliance
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: websearch_scoped
+        queries:
+          - "EU AI Act implementation obligation deadline {date}"
+          - "site:digital-strategy.ec.europa.eu AI Act {date}"
+      - type: websearch_broad
+        queries:
+          - "EU AI Act enforcement news {date}"
+
+  - name: 中国生成式AI监管 Watch
+    category: policy_compliance
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: websearch_scoped
+        queries:
+          - "生成式人工智能 备案 网信办 {date}"
+          - "大模型 监管 新规 算法备案 {date}"
+      - type: websearch_broad
+        queries:
+          - "China AI regulation announcement {date}"
+
 leader_interviews:
   - name: Latent Space Podcast
     category: leader_interviews

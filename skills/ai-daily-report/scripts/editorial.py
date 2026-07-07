@@ -21,7 +21,7 @@ from discovery import (
 )
 from ecosystem import load_seen_repos, validate_ecosystem_repeats
 from methodology import load_seen_methodology, validate_methodology_repeats
-from tracking import validate_tracking_refs
+from tracking import load_tracking_events, validate_tracking_followup, validate_tracking_refs
 from deep_dive import validate_deep_dives
 from interview import validate_interviews
 
@@ -50,6 +50,8 @@ HIGH_RECALL_CATEGORIES = ("cn_labs", "hard_data")
 # A whole week with frontier_models empty on this many days is never legitimately
 # "quiet" in this domain — it signals blind discovery, not a slow news week.
 FRONTIER_EMPTY_DAY_THRESHOLD = 3
+# 正文（前三节）合计条目数低于该阈值时属"稀薄日"：单薄事实不允许放大成成套建议。
+SPARSE_DAY_ITEM_THRESHOLD = 2
 HARD_DATA_KEYWORDS = (
     "benchmark",
     "leaderboard",
@@ -62,7 +64,6 @@ HARD_DATA_KEYWORDS = (
     "math-500",
     "aime",
     "swe-bench",
-    "benchmark",
     "榜单",
     "评分",
     "基准",
@@ -582,6 +583,28 @@ def validate_recall_probe_coverage(report: dict[str, Any], whitelist: dict[str, 
     return errors
 
 
+def validate_recall_fallback_coverage(report: dict[str, Any], whitelist: dict[str, Any]) -> list[str]:
+    """cn_labs / hard_data 源静态面空后必须下穿搜索层（whitelist 明文规则），未下穿即阻塞。"""
+    return [
+        f"{finding['source_name']}: {finding['reason']}"
+        for finding in recall_fallback_findings(report, whitelist)
+    ]
+
+
+def validate_sparse_day_restraint(report: dict[str, Any]) -> list[str]:
+    """稀薄日（正文 ≤2 条）action_items 最多 1 条——宁可明说"今日信号不足"也不放大。"""
+    sections = report.get("sections", {})
+    total = sum(
+        len(sections.get(name, {}).get("items", [])) for name in DAILY_REFERENCE_SECTIONS
+    )
+    actions = sections.get("action_items", {}).get("items", [])
+    if total <= SPARSE_DAY_ITEM_THRESHOLD and len(actions) > 1:
+        return [
+            f"sparse day ({total} core items across frontier/coding/general) allows at most 1 action item, got {len(actions)}"
+        ]
+    return []
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -836,16 +859,21 @@ def validate_daily_artifacts(
     errors.extend(validate_source_attempt_refs(report, ledger))
     errors.extend(validate_candidate_ledger_semantics(ledger))
     errors.extend(validate_action_item_references(report))
+    errors.extend(validate_sparse_day_restraint(report))
     errors.extend(validate_candidate_ledger_alignment(report, ledger))
     errors.extend(validate_source_closure(report, ledger))
     errors.extend(validate_daily_market_signal_refs(report))
     errors.extend(validate_market_signals_consistency(report, "daily"))
     errors.extend(validate_recall_probe_coverage(report, whitelist))
+    errors.extend(validate_recall_fallback_coverage(report, whitelist))
     errors.extend(validate_major_event_consistency(report))
     errors.extend(validate_decision_radar(report, profile))
     errors.extend(validate_methodology_radar(report))
     if project_root is not None:
-        errors.extend(validate_tracking_refs(report, project_root))
+        # 一次加载（含 schema 校验）供两个 tracking 校验共用，避免双读 cache/tracking/*.json
+        tracking_preloaded = load_tracking_events(project_root)
+        errors.extend(validate_tracking_refs(report, project_root, preloaded=tracking_preloaded))
+        errors.extend(validate_tracking_followup(report, project_root, preloaded=tracking_preloaded))
         errors.extend(validate_deep_dives(report, project_root))
         errors.extend(validate_interviews(str(report.get("date", "")), project_root))
         errors.extend(
@@ -993,8 +1021,8 @@ def recall_fallback_findings(report: dict[str, Any], whitelist: dict[str, Any]) 
         findings.append(
             _make_finding(
                 "missed_discovery",
-                "medium",
-                f"{name} 在官方/静态面命中空后未下穿 websearch 兜底层；empty≠无新闻，可能漏采。",
+                "high",
+                f"{name} 在官方/静态面命中空后未下穿 websearch 兜底层；empty≠无新闻，可能漏采（finalize 阻塞项）。",
                 source_name=name,
                 suggested_fix="对该源执行 websearch_scoped/broad 并把命中或空结果写入 attempts；确为倒序新闻面且空即权威时，在 whitelist 标 empty_is_conclusive: true。",
             )
@@ -1002,7 +1030,54 @@ def recall_fallback_findings(report: dict[str, Any], whitelist: dict[str, Any]) 
     return findings
 
 
-def build_daily_qa_diff(report: dict[str, Any], ledger: dict[str, Any], whitelist: dict[str, Any]) -> dict[str, Any]:
+def hard_data_snapshot_findings(report: dict[str, Any], project_root: Path) -> list[dict[str, Any]]:
+    """当日缺 hard_data_snapshot.json → warn（无快照就永远做不出跨日 delta）。"""
+    from hard_data import load_snapshot
+
+    day = str(report.get("date", ""))
+    if not day or load_snapshot(project_root, day) is not None:
+        return []
+    return [
+        _make_finding(
+            "hard_data_gap",
+            "medium",
+            f"缺 cache/{day}/hard_data_snapshot.json，benchmark/pricing 无法形成跨日基线。",
+            suggested_fix="抓取 hard_data 面时把 LMArena/AA/OpenRouter 原始数字写入快照，再跑 report_runner.py hard-data-delta。",
+        )
+    ]
+
+
+def ledger_orphan_findings(report: dict[str, Any], ledger: dict[str, Any]) -> list[dict[str, Any]]:
+    """台账反向对齐：ledger 标了 selected_* 但正文没收录 → warn，让静默丢稿留痕。"""
+    findings: list[dict[str, Any]] = []
+    for item in ledger.get("items", []):
+        decision = item.get("decision")
+        if decision not in {"selected_core", "selected_watch", "selected_unverified"}:
+            continue
+        section = LEDGER_TO_REPORT_SECTION.get(str(item.get("proposed_section", "")))
+        if not section:
+            continue
+        headline = str(item.get("headline", ""))
+        if headline not in _report_headlines(report, section):
+            findings.append(
+                _make_finding(
+                    "reference_integrity_gap",
+                    "medium",
+                    f"ledger 标记 {decision} 但正文 {section} 未收录该条。",
+                    headline=headline,
+                    section=section,
+                    suggested_fix="确认是编辑撤稿还是漏写；撤稿应把 decision 改为 rejected_* 并写明 decision_reason。",
+                )
+            )
+    return findings
+
+
+def build_daily_qa_diff(
+    report: dict[str, Any],
+    ledger: dict[str, Any],
+    whitelist: dict[str, Any],
+    project_root: Path | None = None,
+) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     source_details = report.get("fetch_status", {}).get("source_details", {})
 
@@ -1030,6 +1105,9 @@ def build_daily_qa_diff(report: dict[str, Any], ledger: dict[str, Any], whitelis
                 )
     findings.extend(recall_probe_findings(report, whitelist))
     findings.extend(recall_fallback_findings(report, whitelist))
+    findings.extend(ledger_orphan_findings(report, ledger))
+    if project_root is not None:
+        findings.extend(hard_data_snapshot_findings(report, project_root))
 
     for item in ledger.get("items", []):
         decision = item.get("decision")

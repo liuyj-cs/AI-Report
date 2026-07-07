@@ -6,6 +6,7 @@ import argparse
 import smtplib
 import ssl
 import sys
+import time
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid
 from pathlib import Path
@@ -14,6 +15,8 @@ from dotenv import dotenv_values
 
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 465
+# 瞬时网络错误（历史上 code=3 高频复发于清晨）用固定退避重试；认证错误不重试。
+RETRY_DELAYS = (5, 20)
 
 
 def _split_addrs(raw: str) -> list[str]:
@@ -28,7 +31,12 @@ def build_message(
 ) -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = formataddr(("AI Report", sender))
-    msg["To"] = ", ".join(recipients)
+    if len(recipients) == 1:
+        msg["To"] = recipients[0]
+    else:
+        # 多收件人走 Bcc（互不可见）；smtplib.send_message 用 To+Bcc 计算 envelope 并剥离 Bcc 头
+        msg["To"] = formataddr(("AI Report", sender))
+        msg["Bcc"] = ", ".join(recipients)
     msg["Subject"] = subject
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain=sender.split("@", 1)[-1])
@@ -37,11 +45,29 @@ def build_message(
     return msg
 
 
-def send(msg: EmailMessage, sender: str, password: str) -> None:
-    context = ssl.create_default_context()
-    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context, timeout=30) as smtp:
-        smtp.login(sender, password)
-        smtp.send_message(msg)
+def send(
+    msg: EmailMessage,
+    sender: str,
+    password: str,
+    retry_delays: tuple[int, ...] = RETRY_DELAYS,
+    sleep=time.sleep,
+) -> int:
+    """发送邮件；瞬时 SMTP/网络错误按 retry_delays 重试，返回实际重试次数。"""
+    for attempt in range(len(retry_delays) + 1):
+        try:
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context, timeout=30) as smtp:
+                smtp.login(sender, password)
+                smtp.send_message(msg)
+            return attempt
+        except (smtplib.SMTPAuthenticationError, smtplib.SMTPRecipientsRefused):
+            # 永久错误（凭据失效 / 收件人被拒）重试也不会成功，直接抛出
+            raise
+        except (smtplib.SMTPException, OSError):
+            if attempt == len(retry_delays):
+                raise
+            sleep(retry_delays[attempt])
+    raise AssertionError("unreachable")
 
 
 def main() -> int:
@@ -95,15 +121,19 @@ def main() -> int:
         return 0
 
     try:
-        send(msg, sender, password)
+        retries = send(msg, sender, password)
     except smtplib.SMTPAuthenticationError as e:
         print(f"SMTP auth failed: {e}", file=sys.stderr)
         return 2
+    except smtplib.SMTPRecipientsRefused as e:
+        print(f"SMTP recipients refused (permanent, no retry): {e.recipients}", file=sys.stderr)
+        return 3
     except (smtplib.SMTPException, OSError) as e:
-        print(f"SMTP send failed: {e}", file=sys.stderr)
+        print(f"SMTP send failed after {len(RETRY_DELAYS) + 1} attempts: {e}", file=sys.stderr)
         return 3
 
-    print(f"sent to={','.join(recipients)} subject={args.subject!r}")
+    suffix = f" retries={retries}" if retries else ""
+    print(f"sent to={','.join(recipients)} subject={args.subject!r}{suffix}")
     return 0
 
 

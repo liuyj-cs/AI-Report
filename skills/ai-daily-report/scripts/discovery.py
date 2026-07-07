@@ -11,6 +11,7 @@ from typing import Any, Iterator
 import yaml
 
 from evidence import suggest_one_hop_targets
+from tracking import TRACKING_SURFACE_PREFIX
 
 
 WHITELIST_PATH = Path(__file__).resolve().parent.parent / "sources" / "whitelist.yaml"
@@ -159,8 +160,7 @@ def rolling_week_dates(week_end: str) -> list[str]:
 
 def compute_daily_window(target_date: str, now_iso: str) -> dict[str, str]:
     now = datetime.fromisoformat(now_iso)
-    report_date = datetime.fromisoformat(f"{target_date}T00:00:00{now.strftime('%z')[:3]}:{now.strftime('%z')[3:]}")
-    start_date = report_date.date() - timedelta(days=1)
+    start_date = datetime.fromisoformat(target_date).date() - timedelta(days=1)
     start = datetime.combine(start_date, time(hour=7), tzinfo=now.tzinfo)
     return {
         "start": start.isoformat(),
@@ -410,6 +410,7 @@ def build_discovery_manifest(
             ECOSYSTEM_DISCOVERY_NAME,
             LEADER_INTERVIEW_DISCOVERY_NAME,
             METHODOLOGY_DISCOVERY_NAME,
+            *[f"{TRACKING_SURFACE_PREFIX}{event['event_slug']}" for event in (active_tracking or [])],
         ],
     }
 
