@@ -25,6 +25,7 @@ from discovery import (
     write_discovery_manifest,
 )
 from ecosystem import record_ecosystem_repos
+from hard_data import SNAPSHOT_FILENAME, compute_hard_data_delta, find_previous_snapshot, load_snapshot
 from methodology import load_seen_methodology, record_methodology, validate_methodology_repeats
 from editorial import build_daily_qa_diff, build_weekly_qa_diff, validate_daily_artifacts, validate_weekly_artifacts
 from render_html import render
@@ -175,7 +176,7 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
     if report.get("date") != target_date:
         return 1, f"daily report.json date {report.get('date')!r} does not match requested --date {target_date!r}"
     whitelist = load_whitelist()
-    qa_diff = build_daily_qa_diff(report, ledger, whitelist)
+    qa_diff = build_daily_qa_diff(report, ledger, whitelist, project_root=project_root)
     qa_path = _write_json(cache_dir / "qa_diff.json", qa_diff)
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} QA {qa_path.name} ok")
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} {_qa_summary_line(qa_diff)}")
@@ -344,6 +345,21 @@ def run_weekly_finalize(project_root: Path, week_end: str, dry_run: bool, env_pa
     return 0, str(archived_path)
 
 
+def run_hard_data_delta(project_root: Path, target_date: str) -> tuple[int, str]:
+    curr = load_snapshot(project_root, target_date)
+    if curr is None:
+        return 1, f"no hard data snapshot at cache/{target_date}/{SNAPSHOT_FILENAME}"
+    previous = find_previous_snapshot(project_root, target_date)
+    baseline_date = previous[0] if previous else None
+    prev_payload = previous[1] if previous else None
+    payload = {
+        "date": target_date,
+        "baseline_date": baseline_date,
+        "deltas": compute_hard_data_delta(prev_payload, curr),
+    }
+    return 0, json.dumps(payload, ensure_ascii=False, indent=2)
+
+
 def main(argv: list[str] | None = None, project_root: Path | None = None) -> int:
     parser = argparse.ArgumentParser(description="AI report deterministic runner")
     parser.add_argument("--project-root", type=Path, default=project_root or Path.cwd())
@@ -369,8 +385,16 @@ def main(argv: list[str] | None = None, project_root: Path | None = None) -> int
     finalize_weekly.add_argument("--env", type=Path, default=Path(".env"))
     finalize_weekly.add_argument("--dry-run", action="store_true")
 
+    hard_data_delta = subparsers.add_parser("hard-data-delta")
+    hard_data_delta.add_argument("--date", required=True)
+
     args = parser.parse_args(argv)
     root = args.project_root.resolve()
+    if args.command == "hard-data-delta":
+        code, message = run_hard_data_delta(root, args.date)
+        if message:
+            print(message, file=sys.stderr if code else sys.stdout)
+        return code
     env_path = args.env if args.env.is_absolute() else (root / args.env)
 
     if args.command == "init-daily":

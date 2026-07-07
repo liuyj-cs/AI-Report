@@ -64,7 +64,6 @@ HARD_DATA_KEYWORDS = (
     "math-500",
     "aime",
     "swe-bench",
-    "benchmark",
     "榜单",
     "评分",
     "基准",
@@ -1028,7 +1027,29 @@ def recall_fallback_findings(report: dict[str, Any], whitelist: dict[str, Any]) 
     return findings
 
 
-def build_daily_qa_diff(report: dict[str, Any], ledger: dict[str, Any], whitelist: dict[str, Any]) -> dict[str, Any]:
+def hard_data_snapshot_findings(report: dict[str, Any], project_root: Path) -> list[dict[str, Any]]:
+    """当日缺 hard_data_snapshot.json → warn（无快照就永远做不出跨日 delta）。"""
+    from hard_data import load_snapshot
+
+    day = str(report.get("date", ""))
+    if not day or load_snapshot(project_root, day) is not None:
+        return []
+    return [
+        _make_finding(
+            "hard_data_gap",
+            "medium",
+            f"缺 cache/{day}/hard_data_snapshot.json，benchmark/pricing 无法形成跨日基线。",
+            suggested_fix="抓取 hard_data 面时把 LMArena/AA/OpenRouter 原始数字写入快照，再跑 report_runner.py hard-data-delta。",
+        )
+    ]
+
+
+def build_daily_qa_diff(
+    report: dict[str, Any],
+    ledger: dict[str, Any],
+    whitelist: dict[str, Any],
+    project_root: Path | None = None,
+) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     source_details = report.get("fetch_status", {}).get("source_details", {})
 
@@ -1056,6 +1077,8 @@ def build_daily_qa_diff(report: dict[str, Any], ledger: dict[str, Any], whitelis
                 )
     findings.extend(recall_probe_findings(report, whitelist))
     findings.extend(recall_fallback_findings(report, whitelist))
+    if project_root is not None:
+        findings.extend(hard_data_snapshot_findings(report, project_root))
 
     for item in ledger.get("items", []):
         decision = item.get("decision")
