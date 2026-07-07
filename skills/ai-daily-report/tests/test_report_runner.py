@@ -1119,3 +1119,52 @@ def test_kind_artifact_dirs_derive_from_archive_type_dirs():
         _artifact_path_for_kind("interview:fiona", "2026-04-17")
         == f"reports/{TYPE_DIRS['interview']}/2026-04-17-fiona.html"
     )
+
+
+def test_init_daily_no_alert_when_sent_then_dry_run(tmp_path):
+    """review-3 残留②：真发成功后同日又 dry-run，不得误报"未投递"。"""
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "GMAIL_USER=test@example.com\nGMAIL_APP_PASSWORD=secret\nREPORT_RECIPIENTS=a@example.com\n",
+        encoding="utf-8",
+    )
+    yesterday_dir = tmp_path / "cache" / "2026-04-17"
+    yesterday_dir.mkdir(parents=True)
+    (yesterday_dir / "run.log").write_text(
+        "2026-04-17T07:10:00+08:00 EMAIL sent to=a@example.com subject='AI 日报 · 2026-04-17' kind=daily\n"
+        "2026-04-17T20:00:00+08:00 EMAIL skipped (dry-run)\n",
+        encoding="utf-8",
+    )
+
+    code, message = run_daily_init(
+        project_root=tmp_path, target_date="2026-04-18",
+        now_iso="2026-04-18T07:30:00+08:00", env_path=env_path,
+    )
+    assert code == 0
+    assert "DELIVERY_ALERT" not in message
+
+
+def test_init_daily_failed_then_dry_run_still_reports_failed(tmp_path):
+    """发送失败后 dry-run 排练不得把 failed 降级成 dry_run——失败是更强的信号。"""
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "GMAIL_USER=test@example.com\nGMAIL_APP_PASSWORD=secret\nREPORT_RECIPIENTS=a@example.com\n",
+        encoding="utf-8",
+    )
+    yesterday_dir = tmp_path / "cache" / "2026-04-17"
+    yesterday_dir.mkdir(parents=True)
+    (yesterday_dir / "run.log").write_text(
+        "2026-04-17T07:10:00+08:00 EMAIL failed code=3 kind=daily\n"
+        "2026-04-17T20:00:00+08:00 EMAIL skipped (dry-run)\n",
+        encoding="utf-8",
+    )
+
+    code, message = run_daily_init(
+        project_root=tmp_path, target_date="2026-04-18",
+        now_iso="2026-04-18T07:30:00+08:00", env_path=env_path,
+    )
+    assert code == 0
+    assert "DELIVERY_ALERT" in message
+    run_log = (tmp_path / "cache" / "2026-04-18" / "run.log").read_text(encoding="utf-8")
+    assert "DELIVERY_ALERT yesterday_email=failed" in run_log
+    assert "yesterday_email=dry_run" not in run_log

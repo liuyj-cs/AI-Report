@@ -88,7 +88,8 @@ def _yesterday_email_statuses(project_root: Path, target_date: str) -> tuple[str
         elif "EMAIL sent" in line or "EMAIL skip already-sent" in line:
             statuses[kind] = "ok"
         elif "EMAIL skipped" in line:
-            statuses[kind] = "dry_run"
+            # ok/failed 都是具体投递结果，后续 dry-run 排练不覆盖
+            statuses.setdefault(kind, "dry_run")
     return yesterday, statuses
 
 
