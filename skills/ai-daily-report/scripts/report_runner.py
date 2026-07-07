@@ -202,6 +202,7 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
     code, send_output = _send_mail(project_root, archived_path, f"AI 日报 · {target_date}", env_path)
     if code != 0:
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=email_failed")
         return code, send_output
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
     # Record seen-ledgers only after the daily body (which carries the ecosystem +
@@ -217,6 +218,7 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
         code, send_output = _send_mail(project_root, dd_archived, dd_subject, env_path)
         if code != 0:
             append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=email_failed")
             return code, send_output
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
     for iv_archived, iv_subject, iv_payload in interview_sends:
@@ -230,6 +232,7 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
         code, send_output = _send_mail(project_root, iv_archived, iv_subject, env_path)
         if code != 0:
             append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=email_failed")
             return code, send_output
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
         record_interview_sent(
@@ -303,6 +306,7 @@ def run_weekly_finalize(project_root: Path, week_end: str, dry_run: bool, env_pa
     code, send_output = _send_mail(project_root, archived_path, f"AI 周报 · {week_start} ~ {week_end}", env_path)
     if code != 0:
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END weekly status=email_failed")
         return code, send_output
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END weekly status=ok")
@@ -336,15 +340,16 @@ def main(argv: list[str] | None = None, project_root: Path | None = None) -> int
 
     args = parser.parse_args(argv)
     root = args.project_root.resolve()
+    env_path = args.env if args.env.is_absolute() else (root / args.env)
 
     if args.command == "init-daily":
-        code, message = run_daily_init(root, args.date, args.now, args.env)
+        code, message = run_daily_init(root, args.date, args.now, env_path)
     elif args.command == "finalize-daily":
-        code, message = run_daily_finalize(root, args.date, args.dry_run, args.env)
+        code, message = run_daily_finalize(root, args.date, args.dry_run, env_path)
     elif args.command == "init-weekly":
-        code, message = run_weekly_init(root, args.end_date, args.now, args.env)
+        code, message = run_weekly_init(root, args.end_date, args.now, env_path)
     else:
-        code, message = run_weekly_finalize(root, args.end_date, args.dry_run, args.env)
+        code, message = run_weekly_finalize(root, args.end_date, args.dry_run, env_path)
 
     if message:
         stream = sys.stderr if code else sys.stdout

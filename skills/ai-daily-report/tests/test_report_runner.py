@@ -847,3 +847,45 @@ def test_finalize_daily_rejects_date_target_mismatch(
     assert exit_code == 1
     assert "date" in message.lower()
     assert not (cache_dir / "report.html").exists()
+
+
+def test_finalize_daily_email_failure_writes_email_failed_status(
+    tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status, monkeypatch
+):
+    import report_runner
+
+    cache_dir, env_path = _build_passing_finalize_setup(
+        tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+    )
+    monkeypatch.setattr(report_runner, "_send_mail", lambda *a, **k: (3, "SMTP send failed"))
+
+    code, _message = run_daily_finalize(
+        project_root=tmp_path, target_date="2026-04-18", dry_run=False, env_path=env_path
+    )
+
+    assert code == 3
+    log_text = (tmp_path / "cache" / "2026-04-18" / "run.log").read_text(encoding="utf-8")
+    assert "EMAIL failed code=3" in log_text
+    assert "END daily status=email_failed" in log_text
+    assert "END daily status=ok" not in log_text
+
+
+def test_main_resolves_relative_env_against_project_root(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "GMAIL_USER=test@example.com\nGMAIL_APP_PASSWORD=secret\nREPORT_RECIPIENTS=a@example.com\n",
+        encoding="utf-8",
+    )
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    exit_code = main(
+        [
+            "--project-root", str(tmp_path),
+            "init-daily", "--date", "2026-04-18",
+            "--now", "2026-04-18T07:30:00+08:00",
+            "--env", ".env",
+        ]
+    )
+    assert exit_code == 0
