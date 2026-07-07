@@ -13,7 +13,7 @@ from typing import Any
 
 from dotenv import dotenv_values
 
-from archive import archive as archive_html, cleanup_cache
+from archive import TYPE_DIRS, archive as archive_html, cleanup_cache
 from deep_dive import deep_dive_path, major_event_slugs
 from interview import iter_interview_files, interview_already_sent, record_interview_sent
 from discovery import (
@@ -49,12 +49,12 @@ def _validate_email_env(env: dict[str, str]) -> tuple[bool, str]:
     return True, ""
 
 
-_EMAIL_KIND_PATTERN = re.compile(r"kind=(\S+)")
-# 补发路径映射：kind → (reports 子目录, 文件名模板)
+_EMAIL_KIND_PATTERN = re.compile(r"kind=(\S+)\s*$")
+# 补发路径映射：kind → (reports 子目录, 文件名模板)；目录名唯一真源是 archive.TYPE_DIRS
 _KIND_ARTIFACT = {
-    "daily": ("daily", "{date}.html"),
-    "deep_dive": ("deep_dives", "{date}-{slug}.html"),
-    "interview": ("interviews", "{date}-{slug}.html"),
+    "daily": (TYPE_DIRS["daily"], "{date}.html"),
+    "deep_dive": (TYPE_DIRS["deep_dive"], "{date}-{slug}.html"),
+    "interview": (TYPE_DIRS["interview"], "{date}-{slug}.html"),
 }
 
 

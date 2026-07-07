@@ -1103,3 +1103,19 @@ def test_finalize_daily_rerun_does_not_rerecord_ledgers(
 
     assert code1 == 0 and code2 == 0
     assert calls == ["eco", "meth"]
+
+
+def test_kind_artifact_dirs_derive_from_archive_type_dirs():
+    """review-2 R6：补发路径目录名唯一真源是 archive.TYPE_DIRS。"""
+    from archive import TYPE_DIRS
+    from report_runner import _artifact_path_for_kind
+
+    assert _artifact_path_for_kind("daily", "2026-04-17") == f"reports/{TYPE_DIRS['daily']}/2026-04-17.html"
+    assert (
+        _artifact_path_for_kind("deep_dive:claude-x", "2026-04-17")
+        == f"reports/{TYPE_DIRS['deep_dive']}/2026-04-17-claude-x.html"
+    )
+    assert (
+        _artifact_path_for_kind("interview:fiona", "2026-04-17")
+        == f"reports/{TYPE_DIRS['interview']}/2026-04-17-fiona.html"
+    )

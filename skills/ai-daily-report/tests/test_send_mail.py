@@ -83,3 +83,25 @@ def test_send_does_not_retry_recipients_refused(fake_smtp):
     with pytest.raises(smtplib.SMTPRecipientsRefused):
         send(_msg(), "me@example.com", "pw", sleep=lambda _s: None)
     assert fake_smtp.calls.count("connect") == 1
+
+
+def test_main_reports_recipients_refused_without_retry_wording(tmp_path, monkeypatch, capsys):
+    import sys
+
+    html = tmp_path / "r.html"
+    html.write_text("<p>x</p>", encoding="utf-8")
+    env = tmp_path / ".env"
+    env.write_text(
+        "GMAIL_USER=a@b.com\nGMAIL_APP_PASSWORD=x\nREPORT_RECIPIENTS=c@d.com\n", encoding="utf-8"
+    )
+
+    def _raise(*_a, **_k):
+        raise smtplib.SMTPRecipientsRefused({"c@d.com": (550, b"user unknown")})
+
+    monkeypatch.setattr(send_mail, "send", _raise)
+    monkeypatch.setattr(sys, "argv", ["send_mail.py", str(html), "--subject", "s", "--env", str(env)])
+
+    assert send_mail.main() == 3
+    err = capsys.readouterr().err
+    assert "refused" in err
+    assert "attempts" not in err
