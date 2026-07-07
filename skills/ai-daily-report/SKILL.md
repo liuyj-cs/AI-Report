@@ -20,9 +20,11 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - 日报：`python skills/ai-daily-report/scripts/report_runner.py init-daily --date {YYYY-MM-DD} --now {ISO8601} --env .env`
    - 周报：`python skills/ai-daily-report/scripts/report_runner.py init-weekly --end-date {YYYY-MM-DD} --now {ISO8601} --env .env`
    - 作用：提前校验 `.env`、创建 `cache/.../run.log`。日报入口只负责生成 `discovery_manifest.json` 与窗口；周报入口会写 `input_days.json`。若邮件环境变量缺失，此步即失败并停止。
-0a. **昨日送达自检**：`init-daily` 输出若含 `DELIVERY_ALERT`（昨日邮件发送失败），先执行
-   `python skills/ai-daily-report/scripts/send_mail.py reports/daily/{昨日}.html --subject "AI 日报 · {昨日}"`
-   补发成功后再继续今日流程；补发也失败则停止并提示用户检查网络/凭据。
+0a. **昨日送达自检**：`init-daily` 输出若含 `DELIVERY_ALERT`（昨日有邮件失败或仅 dry-run），优先重跑
+   `python skills/ai-daily-report/scripts/report_runner.py finalize-daily --date {昨日} --env .env`
+   续发（send_state 幂等：已送达的跳过；失败点之后从未尝试的深度/访谈也会一并补发）。
+   仅确需单发一封时才用 send_mail.py（单发不写 send_state，之后重跑 finalize 会重复投递）。
+   补发也失败则停止并提示用户检查网络/凭据。
 0b. **昨日 QA 复盘**：读 `cache/{昨日}/qa_diff.json`（若存在）。昨日 `missed_discovery` 点名的源，今天首轮必须完成下穿（搜索层留痕）；连续出现的同名告警视为流程缺陷，当天必须消化，不允许再顺延。
 1. **读取 sources/whitelist.yaml**：按类别枚举所有信源和搜索 query
 1b. **读取 sources/profile.yaml**：读者画像（四个角色、在途决策、实践关注点）。它是编辑判断的输入：相关性、决策雷达分组、生态板块取舍都要回答"这条信息服务哪个角色/哪个在途决策"。
@@ -565,7 +567,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 - **深度专题缺失或损坏**：major_event 条目无对应 `cache/{date}/deep_dive_{slug}.json`、或该文件 schema 校验失败 → finalize-daily 失败，不归档不发信；补写/修复专题 JSON 后重跑。补发型专题（事后为历史事件单独生成）不要求当日日报存在对应 major_event 条目。
 - **发送幂等（send_state.json）**：`finalize-daily` / `finalize-weekly` 通过 `cache/{date}/send_state.json`（周报为 `cache/weekly/{end}/send_state.json`）记录已发送的日报正文 / 每份 deep_dive / 周报。发送中途失败后**直接重跑 finalize 即可**：已发的封不会重发（run.log 记 `EMAIL skip already-sent ...`），只补发失败的。访谈仍由全局 `interview_seen.json` 幂等。dry-run 不写 send_state。
 - **send_mail 自动重试**：瞬时 SMTP/网络错误自动重试 2 次（5s/20s 退避）；认证错误（code=2）不重试，提示更新应用专用密码。
-- **DELIVERY_ALERT**：init-daily 检测到昨日邮件未送达时输出告警并写 run.log；处理方式见「运行前检查 0a」。
+- **DELIVERY_ALERT**：init-daily 检测到昨日有邮件失败（按 kind 区分日报/深度/访谈）或仅 dry-run 时输出告警并写 run.log。注意发送链首个失败即中断，失败点之后的邮件从未尝试、日志里不会出现——所以恢复必须以「重跑 finalize-daily」为主，见「运行前检查 0a」。
 - **逐字稿取不到（访谈）**：降级 `mode=deep_summary_fallback`，`lede` 标注来源限制，不报错、不阻塞日报。
 - **访谈面整链失败**：记 `fetch_status.failed`，日报照常（`leader_interviews` 非 core_source）。
 - **访谈 JSON 损坏 / schema 不合 / mode 与字段不一致**：`validate_interviews` 报错点名文件 → finalize-daily 失败、不归档不发信；修复或删除该 `cache/{date}/interview_{slug}.json` 后重跑。

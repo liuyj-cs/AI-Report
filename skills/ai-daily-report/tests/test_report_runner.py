@@ -912,7 +912,7 @@ def test_init_daily_alerts_when_yesterday_email_failed(tmp_path):
 
     assert code == 0
     assert "DELIVERY_ALERT" in message
-    assert "2026-04-17" in message
+    assert "finalize-daily --date 2026-04-17" in message
     run_log = (tmp_path / "cache" / "2026-04-18" / "run.log").read_text(encoding="utf-8")
     assert "DELIVERY_ALERT yesterday_email=failed" in run_log
 
@@ -1049,6 +1049,7 @@ def test_init_daily_alert_names_failed_deep_dive_not_daily(tmp_path):
 
     assert code == 0
     assert "DELIVERY_ALERT" in message
+    assert "finalize-daily --date 2026-04-17" in message
     assert "reports/deep_dives/2026-04-17-claude-x.html" in message
     assert "reports/daily/2026-04-17.html" not in message
     run_log = (tmp_path / "cache" / "2026-04-18" / "run.log").read_text(encoding="utf-8")
@@ -1078,5 +1079,6 @@ def test_init_daily_alert_on_dry_run_yesterday(tmp_path):
     assert code == 0
     assert "DELIVERY_ALERT" in message
     assert "dry-run" in message
+    assert "finalize-daily --date 2026-04-17" in message
     run_log = (tmp_path / "cache" / "2026-04-18" / "run.log").read_text(encoding="utf-8")
     assert "DELIVERY_ALERT yesterday_email=dry_run" in run_log

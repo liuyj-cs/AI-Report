@@ -141,15 +141,18 @@ def run_daily_init(
         )
         artifacts = " ".join(_artifact_path_for_kind(kind, yesterday) for kind in failed_kinds)
         alert = (
-            f"DELIVERY_ALERT: {yesterday} 有邮件未发送成功（{','.join(failed_kinds)}）；"
-            f"先用 send_mail.py 补发 {artifacts} 再继续今日流程"
+            f"DELIVERY_ALERT: {yesterday} 有邮件未发送成功（{','.join(failed_kinds)}），"
+            f"且失败点之后的深度/访谈可能从未尝试；优先重跑 "
+            f"finalize-daily --date {yesterday} 续发（send_state 幂等，只补未送达的）。"
+            f"仅确需单发一封时才用 send_mail.py 补发 {artifacts}"
+            f"（单发不写 send_state，之后重跑 finalize 会重复投递）"
         )
         return 0, f"{path}\n{alert}"
     if email_statuses.get("daily") == "dry_run":
         append_run_log(run_log, f"{now_iso} DELIVERY_ALERT yesterday_email=dry_run date={yesterday}")
         alert = (
-            f"DELIVERY_ALERT: {yesterday} 只跑了 dry-run，日报未实际投递；"
-            f"如需送达请用 send_mail.py 补发 reports/daily/{yesterday}.html"
+            f"DELIVERY_ALERT: {yesterday} 只跑了 dry-run，全部邮件未实际投递；"
+            f"如需送达请重跑 finalize-daily --date {yesterday}（不带 --dry-run）"
         )
         return 0, f"{path}\n{alert}"
     return 0, str(path)
