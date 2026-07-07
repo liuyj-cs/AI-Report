@@ -78,11 +78,16 @@ def sample_deep_dive():
 
 @pytest.fixture
 def finalized_fetch_status():
-    from discovery import initial_fetch_status
+    from discovery import initial_fetch_status, iter_named_sources
 
     def _build(whitelist):
         payload = initial_fetch_status(whitelist)
-        for detail in payload["source_details"].values():
+        high_recall = {
+            source["name"]
+            for source in iter_named_sources(whitelist)
+            if source.get("category") in ("cn_labs", "hard_data")
+        }
+        for name, detail in payload["source_details"].items():
             attempts = []
             for attempt in detail.get("attempts", []):
                 attempts.append(
@@ -93,6 +98,16 @@ def finalized_fetch_status():
                     }
                 )
                 attempts[-1].pop("reason", None)
+            if name in high_recall:
+                attempts.append(
+                    {
+                        "layer_index": len(attempts),
+                        "layer_type": "websearch_scoped",
+                        "target": f"{name} fallback search",
+                        "result": "success_but_empty",
+                        "note": "search fallback ran empty in fixture",
+                    }
+                )
             detail["attempts"] = attempts
         payload["succeeded"] = sorted(payload["source_details"].keys())
         payload["failed"] = []

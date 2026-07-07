@@ -582,6 +582,14 @@ def validate_recall_probe_coverage(report: dict[str, Any], whitelist: dict[str, 
     return errors
 
 
+def validate_recall_fallback_coverage(report: dict[str, Any], whitelist: dict[str, Any]) -> list[str]:
+    """cn_labs / hard_data 源静态面空后必须下穿搜索层（whitelist 明文规则），未下穿即阻塞。"""
+    return [
+        f"{finding['source_name']}: {finding['reason']}"
+        for finding in recall_fallback_findings(report, whitelist)
+    ]
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -841,6 +849,7 @@ def validate_daily_artifacts(
     errors.extend(validate_daily_market_signal_refs(report))
     errors.extend(validate_market_signals_consistency(report, "daily"))
     errors.extend(validate_recall_probe_coverage(report, whitelist))
+    errors.extend(validate_recall_fallback_coverage(report, whitelist))
     errors.extend(validate_major_event_consistency(report))
     errors.extend(validate_decision_radar(report, profile))
     errors.extend(validate_methodology_radar(report))
@@ -993,8 +1002,8 @@ def recall_fallback_findings(report: dict[str, Any], whitelist: dict[str, Any]) 
         findings.append(
             _make_finding(
                 "missed_discovery",
-                "medium",
-                f"{name} 在官方/静态面命中空后未下穿 websearch 兜底层；empty≠无新闻，可能漏采。",
+                "high",
+                f"{name} 在官方/静态面命中空后未下穿 websearch 兜底层；empty≠无新闻，可能漏采（finalize 阻塞项）。",
                 source_name=name,
                 suggested_fix="对该源执行 websearch_scoped/broad 并把命中或空结果写入 attempts；确为倒序新闻面且空即权威时，在 whitelist 标 empty_is_conclusive: true。",
             )

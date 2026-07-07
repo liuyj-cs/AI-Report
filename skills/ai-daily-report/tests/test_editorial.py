@@ -1871,6 +1871,12 @@ def test_build_daily_qa_diff_surfaces_recall_fallback(sample_daily_report, sampl
     whitelist = load_whitelist()
     report = deepcopy(sample_daily_report)
     report["fetch_status"] = finalized_fetch_status(whitelist)
+    # 人为去掉 DeepSeek 的搜索兜底 attempt，模拟「静态面空即停」的漏采场景
+    report["fetch_status"]["source_details"]["DeepSeek"]["attempts"] = [
+        attempt
+        for attempt in report["fetch_status"]["source_details"]["DeepSeek"]["attempts"]
+        if attempt.get("layer_type") not in ("websearch_scoped", "websearch_broad")
+    ]
     qa_diff = build_daily_qa_diff(report, sample_candidate_ledger, whitelist)
     assert qa_diff["summary"]["categories"]["missed_discovery"] >= 1
 
@@ -1958,3 +1964,71 @@ def test_daily_methodology_cooldown_is_not_a_blocking_artifact_error(
 
     errors = validate_daily_artifacts(report, ledger, whitelist, tmp_path)
     assert not any("cooldown" in e for e in errors), f"cooldown must not block finalize, got: {errors}"
+
+
+def _high_recall_whitelist():
+    return {
+        "cn_labs": [
+            {
+                "name": "DeepSeek",
+                "category": "cn_labs",
+                "fetch_chain": [
+                    {"type": "webfetch", "url": "https://api-docs.deepseek.com/news"},
+                    {"type": "websearch_scoped", "queries": ["DeepSeek release {date}"]},
+                ],
+            }
+        ]
+    }
+
+
+def _empty_static_report(attempts):
+    return {
+        "fetch_status": {
+            "empty": ["DeepSeek"],
+            "source_details": {"DeepSeek": {"attempts": attempts}},
+        }
+    }
+
+
+def test_recall_fallback_blocks_when_search_layer_skipped():
+    from editorial import validate_recall_fallback_coverage
+
+    report = _empty_static_report(
+        [{"layer_index": 0, "layer_type": "webfetch", "target": "x", "result": "success_but_empty"}]
+    )
+    errors = validate_recall_fallback_coverage(report, _high_recall_whitelist())
+    assert len(errors) == 1
+    assert "DeepSeek" in errors[0]
+
+
+def test_recall_fallback_passes_when_search_attempted():
+    from editorial import validate_recall_fallback_coverage
+
+    report = _empty_static_report(
+        [
+            {"layer_index": 0, "layer_type": "webfetch", "target": "x", "result": "success_but_empty"},
+            {"layer_index": 1, "layer_type": "websearch_scoped", "target": "DeepSeek release", "result": "success_but_empty"},
+        ]
+    )
+    assert validate_recall_fallback_coverage(report, _high_recall_whitelist()) == []
+
+
+def test_recall_fallback_respects_empty_is_conclusive():
+    from editorial import validate_recall_fallback_coverage
+
+    whitelist = _high_recall_whitelist()
+    whitelist["cn_labs"][0]["empty_is_conclusive"] = True
+    report = _empty_static_report(
+        [{"layer_index": 0, "layer_type": "webfetch", "target": "x", "result": "success_but_empty"}]
+    )
+    assert validate_recall_fallback_coverage(report, whitelist) == []
+
+
+def test_recall_fallback_findings_are_high_severity():
+    from editorial import recall_fallback_findings
+
+    report = _empty_static_report(
+        [{"layer_index": 0, "layer_type": "webfetch", "target": "x", "result": "success_but_empty"}]
+    )
+    findings = recall_fallback_findings(report, _high_recall_whitelist())
+    assert findings and findings[0]["severity"] == "high"
