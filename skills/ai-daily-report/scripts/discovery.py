@@ -11,6 +11,7 @@ from typing import Any, Iterator
 import yaml
 
 from evidence import suggest_one_hop_targets
+from tracking import TRACKING_SURFACE_PREFIX
 
 
 WHITELIST_PATH = Path(__file__).resolve().parent.parent / "sources" / "whitelist.yaml"
@@ -409,7 +410,7 @@ def build_discovery_manifest(
             ECOSYSTEM_DISCOVERY_NAME,
             LEADER_INTERVIEW_DISCOVERY_NAME,
             METHODOLOGY_DISCOVERY_NAME,
-            *[f"Event Tracking: {event['event_slug']}" for event in (active_tracking or [])],
+            *[f"{TRACKING_SURFACE_PREFIX}{event['event_slug']}" for event in (active_tracking or [])],
         ],
     }
 

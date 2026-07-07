@@ -21,7 +21,7 @@ from discovery import (
 )
 from ecosystem import load_seen_repos, validate_ecosystem_repeats
 from methodology import load_seen_methodology, validate_methodology_repeats
-from tracking import validate_tracking_followup, validate_tracking_refs
+from tracking import load_tracking_events, validate_tracking_followup, validate_tracking_refs
 from deep_dive import validate_deep_dives
 from interview import validate_interviews
 
@@ -870,8 +870,10 @@ def validate_daily_artifacts(
     errors.extend(validate_decision_radar(report, profile))
     errors.extend(validate_methodology_radar(report))
     if project_root is not None:
-        errors.extend(validate_tracking_refs(report, project_root))
-        errors.extend(validate_tracking_followup(report, project_root))
+        # 一次加载（含 schema 校验）供两个 tracking 校验共用，避免双读 cache/tracking/*.json
+        tracking_preloaded = load_tracking_events(project_root)
+        errors.extend(validate_tracking_refs(report, project_root, preloaded=tracking_preloaded))
+        errors.extend(validate_tracking_followup(report, project_root, preloaded=tracking_preloaded))
         errors.extend(validate_deep_dives(report, project_root))
         errors.extend(validate_interviews(str(report.get("date", "")), project_root))
         errors.extend(

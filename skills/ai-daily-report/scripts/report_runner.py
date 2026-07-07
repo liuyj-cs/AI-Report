@@ -31,7 +31,7 @@ from methodology import load_seen_methodology, record_methodology, validate_meth
 from editorial import build_daily_qa_diff, build_weekly_qa_diff, validate_daily_artifacts, validate_weekly_artifacts
 from render_html import render
 from send_state import already_sent, record_sent
-from tracking import cleanup_expired_tracking, load_tracking_events
+from tracking import cleanup_expired_tracking, is_active_event, load_tracking_events
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -124,7 +124,7 @@ def run_daily_init(
             "watch_items": event.get("watch_items", []),
         }
         for event in events
-        if date.fromisoformat(event["opened_date"]) <= target <= date.fromisoformat(event["expires_on"])
+        if is_active_event(event, target)
     ]
     manifest = build_discovery_manifest(
         target_date, window, whitelist, active_tracking=active, reader_profile=load_profile()
