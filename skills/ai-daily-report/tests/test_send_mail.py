@@ -76,3 +76,10 @@ def test_build_message_multi_recipient_uses_bcc():
     msg = build_message("me@example.com", ["a@example.com", "b@example.com"], "s", "<p>x</p>")
     assert "me@example.com" in msg["To"]
     assert msg["Bcc"] == "a@example.com, b@example.com"
+
+
+def test_send_does_not_retry_recipients_refused(fake_smtp):
+    fake_smtp.script = [smtplib.SMTPRecipientsRefused({"a@example.com": (550, b"user unknown")})]
+    with pytest.raises(smtplib.SMTPRecipientsRefused):
+        send(_msg(), "me@example.com", "pw", sleep=lambda _s: None)
+    assert fake_smtp.calls.count("connect") == 1

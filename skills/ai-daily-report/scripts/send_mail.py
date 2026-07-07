@@ -60,7 +60,8 @@ def send(
                 smtp.login(sender, password)
                 smtp.send_message(msg)
             return attempt
-        except smtplib.SMTPAuthenticationError:
+        except (smtplib.SMTPAuthenticationError, smtplib.SMTPRecipientsRefused):
+            # 永久错误（凭据失效 / 收件人被拒）重试也不会成功，直接抛出
             raise
         except (smtplib.SMTPException, OSError):
             if attempt == len(retry_delays):
