@@ -289,14 +289,17 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
         record_sent(cache_dir, "daily", daily_subject)
     # Record seen-ledgers only after the daily body (which carries the ecosystem +
     # methodology content) actually went out, so dry-run / a failed send never burns a
-    # cooldown slot（上方两条路径已提前 return）。放在 if/else 之外无条件执行：
-    # record 本身幂等，若首发后、记账前进程被杀，重跑走 skip 分支时也必须补上台账。
-    recorded = record_ecosystem_repos(report, project_root, target_date)
-    if recorded:
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} ECOSYSTEM seen_repos+={recorded}")
-    recorded_methodology = record_methodology(report, project_root, target_date)
-    if recorded_methodology:
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} METHODOLOGY seen+={recorded_methodology}")
+    # cooldown slot（上方两条路径已提前 return）。台账用独立的 "ledger" 幂等键：
+    # 首发后、记账前进程被杀 → 键未置，重跑补记；发送成功后重生成 report.json 再重跑
+    # → 键已置，不把"读者从未收到"的新内容写进冷却台账。
+    if not already_sent(cache_dir, "ledger"):
+        recorded = record_ecosystem_repos(report, project_root, target_date)
+        if recorded:
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} ECOSYSTEM seen_repos+={recorded}")
+        recorded_methodology = record_methodology(report, project_root, target_date)
+        if recorded_methodology:
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} METHODOLOGY seen+={recorded_methodology}")
+        record_sent(cache_dir, "ledger", "seen-ledgers recorded")
     for dd_archived, dd_subject, dd_slug in deep_dive_sends:
         state_key = f"deep_dive:{dd_slug}"
         if already_sent(cache_dir, state_key):

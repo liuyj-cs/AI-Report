@@ -1082,3 +1082,24 @@ def test_init_daily_alert_on_dry_run_yesterday(tmp_path):
     assert "finalize-daily --date 2026-04-17" in message
     run_log = (tmp_path / "cache" / "2026-04-18" / "run.log").read_text(encoding="utf-8")
     assert "DELIVERY_ALERT yesterday_email=dry_run" in run_log
+
+
+def test_finalize_daily_rerun_does_not_rerecord_ledgers(
+    tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status, monkeypatch
+):
+    """review-2 R3：完整 finalize 成功后重跑（skip 路径），不得用当前 report 再记冷却台账。"""
+    import report_runner
+
+    cache_dir, env_path = _build_passing_finalize_setup(
+        tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(report_runner, "_send_mail", lambda *a, **k: (0, "sent to=a@example.com"))
+    monkeypatch.setattr(report_runner, "record_ecosystem_repos", lambda *a: calls.append("eco") or 0)
+    monkeypatch.setattr(report_runner, "record_methodology", lambda *a: calls.append("meth") or 0)
+
+    code1, _ = run_daily_finalize(tmp_path, "2026-04-18", dry_run=False, env_path=env_path)
+    code2, _ = run_daily_finalize(tmp_path, "2026-04-18", dry_run=False, env_path=env_path)
+
+    assert code1 == 0 and code2 == 0
+    assert calls == ["eco", "meth"]
