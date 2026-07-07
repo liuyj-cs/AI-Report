@@ -889,3 +889,71 @@ def test_main_resolves_relative_env_against_project_root(tmp_path, monkeypatch):
         ]
     )
     assert exit_code == 0
+
+
+def test_init_daily_alerts_when_yesterday_email_failed(tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "GMAIL_USER=test@example.com\nGMAIL_APP_PASSWORD=secret\nREPORT_RECIPIENTS=a@example.com\n",
+        encoding="utf-8",
+    )
+    yesterday_dir = tmp_path / "cache" / "2026-04-17"
+    yesterday_dir.mkdir(parents=True)
+    (yesterday_dir / "run.log").write_text(
+        "2026-04-17T07:10:00+08:00 EMAIL failed code=3\n"
+        "2026-04-17T07:10:00+08:00 END daily status=email_failed\n",
+        encoding="utf-8",
+    )
+
+    code, message = run_daily_init(
+        project_root=tmp_path, target_date="2026-04-18",
+        now_iso="2026-04-18T07:30:00+08:00", env_path=env_path,
+    )
+
+    assert code == 0
+    assert "DELIVERY_ALERT" in message
+    assert "2026-04-17" in message
+    run_log = (tmp_path / "cache" / "2026-04-18" / "run.log").read_text(encoding="utf-8")
+    assert "DELIVERY_ALERT yesterday_email=failed" in run_log
+
+
+def test_init_daily_no_alert_when_yesterday_sent(tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "GMAIL_USER=test@example.com\nGMAIL_APP_PASSWORD=secret\nREPORT_RECIPIENTS=a@example.com\n",
+        encoding="utf-8",
+    )
+    yesterday_dir = tmp_path / "cache" / "2026-04-17"
+    yesterday_dir.mkdir(parents=True)
+    (yesterday_dir / "run.log").write_text(
+        "2026-04-17T07:10:00+08:00 EMAIL failed code=3\n"
+        "2026-04-17T08:00:00+08:00 EMAIL sent to=a@example.com subject='AI 日报 · 2026-04-17'\n",
+        encoding="utf-8",
+    )
+
+    code, message = run_daily_init(
+        project_root=tmp_path, target_date="2026-04-18",
+        now_iso="2026-04-18T07:30:00+08:00", env_path=env_path,
+    )
+    assert code == 0
+    assert "DELIVERY_ALERT" not in message
+
+
+def test_init_daily_logs_tracking_load_errors(tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "GMAIL_USER=test@example.com\nGMAIL_APP_PASSWORD=secret\nREPORT_RECIPIENTS=a@example.com\n",
+        encoding="utf-8",
+    )
+    tracking_dir = tmp_path / "cache" / "tracking"
+    tracking_dir.mkdir(parents=True)
+    (tracking_dir / "broken.json").write_text("{not json", encoding="utf-8")
+
+    code, _message = run_daily_init(
+        project_root=tmp_path, target_date="2026-04-18",
+        now_iso="2026-04-18T07:30:00+08:00", env_path=env_path,
+    )
+    assert code == 0
+    run_log = (tmp_path / "cache" / "2026-04-18" / "run.log").read_text(encoding="utf-8")
+    assert "TRACKING warning" in run_log
+    assert "broken.json" in run_log

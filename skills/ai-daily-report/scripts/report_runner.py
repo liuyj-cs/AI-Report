@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
+from datetime import date, datetime, timedelta
 import json
 from pathlib import Path
 import subprocess
@@ -28,7 +28,7 @@ from ecosystem import record_ecosystem_repos
 from methodology import load_seen_methodology, record_methodology, validate_methodology_repeats
 from editorial import build_daily_qa_diff, build_weekly_qa_diff, validate_daily_artifacts, validate_weekly_artifacts
 from render_html import render
-from tracking import active_tracking_events, cleanup_expired_tracking
+from tracking import cleanup_expired_tracking, load_tracking_events
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -44,6 +44,24 @@ def _validate_email_env(env: dict[str, str]) -> tuple[bool, str]:
     if not sender or not password or not recipients:
         return False, "GMAIL_USER / GMAIL_APP_PASSWORD / REPORT_RECIPIENTS missing"
     return True, ""
+
+
+def _yesterday_email_status(project_root: Path, target_date: str) -> tuple[str, str]:
+    """扫描昨日 run.log 的 EMAIL 行，返回 (昨日日期, ''|'ok'|'failed')，用于 init 阶段送达自检。"""
+    try:
+        yesterday = (date.fromisoformat(target_date) - timedelta(days=1)).isoformat()
+    except ValueError:
+        return "", ""
+    log_path = project_root / "cache" / yesterday / "run.log"
+    if not log_path.exists():
+        return yesterday, ""
+    status = ""
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        if "EMAIL failed" in line:
+            status = "failed"
+        elif "EMAIL sent" in line or "EMAIL skipped" in line or "EMAIL skip already-sent" in line:
+            status = "ok"
+    return yesterday, status
 
 
 def run_daily_init(
@@ -66,6 +84,10 @@ def run_daily_init(
         run_log,
         f"{now_iso} START daily date={target_date} window_start={window['start']} window_end={window['end']}",
     )
+    events, tracking_errors = load_tracking_events(project_root)
+    for error in tracking_errors:
+        append_run_log(run_log, f"{now_iso} TRACKING warning {error}")
+    target = date.fromisoformat(target_date)
     active = [
         {
             "event_slug": event["event_slug"],
@@ -73,7 +95,8 @@ def run_daily_init(
             "expires_on": event["expires_on"],
             "watch_items": event.get("watch_items", []),
         }
-        for event in active_tracking_events(project_root, target_date)
+        for event in events
+        if date.fromisoformat(event["opened_date"]) <= target <= date.fromisoformat(event["expires_on"])
     ]
     manifest = build_discovery_manifest(
         target_date, window, whitelist, active_tracking=active, reader_profile=load_profile()
@@ -81,6 +104,14 @@ def run_daily_init(
     path = write_discovery_manifest(cache_dir, manifest)
     append_run_log(run_log, f"{now_iso} DISCOVERY manifest={path.name} ready")
     append_run_log(run_log, f"{now_iso} TRACKING active={len(active)}")
+    yesterday, email_status = _yesterday_email_status(project_root, target_date)
+    if email_status == "failed":
+        append_run_log(run_log, f"{now_iso} DELIVERY_ALERT yesterday_email=failed date={yesterday}")
+        alert = (
+            f"DELIVERY_ALERT: {yesterday} 的日报邮件未发送成功；"
+            f"先用 send_mail.py 补发 reports/daily/{yesterday}.html 再继续今日流程"
+        )
+        return 0, f"{path}\n{alert}"
     return 0, str(path)
 
 
