@@ -50,6 +50,8 @@ HIGH_RECALL_CATEGORIES = ("cn_labs", "hard_data")
 # A whole week with frontier_models empty on this many days is never legitimately
 # "quiet" in this domain — it signals blind discovery, not a slow news week.
 FRONTIER_EMPTY_DAY_THRESHOLD = 3
+# 正文（前三节）合计条目数低于该阈值时属"稀薄日"：单薄事实不允许放大成成套建议。
+SPARSE_DAY_ITEM_THRESHOLD = 2
 HARD_DATA_KEYWORDS = (
     "benchmark",
     "leaderboard",
@@ -590,6 +592,20 @@ def validate_recall_fallback_coverage(report: dict[str, Any], whitelist: dict[st
     ]
 
 
+def validate_sparse_day_restraint(report: dict[str, Any]) -> list[str]:
+    """稀薄日（正文 ≤2 条）action_items 最多 1 条——宁可明说"今日信号不足"也不放大。"""
+    sections = report.get("sections", {})
+    total = sum(
+        len(sections.get(name, {}).get("items", [])) for name in DAILY_REFERENCE_SECTIONS
+    )
+    actions = sections.get("action_items", {}).get("items", [])
+    if total <= SPARSE_DAY_ITEM_THRESHOLD and len(actions) > 1:
+        return [
+            f"sparse day ({total} core items across frontier/coding/general) allows at most 1 action item, got {len(actions)}"
+        ]
+    return []
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -844,6 +860,7 @@ def validate_daily_artifacts(
     errors.extend(validate_source_attempt_refs(report, ledger))
     errors.extend(validate_candidate_ledger_semantics(ledger))
     errors.extend(validate_action_item_references(report))
+    errors.extend(validate_sparse_day_restraint(report))
     errors.extend(validate_candidate_ledger_alignment(report, ledger))
     errors.extend(validate_source_closure(report, ledger))
     errors.extend(validate_daily_market_signal_refs(report))

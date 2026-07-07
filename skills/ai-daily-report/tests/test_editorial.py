@@ -2032,3 +2032,33 @@ def test_recall_fallback_findings_are_high_severity():
     )
     findings = recall_fallback_findings(report, _high_recall_whitelist())
     assert findings and findings[0]["severity"] == "high"
+
+
+def _sparse_report(core_counts, action_count):
+    sections = {
+        "frontier_models": {"items": [{"headline": f"f{i}"} for i in range(core_counts[0])]},
+        "coding_agents": {"items": [{"headline": f"c{i}"} for i in range(core_counts[1])]},
+        "general_agents": {"items": [{"headline": f"g{i}"} for i in range(core_counts[2])]},
+        "action_items": {"items": [{"recommendation": f"a{i}"} for i in range(action_count)]},
+    }
+    return {"sections": sections}
+
+
+def test_sparse_day_blocks_multiple_action_items():
+    from editorial import validate_sparse_day_restraint
+
+    errors = validate_sparse_day_restraint(_sparse_report((0, 1, 1), 3))
+    assert len(errors) == 1
+    assert "sparse day" in errors[0]
+
+
+def test_sparse_day_allows_single_action_item():
+    from editorial import validate_sparse_day_restraint
+
+    assert validate_sparse_day_restraint(_sparse_report((0, 1, 1), 1)) == []
+
+
+def test_normal_day_not_restricted():
+    from editorial import validate_sparse_day_restraint
+
+    assert validate_sparse_day_restraint(_sparse_report((2, 1, 1), 4)) == []
