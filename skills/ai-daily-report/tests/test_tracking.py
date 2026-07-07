@@ -104,3 +104,53 @@ def test_load_tracking_events_window_boundaries(tmp_path):
     events, errors = load_tracking_events(tmp_path)
     assert [event["event_slug"] for event in events] == ["five-day-event"]
     assert any("six-day-event.json" in error and "0-5 days" in error for error in errors)
+
+
+def test_followup_requires_tracking_surface(tmp_path):
+    from tracking import validate_tracking_followup
+
+    _write_tracking(tmp_path, "claude-x", "2026-07-01", "2026-07-05")
+    report = {"date": "2026-07-02", "fetch_status": {"source_details": {}}}
+    errors = validate_tracking_followup(report, tmp_path)
+    assert len(errors) == 1
+    assert "claude-x" in errors[0]
+
+
+def test_followup_passes_with_attempt(tmp_path):
+    from tracking import validate_tracking_followup
+
+    _write_tracking(tmp_path, "claude-x", "2026-07-01", "2026-07-05")
+    report = {
+        "date": "2026-07-02",
+        "fetch_status": {
+            "source_details": {
+                "Event Tracking: claude-x": {
+                    "attempts": [
+                        {"layer_index": 0, "layer_type": "websearch_scoped",
+                         "target": "claude-x third-party eval", "result": "success_but_empty"}
+                    ]
+                }
+            }
+        },
+    }
+    assert validate_tracking_followup(report, tmp_path) == []
+
+
+def test_followup_exempts_opening_day(tmp_path):
+    from tracking import validate_tracking_followup
+
+    _write_tracking(tmp_path, "claude-x", "2026-07-02", "2026-07-05")
+    report = {"date": "2026-07-02", "fetch_status": {"source_details": {}}}
+    assert validate_tracking_followup(report, tmp_path) == []
+
+
+def test_manifest_lists_tracking_surfaces():
+    from discovery import build_discovery_manifest, load_whitelist
+
+    manifest = build_discovery_manifest(
+        "2026-07-02",
+        {"start": "2026-07-01T07:00:00+08:00", "end": "2026-07-02T07:30:00+08:00", "timezone": "Asia/Shanghai"},
+        load_whitelist(),
+        active_tracking=[{"event_slug": "claude-x", "title": "T", "expires_on": "2026-07-05", "watch_items": []}],
+    )
+    assert "Event Tracking: claude-x" in manifest["required_discovery_surfaces"]

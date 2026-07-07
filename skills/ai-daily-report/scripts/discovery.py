@@ -410,6 +410,7 @@ def build_discovery_manifest(
             ECOSYSTEM_DISCOVERY_NAME,
             LEADER_INTERVIEW_DISCOVERY_NAME,
             METHODOLOGY_DISCOVERY_NAME,
+            *[f"Event Tracking: {event['event_slug']}" for event in (active_tracking or [])],
         ],
     }
 
