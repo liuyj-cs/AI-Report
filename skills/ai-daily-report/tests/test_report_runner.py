@@ -1001,3 +1001,26 @@ def test_finalize_daily_cleans_stale_cache_dirs(
     code, _ = run_daily_finalize(tmp_path, "2026-04-18", dry_run=True, env_path=env_path)
     assert code == 0
     assert not stale.exists()
+
+
+def test_finalize_daily_records_seen_ledgers_even_when_daily_already_sent(
+    tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status, monkeypatch
+):
+    """崩溃窗口回归：daily 已记 send_state 但 seen-台账未落盘时，重跑必须补记录。"""
+    import report_runner
+    from send_state import record_sent
+
+    cache_dir, env_path = _build_passing_finalize_setup(
+        tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+    )
+    record_sent(cache_dir, "daily", "AI 日报 · 2026-04-18")
+
+    calls: list[str] = []
+    monkeypatch.setattr(report_runner, "_send_mail", lambda *a, **k: (0, "sent to=a@example.com"))
+    monkeypatch.setattr(report_runner, "record_ecosystem_repos", lambda *a: calls.append("eco") or 0)
+    monkeypatch.setattr(report_runner, "record_methodology", lambda *a: calls.append("meth") or 0)
+
+    code, _ = run_daily_finalize(tmp_path, "2026-04-18", dry_run=False, env_path=env_path)
+
+    assert code == 0
+    assert "eco" in calls and "meth" in calls
