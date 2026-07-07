@@ -308,3 +308,14 @@ def test_compute_daily_window_keeps_timezone():
 
     window = compute_daily_window("2026-07-07", "2026-07-07T07:30:00+08:00")
     assert window["start"] == "2026-07-06T07:00:00+08:00"
+
+
+def test_whitelist_includes_policy_compliance_sources():
+    from discovery import iter_named_sources, load_whitelist
+
+    sources = {s["name"]: s for s in iter_named_sources(load_whitelist())}
+    for name in ("AI Export Controls Watch", "EU AI Act Watch", "中国生成式AI监管 Watch"):
+        assert name in sources, name
+        assert sources[name]["category"] == "policy_compliance"
+        layer_types = [layer["type"] for layer in sources[name]["fetch_chain"]]
+        assert layer_types[0] == "websearch_scoped"
