@@ -981,7 +981,7 @@ def test_finalize_daily_rerun_skips_already_sent_daily(
     assert code1 == 0 and code2 == 0
     assert len([s for s in sent if s.startswith("AI 日报")]) == 1
     log_text = (tmp_path / "cache" / "2026-04-18" / "run.log").read_text(encoding="utf-8")
-    assert "EMAIL skip already-sent daily" in log_text
+    assert "EMAIL skip already-sent kind=daily" in log_text
 
 
 def test_finalize_daily_cleans_stale_cache_dirs(
@@ -1024,3 +1024,59 @@ def test_finalize_daily_records_seen_ledgers_even_when_daily_already_sent(
 
     assert code == 0
     assert "eco" in calls and "meth" in calls
+
+
+def test_init_daily_alert_names_failed_deep_dive_not_daily(tmp_path):
+    """review #1：日报已送达、深度失败时，告警必须指向深度而不是诱导重发日报。"""
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "GMAIL_USER=test@example.com\nGMAIL_APP_PASSWORD=secret\nREPORT_RECIPIENTS=a@example.com\n",
+        encoding="utf-8",
+    )
+    yesterday_dir = tmp_path / "cache" / "2026-04-17"
+    yesterday_dir.mkdir(parents=True)
+    (yesterday_dir / "run.log").write_text(
+        "2026-04-17T07:10:00+08:00 EMAIL sent to=a@example.com subject='AI 日报 · 2026-04-17' kind=daily\n"
+        "2026-04-17T07:10:05+08:00 EMAIL failed code=3 kind=deep_dive:claude-x\n"
+        "2026-04-17T07:10:05+08:00 END daily status=email_failed\n",
+        encoding="utf-8",
+    )
+
+    code, message = run_daily_init(
+        project_root=tmp_path, target_date="2026-04-18",
+        now_iso="2026-04-18T07:30:00+08:00", env_path=env_path,
+    )
+
+    assert code == 0
+    assert "DELIVERY_ALERT" in message
+    assert "reports/deep_dives/2026-04-17-claude-x.html" in message
+    assert "reports/daily/2026-04-17.html" not in message
+    run_log = (tmp_path / "cache" / "2026-04-18" / "run.log").read_text(encoding="utf-8")
+    assert "DELIVERY_ALERT yesterday_email=failed kinds=deep_dive:claude-x" in run_log
+
+
+def test_init_daily_alert_on_dry_run_yesterday(tmp_path):
+    """review #3：昨日只跑了 dry-run 等于没投递，自检不得当成已送达。"""
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "GMAIL_USER=test@example.com\nGMAIL_APP_PASSWORD=secret\nREPORT_RECIPIENTS=a@example.com\n",
+        encoding="utf-8",
+    )
+    yesterday_dir = tmp_path / "cache" / "2026-04-17"
+    yesterday_dir.mkdir(parents=True)
+    (yesterday_dir / "run.log").write_text(
+        "2026-04-17T07:10:00+08:00 EMAIL skipped (dry-run)\n"
+        "2026-04-17T07:10:00+08:00 END daily status=ok\n",
+        encoding="utf-8",
+    )
+
+    code, message = run_daily_init(
+        project_root=tmp_path, target_date="2026-04-18",
+        now_iso="2026-04-18T07:30:00+08:00", env_path=env_path,
+    )
+
+    assert code == 0
+    assert "DELIVERY_ALERT" in message
+    assert "dry-run" in message
+    run_log = (tmp_path / "cache" / "2026-04-18" / "run.log").read_text(encoding="utf-8")
+    assert "DELIVERY_ALERT yesterday_email=dry_run" in run_log

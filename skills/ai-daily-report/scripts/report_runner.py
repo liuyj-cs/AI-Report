@@ -6,6 +6,7 @@ import argparse
 from datetime import date, datetime, timedelta
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 from typing import Any
@@ -48,22 +49,47 @@ def _validate_email_env(env: dict[str, str]) -> tuple[bool, str]:
     return True, ""
 
 
-def _yesterday_email_status(project_root: Path, target_date: str) -> tuple[str, str]:
-    """扫描昨日 run.log 的 EMAIL 行，返回 (昨日日期, ''|'ok'|'failed')，用于 init 阶段送达自检。"""
+_EMAIL_KIND_PATTERN = re.compile(r"kind=(\S+)")
+# 补发路径映射：kind → (reports 子目录, 文件名模板)
+_KIND_ARTIFACT = {
+    "daily": ("daily", "{date}.html"),
+    "deep_dive": ("deep_dives", "{date}-{slug}.html"),
+    "interview": ("interviews", "{date}-{slug}.html"),
+}
+
+
+def _artifact_path_for_kind(kind: str, day: str) -> str:
+    base, _, slug = kind.partition(":")
+    directory, template = _KIND_ARTIFACT.get(base, ("daily", "{date}.html"))
+    return f"reports/{directory}/{template.format(date=day, slug=slug)}"
+
+
+def _yesterday_email_statuses(project_root: Path, target_date: str) -> tuple[str, dict[str, str]]:
+    """扫描昨日 run.log 的 EMAIL 行，按 kind 返回末态 'ok'|'failed'|'dry_run'。
+
+    日报/深度/访谈发送链各自带 kind= 标签；无标签的历史行按 daily 归类（旧格式兼容）。
+    dry-run 单独成态：它不是失败，但也绝不等于"已送达"。
+    """
     try:
         yesterday = (date.fromisoformat(target_date) - timedelta(days=1)).isoformat()
     except ValueError:
-        return "", ""
+        return "", {}
     log_path = project_root / "cache" / yesterday / "run.log"
     if not log_path.exists():
-        return yesterday, ""
-    status = ""
+        return yesterday, {}
+    statuses: dict[str, str] = {}
     for line in log_path.read_text(encoding="utf-8").splitlines():
+        if "EMAIL" not in line:
+            continue
+        match = _EMAIL_KIND_PATTERN.search(line)
+        kind = match.group(1) if match else "daily"
         if "EMAIL failed" in line:
-            status = "failed"
-        elif "EMAIL sent" in line or "EMAIL skipped" in line or "EMAIL skip already-sent" in line:
-            status = "ok"
-    return yesterday, status
+            statuses[kind] = "failed"
+        elif "EMAIL sent" in line or "EMAIL skip already-sent" in line:
+            statuses[kind] = "ok"
+        elif "EMAIL skipped" in line:
+            statuses[kind] = "dry_run"
+    return yesterday, statuses
 
 
 def run_daily_init(
@@ -106,12 +132,24 @@ def run_daily_init(
     path = write_discovery_manifest(cache_dir, manifest)
     append_run_log(run_log, f"{now_iso} DISCOVERY manifest={path.name} ready")
     append_run_log(run_log, f"{now_iso} TRACKING active={len(active)}")
-    yesterday, email_status = _yesterday_email_status(project_root, target_date)
-    if email_status == "failed":
-        append_run_log(run_log, f"{now_iso} DELIVERY_ALERT yesterday_email=failed date={yesterday}")
+    yesterday, email_statuses = _yesterday_email_statuses(project_root, target_date)
+    failed_kinds = sorted(kind for kind, status in email_statuses.items() if status == "failed")
+    if failed_kinds:
+        append_run_log(
+            run_log,
+            f"{now_iso} DELIVERY_ALERT yesterday_email=failed kinds={','.join(failed_kinds)} date={yesterday}",
+        )
+        artifacts = " ".join(_artifact_path_for_kind(kind, yesterday) for kind in failed_kinds)
         alert = (
-            f"DELIVERY_ALERT: {yesterday} 的日报邮件未发送成功；"
-            f"先用 send_mail.py 补发 reports/daily/{yesterday}.html 再继续今日流程"
+            f"DELIVERY_ALERT: {yesterday} 有邮件未发送成功（{','.join(failed_kinds)}）；"
+            f"先用 send_mail.py 补发 {artifacts} 再继续今日流程"
+        )
+        return 0, f"{path}\n{alert}"
+    if email_statuses.get("daily") == "dry_run":
+        append_run_log(run_log, f"{now_iso} DELIVERY_ALERT yesterday_email=dry_run date={yesterday}")
+        alert = (
+            f"DELIVERY_ALERT: {yesterday} 只跑了 dry-run，日报未实际投递；"
+            f"如需送达请用 send_mail.py 补发 reports/daily/{yesterday}.html"
         )
         return 0, f"{path}\n{alert}"
     return 0, str(path)
@@ -237,14 +275,14 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
 
     daily_subject = f"AI 日报 · {target_date}"
     if already_sent(cache_dir, "daily"):
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL skip already-sent daily")
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL skip already-sent kind=daily")
     else:
         code, send_output = _send_mail(project_root, archived_path, daily_subject, env_path)
         if code != 0:
-            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code} kind=daily")
             append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=email_failed")
             return code, send_output
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output} kind=daily")
         record_sent(cache_dir, "daily", daily_subject)
     # Record seen-ledgers only after the daily body (which carries the ecosystem +
     # methodology content) actually went out, so dry-run / a failed send never burns a
@@ -259,14 +297,14 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
     for dd_archived, dd_subject, dd_slug in deep_dive_sends:
         state_key = f"deep_dive:{dd_slug}"
         if already_sent(cache_dir, state_key):
-            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL skip already-sent {state_key}")
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL skip already-sent kind={state_key}")
             continue
         code, send_output = _send_mail(project_root, dd_archived, dd_subject, env_path)
         if code != 0:
-            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code} kind={state_key}")
             append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=email_failed")
             return code, send_output
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output} kind={state_key}")
         record_sent(cache_dir, state_key, dd_subject)
     for iv_archived, iv_subject, iv_payload in interview_sends:
         slug = str(iv_payload.get("slug", ""))
@@ -278,10 +316,10 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
             continue
         code, send_output = _send_mail(project_root, iv_archived, iv_subject, env_path)
         if code != 0:
-            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code} kind=interview:{slug}")
             append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END daily status=email_failed")
             return code, send_output
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output} kind=interview:{slug}")
         record_interview_sent(
             project_root, iv_payload, target_date, str(iv_archived.relative_to(project_root))
         )
@@ -352,14 +390,14 @@ def run_weekly_finalize(project_root: Path, week_end: str, dry_run: bool, env_pa
     week_start = rolling_week_dates(week_end)[0]
     weekly_subject = f"AI 周报 · {week_start} ~ {week_end}"
     if already_sent(cache_dir, "weekly"):
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL skip already-sent weekly")
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL skip already-sent kind=weekly")
     else:
         code, send_output = _send_mail(project_root, archived_path, weekly_subject, env_path)
         if code != 0:
-            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code}")
+            append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL failed code={code} kind=weekly")
             append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END weekly status=email_failed")
             return code, send_output
-        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output}")
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} EMAIL {send_output} kind=weekly")
         record_sent(cache_dir, "weekly", weekly_subject)
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} END weekly status=ok")
     return 0, str(archived_path)
