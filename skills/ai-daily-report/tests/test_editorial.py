@@ -2062,3 +2062,20 @@ def test_normal_day_not_restricted():
     from editorial import validate_sparse_day_restraint
 
     assert validate_sparse_day_restraint(_sparse_report((2, 1, 1), 4)) == []
+
+
+def test_ledger_orphan_selected_item_missing_from_body_warns():
+    from editorial import ledger_orphan_findings
+
+    report = {"sections": {"frontier_models": {"items": [{"headline": "在正文里"}]}}}
+    ledger = {
+        "items": [
+            {"decision": "selected_core", "proposed_section": "frontier_models", "headline": "在正文里"},
+            {"decision": "selected_core", "proposed_section": "frontier_models", "headline": "被静默丢掉"},
+            {"decision": "rejected_window", "proposed_section": "frontier_models", "headline": "无所谓"},
+        ]
+    }
+    findings = ledger_orphan_findings(report, ledger)
+    assert len(findings) == 1
+    assert findings[0]["headline"] == "被静默丢掉"
+    assert findings[0]["severity"] == "medium"

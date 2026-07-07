@@ -293,3 +293,18 @@ def test_initial_fetch_status_has_methodology_surface():
     payload = initial_fetch_status(load_whitelist())
     assert "Methodology Radar Discovery" in payload["source_details"]
     assert "Methodology Radar Discovery" in __import__("discovery").required_discovery_names(load_whitelist())
+
+
+def test_compute_daily_window_accepts_naive_now():
+    from discovery import compute_daily_window
+
+    window = compute_daily_window("2026-07-07", "2026-07-07T07:30:00")
+    assert window["start"] == "2026-07-06T07:00:00"
+    assert window["end"] == "2026-07-07T07:30:00"
+
+
+def test_compute_daily_window_keeps_timezone():
+    from discovery import compute_daily_window
+
+    window = compute_daily_window("2026-07-07", "2026-07-07T07:30:00+08:00")
+    assert window["start"] == "2026-07-06T07:00:00+08:00"

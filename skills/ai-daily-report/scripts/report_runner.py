@@ -12,7 +12,7 @@ from typing import Any
 
 from dotenv import dotenv_values
 
-from archive import archive as archive_html
+from archive import archive as archive_html, cleanup_cache
 from deep_dive import deep_dive_path, major_event_slugs
 from interview import iter_interview_files, interview_already_sent, record_interview_sent
 from discovery import (
@@ -192,6 +192,9 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
     removed_tracking = cleanup_expired_tracking(project_root, target_date)
     if removed_tracking:
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} TRACKING cleanup removed={removed_tracking}")
+    removed_cache = cleanup_cache(project_root)
+    if removed_cache:
+        append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} CACHE cleanup removed={removed_cache}")
     # methodology cooldown is advisory only: warn (non-blocking) so a repeated slug is
     # visible, but never let it stop delivery. The seen-ledgers are written AFTER a
     # successful send (below), so dry-run / a failed send never burns a cooldown slot.

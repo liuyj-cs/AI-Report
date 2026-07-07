@@ -1045,6 +1045,31 @@ def hard_data_snapshot_findings(report: dict[str, Any], project_root: Path) -> l
     ]
 
 
+def ledger_orphan_findings(report: dict[str, Any], ledger: dict[str, Any]) -> list[dict[str, Any]]:
+    """台账反向对齐：ledger 标了 selected_* 但正文没收录 → warn，让静默丢稿留痕。"""
+    findings: list[dict[str, Any]] = []
+    for item in ledger.get("items", []):
+        decision = item.get("decision")
+        if decision not in {"selected_core", "selected_watch", "selected_unverified"}:
+            continue
+        section = LEDGER_TO_REPORT_SECTION.get(str(item.get("proposed_section", "")))
+        if not section:
+            continue
+        headline = str(item.get("headline", ""))
+        if headline not in _report_headlines(report, section):
+            findings.append(
+                _make_finding(
+                    "reference_integrity_gap",
+                    "medium",
+                    f"ledger 标记 {decision} 但正文 {section} 未收录该条。",
+                    headline=headline,
+                    section=section,
+                    suggested_fix="确认是编辑撤稿还是漏写；撤稿应把 decision 改为 rejected_* 并写明 decision_reason。",
+                )
+            )
+    return findings
+
+
 def build_daily_qa_diff(
     report: dict[str, Any],
     ledger: dict[str, Any],
@@ -1078,6 +1103,7 @@ def build_daily_qa_diff(
                 )
     findings.extend(recall_probe_findings(report, whitelist))
     findings.extend(recall_fallback_findings(report, whitelist))
+    findings.extend(ledger_orphan_findings(report, ledger))
     if project_root is not None:
         findings.extend(hard_data_snapshot_findings(report, project_root))
 

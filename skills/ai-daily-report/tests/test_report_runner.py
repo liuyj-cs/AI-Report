@@ -982,3 +982,22 @@ def test_finalize_daily_rerun_skips_already_sent_daily(
     assert len([s for s in sent if s.startswith("AI 日报")]) == 1
     log_text = (tmp_path / "cache" / "2026-04-18" / "run.log").read_text(encoding="utf-8")
     assert "EMAIL skip already-sent daily" in log_text
+
+
+def test_finalize_daily_cleans_stale_cache_dirs(
+    tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+):
+    import os
+    import time as _time
+
+    cache_dir, env_path = _build_passing_finalize_setup(
+        tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+    )
+    stale = tmp_path / "cache" / "2026-01-01"
+    stale.mkdir(parents=True)
+    old = _time.time() - 20 * 86400
+    os.utime(stale, (old, old))
+
+    code, _ = run_daily_finalize(tmp_path, "2026-04-18", dry_run=True, env_path=env_path)
+    assert code == 0
+    assert not stale.exists()
