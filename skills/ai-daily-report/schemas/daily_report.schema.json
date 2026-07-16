@@ -38,7 +38,7 @@
           "type": "object",
           "required": ["title", "items", "deep_dive"],
           "properties": {
-            "title": {"type": "string"},
+            "title": {"$ref": "#/$defs/sectionTitle"},
             "items": {
               "type": "array",
               "items": {"$ref": "#/$defs/codingItem"}
@@ -62,7 +62,7 @@
           "type": "object",
           "required": ["title", "items", "empty_message"],
           "properties": {
-            "title": {"type": "string"},
+            "title": {"$ref": "#/$defs/sectionTitle"},
             "items": {
               "type": "array",
               "maxItems": 4,
@@ -77,7 +77,7 @@
           "type": "object",
           "required": ["title", "items", "empty_message"],
           "properties": {
-            "title": {"type": "string"},
+            "title": {"$ref": "#/$defs/sectionTitle"},
             "items": {
               "type": "array",
               "maxItems": 1,
@@ -90,7 +90,7 @@
           "type": "object",
           "required": ["title", "decisions", "empty_message"],
           "properties": {
-            "title": {"type": "string"},
+            "title": {"$ref": "#/$defs/sectionTitle"},
             "decisions": {
               "type": "array",
               "items": {"$ref": "#/$defs/decisionRadarGroup"}
@@ -102,7 +102,7 @@
           "type": "object",
           "required": ["title", "items", "empty_message"],
           "properties": {
-            "title": {"type": "string"},
+            "title": {"$ref": "#/$defs/sectionTitle"},
             "items": {
               "type": "array",
               "items": {"$ref": "#/$defs/actionItem"}
@@ -114,7 +114,7 @@
           "type": "object",
           "required": ["title", "items"],
           "properties": {
-            "title": {"type": "string"},
+            "title": {"$ref": "#/$defs/sectionTitle"},
             "items": {
               "type": "array",
               "items": {
@@ -184,11 +184,16 @@
     }
   },
   "$defs": {
+    "sectionTitle": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?=.*\\S)(?!\\s*(?:[一二三四五六七八九十百]+[A-Za-z]?、|[0-9]+[.、)])).+$"
+    },
     "itemSection": {
       "type": "object",
       "required": ["title", "items"],
       "properties": {
-        "title": {"type": "string"},
+        "title": {"$ref": "#/$defs/sectionTitle"},
         "items": {
           "type": "array",
           "items": {"$ref": "#/$defs/modelItem"}
@@ -199,7 +204,7 @@
       "type": "object",
       "required": ["title", "items"],
       "properties": {
-        "title": {"type": "string"},
+        "title": {"$ref": "#/$defs/sectionTitle"},
         "items": {
           "type": "array",
           "items": {"$ref": "#/$defs/generalItem"}
@@ -420,7 +425,7 @@
       "type": "object",
       "required": ["title", "benchmark_changes", "benchmark_watch", "pricing_changes", "adoption_signals", "capability_gaps", "empty_message"],
       "properties": {
-        "title": {"type": "string"},
+        "title": {"$ref": "#/$defs/sectionTitle"},
         "benchmark_changes": {"type": "array", "items": {"$ref": "#/$defs/benchmarkChange"}},
         "benchmark_watch": {"type": "array", "items": {"$ref": "#/$defs/benchmarkWatch"}},
         "pricing_changes": {"type": "array", "items": {"$ref": "#/$defs/pricingChange"}},
@@ -447,7 +452,7 @@
       "type": "object",
       "required": ["title", "items", "empty_message"],
       "properties": {
-        "title": {"type": "string"},
+        "title": {"$ref": "#/$defs/sectionTitle"},
         "items": {"type": "array", "items": {"$ref": "#/$defs/patternObservation"}, "maxItems": 3},
         "empty_message": {"type": "string"}
       }
@@ -490,7 +495,7 @@
       "type": "object",
       "required": ["title", "items", "empty_message"],
       "properties": {
-        "title": {"type": "string"},
+        "title": {"$ref": "#/$defs/sectionTitle"},
         "items": {"type": "array", "items": {"$ref": "#/$defs/experiment"}},
         "empty_message": {"type": "string"}
       }
@@ -568,7 +573,7 @@
       "type": "object",
       "required": ["title", "items", "empty_message"],
       "properties": {
-        "title": {"type": "string"},
+        "title": {"$ref": "#/$defs/sectionTitle"},
         "items": {"type": "array", "maxItems": 3, "items": {"$ref": "#/$defs/methodologyRadarItem"}},
         "empty_message": {"type": "string"}
       }

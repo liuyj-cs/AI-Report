@@ -14,6 +14,7 @@ SCRIPT = SKILL_ROOT / "scripts" / "render_html.py"
 SCHEMAS = SKILL_ROOT / "schemas"
 
 SHARED_DEFS = [
+    "sectionTitle",
     "itemRef",
     "benchmarkChange",
     "benchmarkWatch",
@@ -605,6 +606,142 @@ def test_candidate_ledger_rejects_page_update_as_core_date_basis():
 
 def _load_daily_schema():
     return json.loads((SCHEMAS / "daily_report.schema.json").read_text(encoding="utf-8"))
+
+
+def _load_weekly_schema():
+    return json.loads((SCHEMAS / "weekly_report.schema.json").read_text(encoding="utf-8"))
+
+
+DAILY_NUMBERED_SECTION_TITLES = {
+    "frontier_models": "一、模型动态",
+    "coding_agents": "二、Coding Agent 专项",
+    "general_agents": "三、通用 Agent 动态",
+    "agent_ecosystem": "三a、Agent 生态与实践",
+    "methodology_radar": "三b、方法论雷达",
+    "market_signals": "四、硬数据信号",
+    "pattern_observations": "五、跨条目模式",
+    "experiments_this_week": "六、本期建议实验",
+    "decision_radar": "六a、决策雷达",
+    "action_items": "七、今日落地建议",
+    "unverified": "八、观察区 / 待核实",
+}
+
+
+WEEKLY_NUMBERED_SECTION_TITLES = {
+    "tldr": "一、本周核心结论",
+    "frontier_models": "二、头部大模型：本周动态与趋势",
+    "coding_agents": "三、Coding Agent 深度观察",
+    "general_agents": "四、通用 Agent 格局变化",
+    "market_signals": "五、硬数据信号",
+    "pattern_observations": "六、跨条目模式",
+    "experiments_this_week": "七、本周建议实验",
+    "practice_digest": "八、本周实践精选",
+    "methodology_radar": "九、方法论雷达",
+    "action_items": "十、本周落地建议（体系化）",
+    "next_week_signals": "十一、下周值得关注的信号",
+}
+
+
+def _assert_numbered_section_titles_rejected(data, schema, numbered_titles):
+    validator = Draft202012Validator(schema)
+    for section_name, bad_title in numbered_titles.items():
+        candidate = deepcopy(data)
+        candidate["sections"][section_name]["title"] = bad_title
+        errors = list(validator.iter_errors(candidate))
+        assert any(
+            list(error.path) == ["sections", section_name, "title"]
+            for error in errors
+        ), f"{section_name} should reject numbered title {bad_title!r}"
+
+
+def test_daily_schema_rejects_numbered_top_level_section_titles():
+    data = json.loads((FIXTURES / "sample_daily.json").read_text(encoding="utf-8"))
+    _assert_numbered_section_titles_rejected(
+        data,
+        _load_daily_schema(),
+        DAILY_NUMBERED_SECTION_TITLES,
+    )
+
+
+def test_weekly_schema_rejects_numbered_top_level_section_titles():
+    data = json.loads((FIXTURES / "sample_weekly.json").read_text(encoding="utf-8"))
+    _assert_numbered_section_titles_rejected(
+        data,
+        _load_weekly_schema(),
+        WEEKLY_NUMBERED_SECTION_TITLES,
+    )
+
+
+def test_section_title_schemas_reject_arabic_numbering():
+    daily = json.loads((FIXTURES / "sample_daily.json").read_text(encoding="utf-8"))
+    weekly = json.loads((FIXTURES / "sample_weekly.json").read_text(encoding="utf-8"))
+
+    _assert_numbered_section_titles_rejected(
+        daily,
+        _load_daily_schema(),
+        {"frontier_models": "1. 模型动态"},
+    )
+    _assert_numbered_section_titles_rejected(
+        weekly,
+        _load_weekly_schema(),
+        {"next_week_signals": "11) 下周值得关注的信号"},
+    )
+
+
+def test_daily_schema_allows_numbered_nested_titles():
+    data = json.loads((FIXTURES / "sample_daily.json").read_text(encoding="utf-8"))
+    data["sections"]["coding_agents"]["deep_dive"]["title"] = "一、深度观察"
+    data["sections"]["agent_ecosystem"]["items"][0]["title"] = "1. 多 Agent 编排"
+
+    errors = list(Draft202012Validator(_load_daily_schema()).iter_errors(data))
+
+    assert errors == []
+
+
+def test_render_daily_section_headings_have_one_numbering_layer(tmp_path):
+    html = _render_daily(tmp_path)
+    soup = BeautifulSoup(html, "html.parser")
+    expected = [
+        "一、头部大模型动态",
+        "二、Coding Agent 专项",
+        "三、通用 Agent 动态",
+        "四、Agent 生态与实践",
+        "五、方法论雷达",
+        "六、硬数据信号",
+        "七、跨条目模式",
+        "八、本期建议实验",
+        "九、决策雷达",
+        "十、今日落地建议",
+        "十一、待核实区",
+    ]
+
+    toc = [node.get_text(" ", strip=True) for node in soup.select("nav.toc a")]
+    body = [node.get_text(" ", strip=True) for node in soup.select(".container > section > h2")]
+
+    assert toc == expected
+    assert body == expected
+
+
+def test_render_weekly_section_headings_have_one_numbering_layer(tmp_path):
+    html = _render_weekly(tmp_path)
+    soup = BeautifulSoup(html, "html.parser")
+    expected = [
+        "一、本周核心结论",
+        "二、头部大模型：本周动态与趋势",
+        "三、Coding Agent 深度观察",
+        "四、通用 Agent 格局变化",
+        "五、硬数据信号",
+        "六、跨条目模式",
+        "七、本周建议实验",
+        "八、本周实践精选",
+        "九、方法论雷达",
+        "十、本周落地建议（体系化）",
+        "十一、下周值得关注的信号",
+    ]
+
+    body = [node.get_text(" ", strip=True) for node in soup.select(".container > section > h2")]
+
+    assert body == expected
 
 
 def _major_event_item(base_item):

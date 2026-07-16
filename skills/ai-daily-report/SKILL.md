@@ -345,6 +345,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 9. **产出结构化 JSON**
    - 严格遵循 `schemas/daily_report.schema.json`
    - 字段约束：`version: "1.0"`、`type: "daily"`、`date`、`window`（带时区）、`generated_at`、**十一个 `sections`**（frontier_models / coding_agents / general_agents / agent_ecosystem / methodology_radar / market_signals / pattern_observations / experiments_this_week / decision_radar / action_items / unverified）、`fetch_status`
+   - **章节标题契约**：`sections.*.title` 只写纯语义标题（如 `模型动态`、`方法论雷达`），不得写 `一、`、`三a、`、`6.` 等展示编号；日报/周报模板是章节编号的唯一真源，schema 会在渲染前拒绝带编号标题。
    - **每条正文章目必须填 `release_stage` / `published_at_confidence` / `authority_score` / `editorial_tier`**（schema required，缺失会被 render 阶段拒绝）
    - **`fetch_status.source_details`** 必须记录所有走过 fetch_chain 的源（含降级路径），渲染层会展示降级路径供巡检
    - **来源闭环要求**：进入正文（前三节 + market_signals）的每条信息，都必须能回溯到某次具体抓取尝试；若无法在 `fetch_status.source_details` 中解释它是怎么来的，要么补记该尝试，要么降到 `unverified`，不要保留“正文比日志更聪明”的状态
@@ -404,28 +405,31 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
         · {item 1 headline}
         ...
 
-      三a、Agent 生态与实践
+      四、Agent 生态与实践
         · {item 1 title}（{item_type 中文标签}）
         ...（最多 2 条）
 
-      三b、方法论雷达
+      五、方法论雷达
         · {item 1 title}（{kind 中文标签}）
         ...（最多 2 条；空显示 empty_message）
 
-      四、硬数据信号
+      六、硬数据信号
         {若有 benchmark/pricing/gap 各取 1 条；空则显示 empty_message}
 
-      五、跨条目模式
+      七、跨条目模式
         {若有 pattern observation 显示 theme；空则显示 empty_message}
 
-      六、本期建议实验
+      八、本期建议实验
         {若有显示 title；空则显示 empty_message}
 
-      六a、决策雷达
+      九、决策雷达
         {每个有内容的决策一行：decision_name: N 条影响；空则显示 empty_message}
 
-      七、今日落地建议
+      十、今日落地建议
         {全部逐条打印}（若为空则显示 empty_message）
+
+      十一、观察区 / 待核实
+        {逐条打印待核实候选；空则显示本节无内容}
 
       负责人访谈：{有/无}{若有：· {person}（{org}）· 已独立邮件发送/Dry-run 未发送}
 
@@ -500,6 +504,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 5. **产出周报 JSON**
    - 严格遵循 `schemas/weekly_report.schema.json`
    - **十一章节**：`tldr / frontier_models / coding_agents / general_agents / market_signals / pattern_observations / experiments_this_week / practice_digest / methodology_radar / action_items / next_week_signals`
+   - **章节标题契约**：`sections.*.title` 只写纯语义标题，不携带 `一、`、`1.` 等展示编号；周报模板统一负责 `一、` 至 `十一、` 的展示编号。
    - 顶层必填 `week_end`（YYYY-MM-DD，窗口结束日）
    - TL;DR 3-5 条
    - **落地建议**：3-5 条体系化建议，每条字段与日报 `actionItem` 完全一致：
