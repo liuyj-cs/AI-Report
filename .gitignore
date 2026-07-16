@@ -21,6 +21,7 @@ skills/ai-daily-report/tests/output/
 
 # Internal planning/spec docs (not for upload)
 docs/superpowers/
+.worktrees/
 
 # OS
 .DS_Store
