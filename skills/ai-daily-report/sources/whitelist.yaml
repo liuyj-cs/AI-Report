@@ -82,7 +82,7 @@ us_labs:
     fetch_chain:
       - type: webfetch
         url: https://deepmind.google/discover/blog/
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Google DeepMind blog site:deepmind.google {date}"
@@ -97,7 +97,7 @@ us_labs:
     fetch_chain:
       - type: webfetch
         url: https://blog.google/technology/ai/
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Google AI blog site:blog.google {date}"
@@ -291,7 +291,7 @@ cn_labs:
     fetch_chain:
       - type: webfetch
         url: https://www.minimaxi.com/news
-        surface_kind: feed
+        surface_kind: static
       - type: webfetch
         url: https://huggingface.co/MiniMaxAI/models?sort=created
         surface_kind: feed
@@ -396,7 +396,7 @@ coding_agents_secondary:
     fetch_chain:
       - type: webfetch
         url: https://github.blog/changelog/label/copilot/
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "GitHub Copilot changelog site:github.blog {date}"
@@ -568,7 +568,7 @@ general_agent_watchlist:
     fetch_chain:
       - type: webfetch
         url: https://news.microsoft.com/source/
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Microsoft 365 Copilot paid seats site:microsoft.com {date}"
@@ -640,7 +640,7 @@ agent_ecosystem_sources:
     fetch_chain:
       - type: webfetch
         url: https://www.latent.space/
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Latent Space AI engineering {date}"
@@ -677,7 +677,7 @@ english_media:
     fetch_chain:
       - type: webfetch
         url: https://importai.substack.com/
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Import AI Jack Clark {date}"
@@ -689,7 +689,7 @@ english_media:
     fetch_chain:
       - type: webfetch
         url: https://tldr.tech/ai
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "TLDR AI newsletter {date}"
@@ -701,7 +701,7 @@ english_media:
     fetch_chain:
       - type: webfetch
         url: https://www.therundown.ai/
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "The Rundown AI {date}"
@@ -713,7 +713,7 @@ english_media:
     fetch_chain:
       - type: webfetch
         url: https://www.semafor.com/vertical/technology
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Semafor technology AI {date}"
@@ -725,7 +725,7 @@ english_media:
     fetch_chain:
       - type: webfetch
         url: https://www.theregister.com/software/ai_machine_learning/
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "site:theregister.com AI agent {date}"
@@ -754,10 +754,16 @@ chinese_media:
     # 匿名只读 v1 API：结构化 JSON 比首页 HTML（JS 壳）稳，且每条自带 links.original
     # 供一跳官方补证。它是中文圈召回对照面，不是证据源——候选仍按 media 降档处理。
     # publishedAt 可为 null，此时回退 discoveredAt 并按 published_at_confidence: inferred。
+    # 两层的分工是刻意的：selected 是高门槛策展池（实测当日只放行约 8% 条目），它空
+    # 只说明"策展没放行"，不等于中文圈无新闻 —— 所以标 static，空必须下穿 mode=all
+    # 全量池；all 才是真·全量倒序面，空即权威。
     cadence: daily
     fetch_chain:
       - type: webfetch
         url: https://aihot.virxact.com/api/v1/items?mode=selected&window=24h&limit=50
+        surface_kind: static
+      - type: webfetch
+        url: https://aihot.virxact.com/api/v1/items?mode=all&window=24h&limit=50
         surface_kind: feed
       - type: websearch_scoped
         queries:
@@ -771,7 +777,7 @@ chinese_media:
     fetch_chain:
       - type: webfetch
         url: https://www.jiqizhixin.com/
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "机器之心 AI {date}"
@@ -807,7 +813,7 @@ chinese_media:
     fetch_chain:
       - type: webfetch
         url: https://www.infoq.cn/topic/AI
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "InfoQ AI {date}"
@@ -928,7 +934,7 @@ leader_interviews:
     fetch_chain:
       - type: webfetch
         url: https://www.latent.space/podcast
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Latent Space interview Anthropic OpenAI {date}"
@@ -942,7 +948,7 @@ leader_interviews:
     fetch_chain:
       - type: webfetch
         url: https://www.dwarkesh.com/podcast
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Dwarkesh Patel interview {date}"
@@ -953,7 +959,7 @@ leader_interviews:
     fetch_chain:
       - type: webfetch
         url: https://www.no-priors.com/
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "No Priors podcast AI {date}"
@@ -964,7 +970,7 @@ leader_interviews:
     fetch_chain:
       - type: webfetch
         url: https://www.bigtechnology.com/
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Big Technology podcast Anthropic OpenAI {date}"
@@ -975,7 +981,7 @@ leader_interviews:
     fetch_chain:
       - type: webfetch
         url: https://www.youtube.com/@anthropic-ai/videos
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Anthropic interview podcast {date}"
@@ -986,7 +992,7 @@ leader_interviews:
     fetch_chain:
       - type: webfetch
         url: https://www.youtube.com/@OpenAI/videos
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "OpenAI interview podcast {date}"
@@ -1027,7 +1033,7 @@ methodology_radar_sources:
     fetch_chain:
       - type: webfetch
         url: https://www.latent.space/
-        surface_kind: feed
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Latent Space AI engineering methodology {date}"

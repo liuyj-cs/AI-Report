@@ -1005,16 +1005,33 @@ def recall_probe_findings(report: dict[str, Any], whitelist: dict[str, Any]) -> 
     return []
 
 
+FETCH_LAYER_TYPES = ("webfetch", "github_releases")
+
+
+def _final_layer_index(source: dict[str, Any], detail: dict[str, Any]) -> int | None:
+    index = detail.get("final_layer_index")
+    if isinstance(index, int):
+        return index
+    attempts = detail.get("attempts") or []
+    index = attempts[-1].get("layer_index") if attempts else None
+    return index if isinstance(index, int) else None
+
+
+def _has_later_fetch_layer(source: dict[str, Any], index: int | None) -> bool:
+    """该源链里，命中层之后是否还有没走到的抓取面（webfetch / github_releases）。"""
+    if index is None:
+        return False
+    chain = source.get("fetch_chain", [])
+    return any(layer.get("type") in FETCH_LAYER_TYPES for layer in chain[index + 1 :])
+
+
 def _final_layer_surface_kind(source: dict[str, Any], detail: dict[str, Any]) -> str:
     """定位 final attempt 落在哪一层，取该层的 surface_kind。
 
     未标注的 webfetch 层按 ``static`` 处理（= 改造前的行为），层号缺失或越界同样
     按 ``static``：保守缺省不给漏采开口子。``github_releases`` 天生是倒序发布面。
     """
-    index = detail.get("final_layer_index")
-    if not isinstance(index, int):
-        attempts = detail.get("attempts") or []
-        index = attempts[-1].get("layer_index") if attempts else None
+    index = _final_layer_index(source, detail)
     chain = source.get("fetch_chain", [])
     if not isinstance(index, int) or not 0 <= index < len(chain):
         return "static"
@@ -1054,16 +1071,23 @@ def recall_fallback_findings(report: dict[str, Any], whitelist: dict[str, Any]) 
         attempts = detail.get("attempts") or []
         if any(attempt.get("layer_type") in SEARCH_LAYER_TYPES for attempt in attempts):
             continue
+        index = _final_layer_index(source, detail)
         if _final_layer_surface_kind(source, detail) == "feed":
-            continue
-        findings.append(
-            _make_finding(
-                "missed_discovery",
-                "high",
-                f"{name} 在静态面命中空后未下穿 websearch 兜底层；static 面 empty≠无新闻，可能漏采（finalize 阻塞项）。",
-                source_name=name,
-                suggested_fix="对该源执行 websearch_scoped/broad 并把命中或空结果写入 attempts；确为带日期的倒序发布面时，在 whitelist 给该层标 surface_kind: feed。",
+            # feed 空即权威，但只对"该源最后一个抓取面"成立：开源权重厂商的发布
+            # 第一现场是 HF/GitHub，早期 feed（如 API changelog）覆盖不了它们，
+            # 停在那里判空照样漏采。
+            if not _has_later_fetch_layer(source, index):
+                continue
+            reason = (
+                f"{name} 在第 {index} 层 feed 面判空后就停下，链里还有未触达的抓取面；"
+                "该层覆盖不了这个源的全部发布口径（HF/GitHub 权重面才是开源模型的发布第一现场），可能漏采（finalize 阻塞项）。"
             )
+            fix = "继续下穿该源 fetch_chain 里后续的 webfetch/github_releases 面（或直接跑搜索层），并把命中或空结果写入 attempts。"
+        else:
+            reason = f"{name} 在静态面命中空后未下穿 websearch 兜底层；static 面 empty≠无新闻，可能漏采（finalize 阻塞项）。"
+            fix = "对该源执行 websearch_scoped/broad 并把命中或空结果写入 attempts；确为带日期的倒序发布面时，在 whitelist 给该层标 surface_kind: feed。"
+        findings.append(
+            _make_finding("missed_discovery", "high", reason, source_name=name, suggested_fix=fix)
         )
     return findings
 

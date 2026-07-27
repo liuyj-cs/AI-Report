@@ -173,7 +173,8 @@
                     "target": {"type": "string"},
                     "result": {"enum": ["success", "success_but_empty", "empty", "error"]},
                     "reason": {"type": "string"},
-                    "note": {"type": "string"}
+                    "note": {"type": "string"},
+                    "wakeup_reason": {"type": "string", "minLength": 1}
                   }
                 }
               }

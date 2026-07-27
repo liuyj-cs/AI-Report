@@ -9,10 +9,10 @@ hub_role: null
 upgraded_from: null
 owners: [Liu]
 tasks:
-  - {id: T1, type: tdd, owner: Liu, status: pending, sign_off: ""}
-  - {id: T2, type: tdd, owner: Liu, status: pending, sign_off: ""}
-  - {id: T3, type: tdd, owner: Liu, status: pending, sign_off: ""}
-  - {id: T4, type: tdd, owner: Liu, status: pending, sign_off: ""}
-  - {id: T5, type: tdd, owner: Liu, status: pending, sign_off: ""}
-  - {id: T6, type: tdd, owner: Liu, status: pending, sign_off: ""}
-  - {id: T7, type: docs, owner: Liu, status: pending, sign_off: ""}
+  - {id: T1, type: tdd, owner: Liu, status: done, sign_off: ""}
+  - {id: T2, type: tdd, owner: Liu, status: done, sign_off: ""}
+  - {id: T3, type: tdd, owner: Liu, status: done, sign_off: ""}
+  - {id: T4, type: tdd, owner: Liu, status: done, sign_off: ""}
+  - {id: T5, type: tdd, owner: Liu, status: done, sign_off: ""}
+  - {id: T6, type: tdd, owner: Liu, status: done, sign_off: ""}
+  - {id: T7, type: docs, owner: Liu, status: done, sign_off: ""}

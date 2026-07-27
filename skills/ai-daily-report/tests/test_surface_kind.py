@@ -120,6 +120,69 @@ def test_empty_is_conclusive_field_is_retired():
     assert len(validate_recall_fallback_coverage(_empty_report(STATIC_ATTEMPT), whitelist)) == 1
 
 
+def test_feed_stop_before_later_fetch_layers_still_blocks():
+    """cn_labs 的早期 feed 面（如 API changelog）空，不等于该源没发布——链里后面的
+    HF/GitHub 权重面才是开源模型的发布第一现场，必须触达。"""
+    whitelist = {
+        "cn_labs": [
+            {
+                "name": "DeepSeek",
+                "category": "cn_labs",
+                "fetch_chain": [
+                    {"type": "webfetch", "url": "https://api-docs.deepseek.com/updates", "surface_kind": "feed"},
+                    {"type": "webfetch", "url": "https://huggingface.co/deepseek-ai/models?sort=created", "surface_kind": "feed"},
+                    {"type": "websearch_scoped", "queries": ["q"]},
+                ],
+            }
+        ]
+    }
+
+    errors = validate_recall_fallback_coverage(_empty_report(STATIC_ATTEMPT), whitelist)
+
+    assert len(errors) == 1
+    assert "DeepSeek" in errors[0]
+
+
+def test_feed_stop_on_last_fetch_layer_passes():
+    whitelist = {
+        "cn_labs": [
+            {
+                "name": "DeepSeek",
+                "category": "cn_labs",
+                "fetch_chain": [
+                    {"type": "webfetch", "url": "u0", "surface_kind": "static"},
+                    {"type": "webfetch", "url": "u1", "surface_kind": "feed"},
+                    {"type": "websearch_scoped", "queries": ["q"]},
+                ],
+            }
+        ]
+    }
+    attempts = STATIC_ATTEMPT + [
+        {"layer_index": 1, "layer_type": "webfetch", "target": "u1", "result": "success_but_empty"}
+    ]
+
+    assert validate_recall_fallback_coverage(_empty_report(attempts, final_layer_index=1), whitelist) == []
+
+
+def test_non_high_recall_feed_stop_never_blocks():
+    """链内穷尽要求只加在阻塞范围内的两类；媒体面 feed 空照旧即停。"""
+    whitelist = {
+        "english_media": [
+            {
+                "name": "SomeMedia",
+                "category": "english_media",
+                "fetch_chain": [
+                    {"type": "webfetch", "url": "u0", "surface_kind": "feed"},
+                    {"type": "webfetch", "url": "u1", "surface_kind": "feed"},
+                    {"type": "websearch_scoped", "queries": ["q"]},
+                ],
+            }
+        ]
+    }
+
+    assert validate_recall_fallback_coverage(_empty_report(STATIC_ATTEMPT, name="SomeMedia"), whitelist) == []
+
+
 def test_findings_stay_high_severity_and_missed_discovery():
     whitelist = _whitelist({"type": "webfetch", "url": "u", "surface_kind": "static"})
 

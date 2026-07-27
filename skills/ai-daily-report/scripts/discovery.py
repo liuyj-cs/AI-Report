@@ -33,6 +33,8 @@ CADENCE_INTERVALS = {"daily": 1, "every_2_days": 2, "weekly": 7}
 CADENCE_WINDOW_DAYS = 30
 # 长尾判定的两道保护：探测样本够（实探日）与台账观察期够（首见距今）。
 CADENCE_MIN_PROBED_DAYS = 10
+# 已降频的面按稀疏节奏探测，30 天里本就只有 4-5 次；用 daily 档的样本量要求会让档位震荡。
+CADENCE_MIN_SPARSE_PROBED_DAYS = 4
 CADENCE_MIN_LEDGER_AGE_DAYS = 14
 CADENCE_DAILY_HIT_DAYS = 3
 DEFAULT_SOURCE_FAMILIES = {
@@ -157,8 +159,10 @@ def required_discovery_names(whitelist: dict[str, Any]) -> list[str]:
 def _exempt_daily_names(whitelist: dict[str, Any]) -> set[str]:
     """恒每日探查的面:核心源 / tier1 官方 / hard_data / cadence pin / 聚合探针面。
 
-    聚合面(搜索、召回探针、source_family、tracking)本身就是召回兜底,降频等于
-    自断退路;慢信号轨道(访谈、方法论)例外,见 SLOW_TRACK_SURFACES。
+    聚合面(搜索、召回探针、source_family)本身就是召回兜底,降频等于自断退路;
+    慢信号轨道(访谈、方法论发现面)例外,见 SLOW_TRACK_SURFACES。
+    追踪面(TRACKING_SURFACE_PREFIX)不进 required_discovery_names,不参与调度,
+    其覆盖由 tracking 的独立校验器负责。
     """
     exempt = {name for name in whitelist.get("core_sources", []) if name}
     for source in iter_named_sources(whitelist):
@@ -175,16 +179,24 @@ def _exempt_daily_names(whitelist: dict[str, Any]) -> set[str]:
     return exempt
 
 
-def _ledger_series(stats: dict[str, Any], name: str) -> list[tuple[date, bool]]:
+def _ledger_series(stats: dict[str, Any], name: str, target: date) -> list[tuple[date, bool]]:
+    """台账里该面的 (日期, 是否命中) 序列，只取不晚于 target 的天。
+
+    未来日期是坏数据（--date 笔误、时钟偏移），必须丢弃：留着会让 last_probed 跑到
+    未来，due 的日期差变负，把包括核心源在内的所有面判成"今天不用探"。
+    """
     series: list[tuple[date, bool]] = []
     for day, entry in (stats.get("days") or {}).items():
         record = (entry or {}).get(name)
         if not isinstance(record, dict):
             continue
         try:
-            series.append((date.fromisoformat(day), bool(record.get("hit"))))
+            parsed = date.fromisoformat(day)
         except ValueError:
             continue
+        if parsed > target:
+            continue
+        series.append((parsed, bool(record.get("hit"))))
     return sorted(series)
 
 
@@ -192,7 +204,8 @@ def _rank_cadence(series: list[tuple[date, bool]], target: date) -> str:
     """按近 30 天命中率分档;统计不足一律回 daily(宁多探不漏探)。"""
     if not series:
         return "daily"
-    if (target - series[0][0]).days < CADENCE_MIN_LEDGER_AGE_DAYS:
+    observed_days = (target - series[0][0]).days
+    if observed_days < CADENCE_MIN_LEDGER_AGE_DAYS:
         return "daily"
     window = [(day, hit) for day, hit in series if 0 <= (target - day).days <= CADENCE_WINDOW_DAYS]
     hit_days = sum(1 for _, hit in window if hit)
@@ -201,6 +214,11 @@ def _rank_cadence(series: list[tuple[date, bool]], target: date) -> str:
     if hit_days:
         return "every_2_days"
     if len(window) >= CADENCE_MIN_PROBED_DAYS:
+        return "weekly"
+    # 已降到 weekly 的面，30 天内本来就只探 4-5 次，用 daily 档的样本量要求会把它
+    # 弹回 daily、下次又降回来——档位来回震荡等于白降。观察期够长（≥ 窗口本身）时
+    # 改用稀疏节奏的样本量判据，让 weekly 稳得住。
+    if observed_days >= CADENCE_WINDOW_DAYS and len(window) >= CADENCE_MIN_SPARSE_PROBED_DAYS:
         return "weekly"
     return "daily"
 
@@ -215,11 +233,14 @@ def compute_cadence(
     这是运维调度,不是编辑判断:cadence 只决定"今天探不探",不参与正文取舍与
     排序;非 due 面仍允许 AI 因外部信号唤醒(见 SKILL.md 采集节奏一节)。
     """
-    target = date.fromisoformat(target_date)
+    try:
+        target = date.fromisoformat(target_date)
+    except ValueError as exc:
+        raise ValueError(f"target_date must be a valid YYYY-MM-DD date, got {target_date!r}") from exc
     exempt = _exempt_daily_names(whitelist)
     plan: dict[str, dict[str, Any]] = {}
     for name in required_discovery_names(whitelist):
-        series = _ledger_series(stats, name)
+        series = _ledger_series(stats, name, target)
         last_probed = series[-1][0] if series else None
         if name in exempt:
             cadence = "daily"
@@ -540,7 +561,10 @@ def due_discovery_names(project_root: Path, target_date: str) -> list[str] | Non
     plan = manifest.get("cadence_plan")
     if not isinstance(plan, dict) or not plan:
         return None
-    return [name for name, slot in plan.items() if isinstance(slot, dict) and slot.get("due")]
+    due = [name for name, slot in plan.items() if isinstance(slot, dict) and slot.get("due")]
+    # 一个 due 都没有说明 plan 本身不可信（坏台账、坏日期）——空基准会让覆盖校验对
+    # "一个源都没抓"的日报放行，这是 fail-open 的方向错误。回退 whitelist 全量。
+    return due or None
 
 
 def missing_fetch_status_coverage(

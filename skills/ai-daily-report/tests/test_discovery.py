@@ -154,9 +154,14 @@ def test_whitelist_contains_ai_hot_media_source(sample_whitelist):
     assert ai_hot["fetch_chain"][0] == {
         "type": "webfetch",
         "url": "https://aihot.virxact.com/api/v1/items?mode=selected&window=24h&limit=50",
+        "surface_kind": "static",
+    }
+    assert ai_hot["fetch_chain"][1] == {
+        "type": "webfetch",
+        "url": "https://aihot.virxact.com/api/v1/items?mode=all&window=24h&limit=50",
         "surface_kind": "feed",
     }
-    assert "AI HOT site:aihot.virxact.com {date}" in ai_hot["fetch_chain"][1]["queries"]
+    assert "AI HOT site:aihot.virxact.com {date}" in ai_hot["fetch_chain"][2]["queries"]
 
 
 def test_build_discovery_manifest_includes_recall_probe_surface(sample_whitelist):
