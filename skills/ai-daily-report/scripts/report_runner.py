@@ -19,12 +19,14 @@ from interview import iter_interview_files, interview_already_sent, record_inter
 from discovery import (
     append_run_log,
     build_discovery_manifest,
+    compute_cadence,
     compute_daily_window,
     load_profile,
     load_whitelist,
     rolling_week_dates,
     write_discovery_manifest,
 )
+from source_stats import load_source_stats, record_source_stats
 from ecosystem import record_ecosystem_repos
 from hard_data import SNAPSHOT_FILENAME, compute_hard_data_delta, find_previous_snapshot, load_snapshot
 from methodology import load_seen_methodology, record_methodology, validate_methodology_repeats
@@ -127,11 +129,19 @@ def run_daily_init(
         for event in events
         if is_active_event(event, target)
     ]
+    cadence_plan = compute_cadence(whitelist, load_source_stats(project_root), target_date)
     manifest = build_discovery_manifest(
-        target_date, window, whitelist, active_tracking=active, reader_profile=load_profile()
+        target_date,
+        window,
+        whitelist,
+        active_tracking=active,
+        reader_profile=load_profile(),
+        cadence_plan=cadence_plan,
     )
     path = write_discovery_manifest(cache_dir, manifest)
     append_run_log(run_log, f"{now_iso} DISCOVERY manifest={path.name} ready")
+    summary = manifest["cadence_summary"]
+    append_run_log(run_log, f"{now_iso} CADENCE due={summary['due']} skipped={summary['skipped']}")
     append_run_log(run_log, f"{now_iso} TRACKING active={len(active)}")
     yesterday, email_statuses = _yesterday_email_statuses(project_root, target_date)
     failed_kinds = sorted(kind for kind, status in email_statuses.items() if status == "failed")
@@ -226,6 +236,13 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
     errors = validate_daily_artifacts(report, ledger, whitelist, project_root, profile=load_profile())
     if errors:
         return 1, "artifact validation failed:\n" + "\n".join(f"- {error}" for error in errors)
+
+    # 采集事实台账：与投递结果无关，dry-run 也写（cadence 靠它算命中率）。
+    recorded_surfaces = record_source_stats(report, project_root, target_date)
+    append_run_log(
+        run_log,
+        f"{report.get('generated_at', datetime.now().isoformat())} SOURCE_STATS recorded={recorded_surfaces}",
+    )
 
     html_path = render(report_path)
     append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} RENDER report.html ok")
@@ -425,6 +442,40 @@ def run_hard_data_delta(project_root: Path, target_date: str) -> tuple[int, str]
     return 0, json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+def run_source_stats(project_root: Path, target_date: str) -> tuple[int, str]:
+    """打印各面近 30 天探测汇总与当日 due 预览（调试/验收用，不改变任何状态）。"""
+    whitelist = load_whitelist()
+    stats = load_source_stats(project_root)
+    plan = compute_cadence(whitelist, stats, target_date)
+
+    target = date.fromisoformat(target_date)
+    summary: dict[str, dict[str, Any]] = {}
+    for day, entry in (stats.get("days") or {}).items():
+        try:
+            age = (target - date.fromisoformat(day)).days
+        except ValueError:
+            continue
+        if not 0 <= age <= 30:
+            continue
+        for name, record in (entry or {}).items():
+            slot = summary.setdefault(name, {"probed_days": 0, "hit_days": 0})
+            slot["probed_days"] += 1
+            slot["hit_days"] += 1 if record.get("hit") else 0
+    for name, slot in summary.items():
+        slot["cadence"] = plan.get(name, {}).get("cadence", "daily")
+        slot["due"] = plan.get(name, {}).get("due", True)
+
+    payload = {
+        "date": target_date,
+        "window_days": 30,
+        "due_count": sum(1 for slot in plan.values() if slot["due"]),
+        "skipped_count": sum(1 for slot in plan.values() if not slot["due"]),
+        "cadence_plan": plan,
+        "summary": dict(sorted(summary.items())),
+    }
+    return 0, json.dumps(payload, ensure_ascii=False, indent=2)
+
+
 def main(argv: list[str] | None = None, project_root: Path | None = None) -> int:
     parser = argparse.ArgumentParser(description="AI report deterministic runner")
     parser.add_argument("--project-root", type=Path, default=project_root or Path.cwd())
@@ -453,10 +504,18 @@ def main(argv: list[str] | None = None, project_root: Path | None = None) -> int
     hard_data_delta = subparsers.add_parser("hard-data-delta")
     hard_data_delta.add_argument("--date", required=True)
 
+    source_stats = subparsers.add_parser("source-stats")
+    source_stats.add_argument("--date", required=True)
+
     args = parser.parse_args(argv)
     root = args.project_root.resolve()
     if args.command == "hard-data-delta":
         code, message = run_hard_data_delta(root, args.date)
+        if message:
+            print(message, file=sys.stderr if code else sys.stdout)
+        return code
+    if args.command == "source-stats":
+        code, message = run_source_stats(root, args.date)
         if message:
             print(message, file=sys.stderr if code else sys.stdout)
         return code

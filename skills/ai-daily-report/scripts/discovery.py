@@ -455,11 +455,15 @@ def build_discovery_manifest(
     whitelist: dict[str, Any],
     active_tracking: list[dict[str, Any]] | None = None,
     reader_profile: dict[str, Any] | None = None,
+    cadence_plan: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     source_families = source_family_catalog(whitelist)
+    plan = cadence_plan or {}
+    default_slot = {"cadence": "daily", "due": True, "last_probed": None}
     sources = []
     for source in iter_named_sources(whitelist):
         source_family = infer_source_family(source)
+        slot = plan.get(source["name"], default_slot)
         sources.append(
             {
                 "name": source["name"],
@@ -468,6 +472,9 @@ def build_discovery_manifest(
                 "authority_tier": source.get("authority_tier"),
                 "verify_before_use": source.get("verify_before_use", False),
                 "fallback_policy": source.get("fallback_policy", source_families.get(source_family, {}).get("fallback_policy", "same_entity_one_hop")),
+                "cadence": slot["cadence"],
+                "due": slot["due"],
+                "last_probed": slot["last_probed"],
                 "fetch_chain": source["fetch_chain"],
                 "one_hop_fallback_targets": suggest_one_hop_targets(source["name"], source),
             }
@@ -480,6 +487,11 @@ def build_discovery_manifest(
         "window": window,
         "active_tracking": active_tracking or [],
         "reader_profile": reader_profile or {},
+        "cadence_plan": plan,
+        "cadence_summary": {
+            "due": sum(1 for slot in plan.values() if slot["due"]),
+            "skipped": sum(1 for slot in plan.values() if not slot["due"]),
+        },
         "required_sources": sources,
         "source_families": source_families,
         "general_agent_search_queries": whitelist.get("general_agent_search_queries", []),
