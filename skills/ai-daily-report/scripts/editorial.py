@@ -1005,14 +1005,35 @@ def recall_probe_findings(report: dict[str, Any], whitelist: dict[str, Any]) -> 
     return []
 
 
+def _final_layer_surface_kind(source: dict[str, Any], detail: dict[str, Any]) -> str:
+    """定位 final attempt 落在哪一层，取该层的 surface_kind。
+
+    未标注的 webfetch 层按 ``static`` 处理（= 改造前的行为），层号缺失或越界同样
+    按 ``static``：保守缺省不给漏采开口子。``github_releases`` 天生是倒序发布面。
+    """
+    index = detail.get("final_layer_index")
+    if not isinstance(index, int):
+        attempts = detail.get("attempts") or []
+        index = attempts[-1].get("layer_index") if attempts else None
+    chain = source.get("fetch_chain", [])
+    if not isinstance(index, int) or not 0 <= index < len(chain):
+        return "static"
+    layer = chain[index]
+    default = "feed" if layer.get("type") == "github_releases" else "static"
+    kind = layer.get("surface_kind", default)
+    return kind if kind in ("feed", "static") else default
+
+
 def recall_fallback_findings(report: dict[str, Any], whitelist: dict[str, Any]) -> list[dict[str, Any]]:
-    """Flag sources that hit an empty official/static surface but never ran the
+    """Flag sources that hit an empty *static* surface but never ran the
     configured websearch fallback.
 
     ``empty_in_window`` is only authoritative on a genuine reverse-chron feed.
     On a static docs / product-home / aggregator surface it usually means "this
     page can't show news", not "there is no news" — so the search layer must run.
-    Feeds whose emptiness is authoritative opt out via ``empty_is_conclusive: true``.
+    Which is which is declared per layer in whitelist (``surface_kind``), not
+    inferred per source category: the same source often mixes a static product
+    home with a dated changelog feed.
     """
     fetch_status = report.get("fetch_status", {})
     empty = set(fetch_status.get("empty") or [])
@@ -1022,23 +1043,26 @@ def recall_fallback_findings(report: dict[str, Any], whitelist: dict[str, Any]) 
     findings: list[dict[str, Any]] = []
     for source in iter_named_sources(whitelist):
         name = source["name"]
-        if name not in empty or source.get("empty_is_conclusive"):
+        if name not in empty:
             continue
         if source.get("category") not in HIGH_RECALL_CATEGORIES:
             continue
         chain = source.get("fetch_chain", [])
         if not any(layer.get("type") in SEARCH_LAYER_TYPES for layer in chain):
             continue
-        attempts = source_details.get(name, {}).get("attempts") or []
+        detail = source_details.get(name, {})
+        attempts = detail.get("attempts") or []
         if any(attempt.get("layer_type") in SEARCH_LAYER_TYPES for attempt in attempts):
+            continue
+        if _final_layer_surface_kind(source, detail) == "feed":
             continue
         findings.append(
             _make_finding(
                 "missed_discovery",
                 "high",
-                f"{name} 在官方/静态面命中空后未下穿 websearch 兜底层；empty≠无新闻，可能漏采（finalize 阻塞项）。",
+                f"{name} 在静态面命中空后未下穿 websearch 兜底层；static 面 empty≠无新闻，可能漏采（finalize 阻塞项）。",
                 source_name=name,
-                suggested_fix="对该源执行 websearch_scoped/broad 并把命中或空结果写入 attempts；确为倒序新闻面且空即权威时，在 whitelist 标 empty_is_conclusive: true。",
+                suggested_fix="对该源执行 websearch_scoped/broad 并把命中或空结果写入 attempts；确为带日期的倒序发布面时，在 whitelist 给该层标 surface_kind: feed。",
             )
         )
     return findings
