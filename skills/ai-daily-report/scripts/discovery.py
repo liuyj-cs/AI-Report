@@ -2,7 +2,7 @@
 """Deterministic discovery helpers for AI-authored report runs."""
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 import json
 from pathlib import Path
 import re
@@ -11,6 +11,7 @@ from typing import Any, Iterator
 import yaml
 
 from evidence import suggest_one_hop_targets
+from source_stats import load_source_stats
 from tracking import TRACKING_SURFACE_PREFIX
 
 
@@ -26,6 +27,14 @@ ECOSYSTEM_DISCOVERY_NAME = "Agent Ecosystem Discovery"
 LEADER_INTERVIEW_DISCOVERY_NAME = "Leader Interview Discovery"
 METHODOLOGY_DISCOVERY_NAME = "Methodology Radar Discovery"
 HACKER_NEWS_NAME = "Hacker News front page"
+# 慢信号轨道：准入窗 7/14 天，隔日探查零实质损失；固定档比按命中率浮动更可预期。
+SLOW_TRACK_SURFACES = (LEADER_INTERVIEW_DISCOVERY_NAME, METHODOLOGY_DISCOVERY_NAME)
+CADENCE_INTERVALS = {"daily": 1, "every_2_days": 2, "weekly": 7}
+CADENCE_WINDOW_DAYS = 30
+# 长尾判定的两道保护：探测样本够（实探日）与台账观察期够（首见距今）。
+CADENCE_MIN_PROBED_DAYS = 10
+CADENCE_MIN_LEDGER_AGE_DAYS = 14
+CADENCE_DAILY_HIT_DAYS = 3
 DEFAULT_SOURCE_FAMILIES = {
     "official_release_surface": {
         "description": "官方发布页、产品公告页与一级发布入口",
@@ -143,6 +152,89 @@ def required_discovery_names(whitelist: dict[str, Any]) -> list[str]:
         if name not in deduped:
             deduped.append(name)
     return deduped
+
+
+def _exempt_daily_names(whitelist: dict[str, Any]) -> set[str]:
+    """恒每日探查的面:核心源 / tier1 官方 / hard_data / cadence pin / 聚合探针面。
+
+    聚合面(搜索、召回探针、source_family、tracking)本身就是召回兜底,降频等于
+    自断退路;慢信号轨道(访谈、方法论)例外,见 SLOW_TRACK_SURFACES。
+    """
+    exempt = {name for name in whitelist.get("core_sources", []) if name}
+    for source in iter_named_sources(whitelist):
+        if (
+            source.get("authority_tier") == 1
+            or source.get("category") == "hard_data"
+            or source.get("cadence") == "daily"
+        ):
+            exempt.add(source["name"])
+    named = {source["name"] for source in iter_named_sources(whitelist)}
+    for name in required_discovery_names(whitelist):
+        if name not in named and name not in SLOW_TRACK_SURFACES:
+            exempt.add(name)
+    return exempt
+
+
+def _ledger_series(stats: dict[str, Any], name: str) -> list[tuple[date, bool]]:
+    series: list[tuple[date, bool]] = []
+    for day, entry in (stats.get("days") or {}).items():
+        record = (entry or {}).get(name)
+        if not isinstance(record, dict):
+            continue
+        try:
+            series.append((date.fromisoformat(day), bool(record.get("hit"))))
+        except ValueError:
+            continue
+    return sorted(series)
+
+
+def _rank_cadence(series: list[tuple[date, bool]], target: date) -> str:
+    """按近 30 天命中率分档;统计不足一律回 daily(宁多探不漏探)。"""
+    if not series:
+        return "daily"
+    if (target - series[0][0]).days < CADENCE_MIN_LEDGER_AGE_DAYS:
+        return "daily"
+    window = [(day, hit) for day, hit in series if 0 <= (target - day).days <= CADENCE_WINDOW_DAYS]
+    hit_days = sum(1 for _, hit in window if hit)
+    if hit_days >= CADENCE_DAILY_HIT_DAYS:
+        return "daily"
+    if hit_days:
+        return "every_2_days"
+    if len(window) >= CADENCE_MIN_PROBED_DAYS:
+        return "weekly"
+    return "daily"
+
+
+def compute_cadence(
+    whitelist: dict[str, Any],
+    stats: dict[str, Any],
+    target_date: str,
+) -> dict[str, dict[str, Any]]:
+    """为每个发现面算出 cadence / due / last_probed。
+
+    这是运维调度,不是编辑判断:cadence 只决定"今天探不探",不参与正文取舍与
+    排序;非 due 面仍允许 AI 因外部信号唤醒(见 SKILL.md 采集节奏一节)。
+    """
+    target = date.fromisoformat(target_date)
+    exempt = _exempt_daily_names(whitelist)
+    plan: dict[str, dict[str, Any]] = {}
+    for name in required_discovery_names(whitelist):
+        series = _ledger_series(stats, name)
+        last_probed = series[-1][0] if series else None
+        if name in exempt:
+            cadence = "daily"
+        elif name in SLOW_TRACK_SURFACES:
+            cadence = "every_2_days"
+        else:
+            cadence = _rank_cadence(series, target)
+        interval = CADENCE_INTERVALS[cadence]
+        due = last_probed is None or (target - last_probed).days >= interval
+        plan[name] = {
+            "cadence": cadence,
+            "due": due,
+            "last_probed": last_probed.isoformat() if last_probed else None,
+        }
+    return plan
 
 
 def rolling_week_dates(week_end: str) -> list[str]:
