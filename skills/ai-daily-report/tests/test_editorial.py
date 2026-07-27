@@ -1873,10 +1873,12 @@ def test_build_daily_qa_diff_surfaces_recall_fallback(sample_daily_report, sampl
     whitelist = load_whitelist()
     report = deepcopy(sample_daily_report)
     report["fetch_status"] = finalized_fetch_status(whitelist)
-    # 人为去掉 DeepSeek 的搜索兜底 attempt，模拟「静态面空即停」的漏采场景
-    report["fetch_status"]["source_details"]["DeepSeek"]["attempts"] = [
+    # 人为去掉某 static 面源的搜索兜底 attempt，模拟「静态面空即停」的漏采场景。
+    # 用 Qwen（Layer-0 是 qwen.ai/research 静态面）而非 DeepSeek——后者 Layer-0 是
+    # 带日期的 changelog feed，空即权威、本就不该触发守门。
+    report["fetch_status"]["source_details"]["阿里 Qwen"]["attempts"] = [
         attempt
-        for attempt in report["fetch_status"]["source_details"]["DeepSeek"]["attempts"]
+        for attempt in report["fetch_status"]["source_details"]["阿里 Qwen"]["attempts"]
         if attempt.get("layer_type") not in ("websearch_scoped", "websearch_broad")
     ]
     qa_diff = build_daily_qa_diff(report, sample_candidate_ledger, whitelist)
