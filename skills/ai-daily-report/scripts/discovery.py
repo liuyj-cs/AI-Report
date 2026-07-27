@@ -525,9 +525,32 @@ def write_discovery_manifest(cache_dir: Path, manifest: dict[str, Any]) -> Path:
     return path
 
 
-def missing_fetch_status_coverage(report: dict[str, Any], whitelist: dict[str, Any]) -> list[str]:
+def due_discovery_names(project_root: Path, target_date: str) -> list[str] | None:
+    """当日 manifest 里 due=true 的面;manifest 缺失/损坏/无 cadence 段时返回 None。
+
+    None 让调用方回退 whitelist 全量基准——历史缓存与手工重跑照旧可用。
+    """
+    path = project_root / "cache" / target_date / "discovery_manifest.json"
+    if not path.exists():
+        return None
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    plan = manifest.get("cadence_plan")
+    if not isinstance(plan, dict) or not plan:
+        return None
+    return [name for name, slot in plan.items() if isinstance(slot, dict) and slot.get("due")]
+
+
+def missing_fetch_status_coverage(
+    report: dict[str, Any],
+    whitelist: dict[str, Any],
+    due_names: list[str] | None = None,
+) -> list[str]:
     source_details = report.get("fetch_status", {}).get("source_details", {})
-    return [name for name in required_discovery_names(whitelist) if name not in source_details]
+    required = required_discovery_names(whitelist) if due_names is None else due_names
+    return [name for name in required if name not in source_details]
 
 
 def append_run_log(run_log: Path, line: str) -> None:

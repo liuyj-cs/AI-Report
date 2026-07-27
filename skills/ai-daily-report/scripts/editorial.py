@@ -13,6 +13,7 @@ from jsonschema import Draft202012Validator
 
 from discovery import (
     RECALL_PROBE_SURFACE_NAME,
+    due_discovery_names,
     iter_named_sources,
     load_whitelist,
     missing_fetch_status_coverage,
@@ -166,13 +167,21 @@ def validate_source_closure(report: dict[str, Any], ledger: dict[str, Any]) -> l
     return errors
 
 
-def validate_fetch_status_integrity(report: dict[str, Any], whitelist: dict[str, Any]) -> list[str]:
+def validate_fetch_status_integrity(
+    report: dict[str, Any],
+    whitelist: dict[str, Any],
+    due_names: list[str] | None = None,
+) -> list[str]:
+    """覆盖校验:due_names 给出时以当日 due 面为基准,否则回退 whitelist 全量。
+
+    非 due 面缺席不报错(降频是计划内的);非 due 面出现是 AI 唤醒,照常接受。
+    """
     errors: list[str] = []
     fetch_status = report.get("fetch_status", {})
     source_details = fetch_status.get("source_details", {})
     advisory_surfaces = set(required_source_family_names(whitelist))
 
-    for missing_name in missing_fetch_status_coverage(report, whitelist):
+    for missing_name in missing_fetch_status_coverage(report, whitelist, due_names=due_names):
         if missing_name in advisory_surfaces:
             continue
         errors.append(f"fetch_status.source_details missing {missing_name}")
@@ -854,8 +863,13 @@ def validate_daily_artifacts(
     profile: dict[str, Any] | None = None,
 ) -> list[str]:
     errors: list[str] = []
+    due_names = (
+        due_discovery_names(project_root, str(report.get("date", "")))
+        if project_root is not None
+        else None
+    )
     errors.extend(validate_candidate_ledger_schema(ledger))
-    errors.extend(validate_fetch_status_integrity(report, whitelist))
+    errors.extend(validate_fetch_status_integrity(report, whitelist, due_names=due_names))
     errors.extend(validate_source_attempt_refs(report, ledger))
     errors.extend(validate_candidate_ledger_semantics(ledger))
     errors.extend(validate_action_item_references(report))
