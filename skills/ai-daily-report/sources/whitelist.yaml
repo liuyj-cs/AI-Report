@@ -712,25 +712,15 @@ english_media:
         queries:
           - "The Rundown AI {date}"
 
-  - name: Semafor Technology
-    category: english_media
-    weight: medium
-    authority_tier: 2
-    fetch_chain:
-      - type: webfetch
-        url: https://www.semafor.com/vertical/technology
-        surface_kind: static
-      - type: websearch_scoped
-        queries:
-          - "Semafor technology AI {date}"
-
   - name: The Register AI
     category: english_media
     weight: medium
     authority_tier: 2
     fetch_chain:
+      # 2026-07-27 复核：旧路径 /software/ai_machine_learning/ 已 404，站点把 AI 版块
+      # 规范化到 /ai_ml/（/software/ai_ml/ 会 301 到这里）。
       - type: webfetch
-        url: https://www.theregister.com/software/ai_machine_learning/
+        url: https://www.theregister.com/ai_ml/
         surface_kind: static
       - type: websearch_scoped
         queries:
