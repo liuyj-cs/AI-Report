@@ -1,6 +1,6 @@
 change: 2026-07-27-source-cadence-surface-kind
 level: M            # 中等:whitelist/manifest 数据模型变化 + 跨模块(discovery/runner/SKILL 规则层) + 存在需技术决策的歧义
-status: dev
+status: closing
 close_step: null
 dev_mode: inline
 feature_ref: null
