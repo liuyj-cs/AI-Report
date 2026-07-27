@@ -107,7 +107,10 @@ def run_daily_init(
         return 1, message
 
     whitelist = load_whitelist()
-    window = compute_daily_window(target_date, now_iso)
+    try:
+        window = compute_daily_window(target_date, now_iso)
+    except ValueError as exc:
+        return 1, f"invalid --date {target_date!r} or --now {now_iso!r}: {exc}"
     cache_dir = project_root / "cache" / target_date
     cache_dir.mkdir(parents=True, exist_ok=True)
     run_log = cache_dir / "run.log"

@@ -1008,13 +1008,19 @@ def recall_probe_findings(report: dict[str, Any], whitelist: dict[str, Any]) -> 
 FETCH_LAYER_TYPES = ("webfetch", "github_releases")
 
 
-def _final_layer_index(source: dict[str, Any], detail: dict[str, Any]) -> int | None:
-    index = detail.get("final_layer_index")
-    if isinstance(index, int):
-        return index
-    attempts = detail.get("attempts") or []
-    index = attempts[-1].get("layer_index") if attempts else None
-    return index if isinstance(index, int) else None
+def _final_layer_index(detail: dict[str, Any]) -> int | None:
+    """实际走到的最深层，按 attempts 实迹算，不信自报的 final_layer_index。
+
+    ``final_layer_index`` 由 AI 填写：只抓了 Layer-0 却写 2，就能让"链内是否穷尽"
+    的判定失效——守门必须建立在留痕上，不能建立在自我声明上。attempts 为空时返回
+    None，由调用方 fail-closed 处理。
+    """
+    indexes = [
+        attempt.get("layer_index")
+        for attempt in (detail.get("attempts") or [])
+        if isinstance(attempt.get("layer_index"), int)
+    ]
+    return max(indexes) if indexes else None
 
 
 def _has_later_fetch_layer(source: dict[str, Any], index: int | None) -> bool:
@@ -1031,7 +1037,7 @@ def _final_layer_surface_kind(source: dict[str, Any], detail: dict[str, Any]) ->
     未标注的 webfetch 层按 ``static`` 处理（= 改造前的行为），层号缺失或越界同样
     按 ``static``：保守缺省不给漏采开口子。``github_releases`` 天生是倒序发布面。
     """
-    index = _final_layer_index(source, detail)
+    index = _final_layer_index(detail)
     chain = source.get("fetch_chain", [])
     if not isinstance(index, int) or not 0 <= index < len(chain):
         return "static"
@@ -1071,7 +1077,7 @@ def recall_fallback_findings(report: dict[str, Any], whitelist: dict[str, Any]) 
         attempts = detail.get("attempts") or []
         if any(attempt.get("layer_type") in SEARCH_LAYER_TYPES for attempt in attempts):
             continue
-        index = _final_layer_index(source, detail)
+        index = _final_layer_index(detail)
         if _final_layer_surface_kind(source, detail) == "feed":
             # feed 空即权威，但只对"该源最后一个抓取面"成立：开源权重厂商的发布
             # 第一现场是 HF/GitHub，早期 feed（如 API changelog）覆盖不了它们，

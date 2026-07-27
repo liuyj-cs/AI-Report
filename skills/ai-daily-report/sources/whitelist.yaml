@@ -16,8 +16,11 @@
 #     判不准时一律标 static——保守缺省不给漏采开口子。
 #   - 「成功」判定：HTTP 200 且页面体感为真实内容（非纯 CSS 模板 / 空骨架 / 登录墙）。
 #     窗口内 0 条目（empty_in_window）：命中层是 feed 时算合法成功并停止；命中层是
-#     static 时 empty≠无新闻，必须继续下穿后续 feed 面与 websearch。cn_labs / hard_data
-#     的 static 面未下穿即 finalize 阻塞。详见 SKILL.md 日报步骤 1「成功」判定。
+#     static 时 empty≠无新闻，必须继续下穿后续 feed 面与 websearch。
+#     cn_labs / hard_data 判空更严，两种情形都会 finalize 阻塞：(a) static 面未下穿
+#     搜索层；(b) 停在 feed 面但链里还有没走到的抓取面（单个 feed 只覆盖该源的一部分
+#     发布口径，API changelog ≠ HF 权重发布）。判据按 attempts 里真实出现的最大
+#     layer_index 算，不看自报的 final_layer_index。详见 SKILL.md 日报步骤 1「成功」判定。
 #   - cadence: daily（可选）把该源钉在每日探查档，不参与命中率分层降频。
 #   - verify_before_use: true 表示该源 Layer 0 入口尚未被人工 verify 过，跑日报时
 #     首层若失败应直接落入 Layer 1+，不报警；近期需要做一次性人工巡检。
@@ -328,7 +331,7 @@ coding_agents_primary:
     fetch_chain:
       - type: webfetch
         url: https://docs.anthropic.com/en/release-notes/claude-code
-        surface_kind: feed
+        surface_kind: static
       - type: github_releases
         repo: anthropics/claude-code
       - type: websearch_scoped
@@ -525,6 +528,7 @@ general_agent_watchlist:
     category: general_agent_watchlist
     weight: high
     authority_tier: 2
+    cadence: daily
     fetch_chain:
       - type: webfetch
         url: https://news.ycombinator.com/
@@ -537,6 +541,7 @@ general_agent_watchlist:
     category: general_agent_watchlist
     weight: medium
     authority_tier: 2
+    cadence: daily
     fetch_chain:
       - type: webfetch
         url: https://github.com/trending?since=daily
@@ -597,6 +602,7 @@ general_agent_watchlist:
     category: general_agent_watchlist
     weight: low
     authority_tier: 2
+    cadence: daily
     fetch_chain:
       - type: webfetch
         url: https://www.producthunt.com/categories/artificial-intelligence

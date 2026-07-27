@@ -7,7 +7,7 @@
 - `skills/ai-daily-report/scripts/` 只负责确定性工作：渲染 HTML、归档、发送邮件。
 - 跑日报时，`whitelist.yaml` 是首轮覆盖起点，不是信息上限；若首轮明显偏稀薄，AI 应沿高信号实体追一跳相邻官方面补齐，但正文信息仍必须能回溯到 `fetch_status.source_details`。
 - 采集节奏（`discovery_manifest.json > cadence_plan`）是对"首轮起点"的运维收窄，不改变上面这条原则：脚本按命中率把长尾面降到隔日/每周，`due=true` 的面必须全跑；非 due 面仍可被 AI 因外部信号唤醒（attempt 里写 `wakeup_reason`）。cadence 只决定"今天探不探"，不参与正文取舍与排序。审计面由 manifest 全量留痕承担，不因降频变窄。
-- 面的空判定由 whitelist 逐层 `surface_kind`（`feed` / `static`）决定，不是每天现场按体感重判：`feed` 空即合法成功，`static` 空必须下穿。要改判某个面的类型就改 whitelist 标注（有机器门守恒），不要在当天口头放行。
+- 面的空判定由 whitelist 逐层 `surface_kind`（`feed` / `static`）决定，不是每天现场按体感重判：`feed` 空即合法成功，`static` 空必须下穿。`cn_labs` / `hard_data` 更严——feed 面空也要走完该链剩下的抓取面（hard_data 还需跑搜索层），且判据只认 `attempts` 留痕、不认自报的 `final_layer_index`。要改判某个面的类型就改 whitelist 标注（有机器门守恒），不要在当天口头放行。
 - 不要用固定厂商白名单、固定 Top N、固定分数阈值替代编辑判断；是否进正文、进 `unverified`、还是丢弃，应先形成候选池，再由 AI 结合窗口、证据强度、用户关注度与可执行性收口。
 - 高关注对象名单只用于提醒 AI 做补漏和补证，不构成固定优先级顺序，也不能替代编辑判断。是否排前、是否进入正文、谁更值得写，必须由 AI 基于事件强度、影响面、版本阶段、来源质量以及对团队后续动作的意义综合判断；不要因为某个对象本身更热门，就机械地压过同窗口内其他更重要或更实质的更新。
 - 对这类需要补证的高关注对象，若官方页弱、旧、或没有干净时间戳，但媒体稿或搜索结果已给出清楚事实链、明确日期，且至少一跳能回到官方面或官方产品页，允许进入正文前三节作为 `watch`；必须显式保留 `confidence=medium`、`via_broad_search=true` 或同等降档痕迹。

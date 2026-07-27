@@ -36,6 +36,9 @@ CADENCE_MIN_PROBED_DAYS = 10
 # 已降频的面按稀疏节奏探测，30 天里本就只有 4-5 次；用 daily 档的样本量要求会让档位震荡。
 CADENCE_MIN_SPARSE_PROBED_DAYS = 4
 CADENCE_MIN_LEDGER_AGE_DAYS = 14
+# due 面占比低于此值即认为 plan 不可信，覆盖校验回退 whitelist 全量（fail-closed）。
+# 豁免面（核心源/tier1/hard_data/聚合面）恒 due，健康状态下占比远高于这个下限。
+DUE_BASELINE_MIN_RATIO = 0.25
 CADENCE_DAILY_HIT_DAYS = 3
 DEFAULT_SOURCE_FAMILIES = {
     "official_release_surface": {
@@ -216,9 +219,10 @@ def _rank_cadence(series: list[tuple[date, bool]], target: date) -> str:
     if len(window) >= CADENCE_MIN_PROBED_DAYS:
         return "weekly"
     # 已降到 weekly 的面，30 天内本来就只探 4-5 次，用 daily 档的样本量要求会把它
-    # 弹回 daily、下次又降回来——档位来回震荡等于白降。观察期够长（≥ 窗口本身）时
-    # 改用稀疏节奏的样本量判据，让 weekly 稳得住。
-    if observed_days >= CADENCE_WINDOW_DAYS and len(window) >= CADENCE_MIN_SPARSE_PROBED_DAYS:
+    # 弹回 daily、下次又降回来——档位来回震荡等于白降。但"探得稀疏"也可能是管线
+    # 停摆造成的，那种稀疏不代表这个面不值得探：额外要求最近确实还在探。
+    fresh = window and (target - window[-1][0]).days <= CADENCE_INTERVALS["weekly"]
+    if observed_days >= CADENCE_WINDOW_DAYS and len(window) >= CADENCE_MIN_SPARSE_PROBED_DAYS and fresh:
         return "weekly"
     return "daily"
 
@@ -241,7 +245,10 @@ def compute_cadence(
     plan: dict[str, dict[str, Any]] = {}
     for name in required_discovery_names(whitelist):
         series = _ledger_series(stats, name, target)
-        last_probed = series[-1][0] if series else None
+        # last_probed 只看"往日"：当天的记录（同日重跑 init-daily 就会有）若算进来，
+        # 每个面都会变成"今天刚探过、不用再探"，due 集体塌掉。命中率统计仍用全序列。
+        previous = [day for day, _ in series if day < target]
+        last_probed = previous[-1] if previous else None
         if name in exempt:
             cadence = "daily"
         elif name in SLOW_TRACK_SURFACES:
@@ -562,8 +569,11 @@ def due_discovery_names(project_root: Path, target_date: str) -> list[str] | Non
     if not isinstance(plan, dict) or not plan:
         return None
     due = [name for name, slot in plan.items() if isinstance(slot, dict) and slot.get("due")]
-    # 一个 due 都没有说明 plan 本身不可信（坏台账、坏日期）——空基准会让覆盖校验对
-    # "一个源都没抓"的日报放行，这是 fail-open 的方向错误。回退 whitelist 全量。
+    # due 塌到远少于面总数说明 plan 本身不可信（坏台账、坏日期、同日重跑残留）。
+    # 窄基准会让覆盖校验对"只抓了两个源"的日报放行，是 fail-open 的方向错误——
+    # 宁可回退 whitelist 全量多报几条缺失，也不放行一份没采集的日报。
+    if len(due) < len(plan) * DUE_BASELINE_MIN_RATIO:
+        return None
     return due or None
 
 

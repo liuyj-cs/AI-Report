@@ -114,6 +114,15 @@ finalize-daily
 8. **AI HOT 窗口缺口接受**:API `window=24h` 从运行时刻倒推,对 27.5h 日报窗口存在约 3.5h 边缘缺口;相邻两日查询 + 跨日去重接续覆盖,不为此拉 `window=7d` 引入 7 天噪音(它是召回面,不是唯一面)。
 9. **interview/methodology 固定 every_2_days**(不参与命中率分档):慢信号轨道(准入窗 7/14 天),隔日探查零实质损失;固定档比按命中率浮动更可预期(intake 追问 2 用户已裁决允许隔日)。
 
+## 终审后追加的关键决策（2026-07-27，两轮 pre-close review 收敛）
+
+10. **feed 标注必须以实抓为准，不能按 URL 语义推**：首轮标注按 URL 语义判定，终审实抓发现 19 个标 feed 的面在无 JS 环境下渲染不出带日期的列表（MiniMax news / 机器之心 / InfoQ CN / TLDR / 2×YouTube / latent.space / therundown / no-priors / bigtechnology / dwarkesh / importai / microsoft source / deepmind blog / blog.google / github.blog changelog + 2 个 404 死链），复验又追加 Claude Code release-notes（core_source，实为 GitHub JS 壳）。全部改判 static。判据保持不变，变的是取证方式——**后续新增源必须实抓验证再标注**。403/429 的官方面不据此改判（curl 被拦不等于 AI 的 WebFetch 拿不到）。
+11. **cn_labs / hard_data 增加「链内穷尽」要求**（相对首版是收紧）：停在中间的 feed 层且空同样阻塞，必须走完链内全部抓取面。理由：单个 feed 面只覆盖该源的一部分发布口径——DeepSeek/智谱的 Layer-0 是 API changelog（覆盖接口变更，不覆盖权重发布），Kimi 的 Layer-0 是 HF 组织页（安静日常空，会让 kimi.com/blog 与 GitHub 面永不可达）。cn_labs 走完抓取面即可判空、不强制搜索层；hard_data 每源只有一个 static 抓取面，实际仍必须跑搜索层。
+12. **守门判据只认 attempts 留痕，不认自报 `final_layer_index`**：首版用自报字段判「是否走到链尾」，实测只抓 Layer-0 却自报 2 即可绕过全部保护（attempts 全空同样绕过）。改为取 attempts 中真实出现过的最大 `layer_index`，为空则 fail-closed。这条同时消除了镜像误报（实走到 L2 但字段未更新被误判阻塞）。
+13. **due 基准需要下限守卫**：`due` 为空回退全量还不够——同日重跑 `init-daily` 会让绝大多数面变成「今天已探过」，due 塌到个位数，覆盖校验就会对「只抓了两个源」的日报放行。双重修复：`last_probed` 只取严格早于 target 的日期（同日重跑不改变 due），且 due 占比低于 `DUE_BASELINE_MIN_RATIO`(0.25) 时回退全量。
+14. **AI HOT 分两层而不是一层**：`mode=selected` 实测只放行约 8% 条目（4 条 vs all 的 50 条），作为「召回对照面」过窄。改为 Layer-0 selected(static，空必须下穿) → Layer-1 all(feed)。另发现**静默空集陷阱**：非法参数（`limit>100`、`window=48h`、未知 `mode`）返回 HTTP 400 但 body 是 `{"items":[],"page":null}`，被 feed 层读成「空即权威」即静默漏采——判别信号是 `page` 为 null，已写入 SKILL.md 纪律。
+15. **weekly 档稳定性需要「探测新鲜度」条件**：只放宽样本量会让管线停摆期（本仓有过周报停摆 3 周的记录）的稀疏探测被误读成「按 weekly 节奏在探」。追加「窗口内最后一次探测距今 ≤7 天」才允许走稀疏判据。
+
 ## 风险与权衡
 
 - **误标 feed → 静默漏采**(最高风险):static 面被误标 feed 后空结果不再下穿。缓解:①标注判据单一明确(「每条带日期的倒序列表」);②dev 任务中逐条核对并抽查实页;③验收期 7 天盯 qa_diff `missed_discovery`(intake 追问 4 口径);④AI 在编辑自检中发现外部信号指向某 feed-空面时仍可唤醒下穿(advisory 自由保留)。
