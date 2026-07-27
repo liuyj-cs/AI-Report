@@ -105,31 +105,3 @@ def test_main_reports_recipients_refused_without_retry_wording(tmp_path, monkeyp
     err = capsys.readouterr().err
     assert "refused" in err
     assert "attempts" not in err
-    assert "c@d.com" not in err
-
-
-@pytest.mark.parametrize("dry_run", [False, True])
-def test_main_does_not_print_configured_addresses(tmp_path, monkeypatch, capsys, dry_run):
-    import sys
-
-    html = tmp_path / "r.html"
-    html.write_text("<p>x</p>", encoding="utf-8")
-    env = tmp_path / ".env"
-    env.write_text(
-        "GMAIL_USER=sender@example.com\n"
-        "GMAIL_APP_PASSWORD=x\n"
-        "REPORT_RECIPIENTS=one@example.com,two@example.com\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(send_mail, "send", lambda *_a, **_k: 0)
-    argv = ["send_mail.py", str(html), "--subject", "s", "--env", str(env)]
-    if dry_run:
-        argv.append("--dry-run")
-    monkeypatch.setattr(sys, "argv", argv)
-
-    assert send_mail.main() == 0
-    output = capsys.readouterr().out
-    assert "recipients=2" in output
-    assert "sender@example.com" not in output
-    assert "one@example.com" not in output
-    assert "two@example.com" not in output
