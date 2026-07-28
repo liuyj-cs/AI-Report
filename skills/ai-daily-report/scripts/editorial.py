@@ -14,6 +14,7 @@ from jsonschema import Draft202012Validator
 from discovery import (
     RECALL_PROBE_SURFACE_NAME,
     due_discovery_names,
+    trusted_cadence_plan,
     iter_named_sources,
     load_whitelist,
     missing_fetch_status_coverage,
@@ -167,14 +168,22 @@ def validate_source_closure(report: dict[str, Any], ledger: dict[str, Any]) -> l
     return errors
 
 
+def _due_names_from_plan(cadence_plan: dict[str, Any] | None) -> list[str] | None:
+    if not cadence_plan:
+        return None
+    return [name for name, slot in cadence_plan.items() if isinstance(slot, dict) and slot.get("due")]
+
+
 def validate_fetch_status_integrity(
     report: dict[str, Any],
     whitelist: dict[str, Any],
     due_names: list[str] | None = None,
+    cadence_plan: dict[str, Any] | None = None,
 ) -> list[str]:
     """覆盖校验:due_names 给出时以当日 due 面为基准,否则回退 whitelist 全量。
 
-    非 due 面缺席不报错(降频是计划内的);非 due 面出现是 AI 唤醒,照常接受。
+    非 due 面缺席不报错(降频是计划内的);非 due 面出现是 AI 唤醒,允许——但必须留下
+    `wakeup_reason`。否则"为什么越过调度计划"无从审计,唤醒就成了绕过调度的免费口子。
     """
     errors: list[str] = []
     fetch_status = report.get("fetch_status", {})
@@ -185,6 +194,18 @@ def validate_fetch_status_integrity(
         if missing_name in advisory_surfaces:
             continue
         errors.append(f"fetch_status.source_details missing {missing_name}")
+
+    if cadence_plan:
+        for name, detail in source_details.items():
+            slot = cadence_plan.get(name)
+            if not isinstance(slot, dict) or slot.get("due"):
+                continue
+            attempts = detail.get("attempts") or []
+            if not any(str(attempt.get("wakeup_reason") or "").strip() for attempt in attempts):
+                errors.append(
+                    f"fetch_status.source_details[{name}] 是当日非 due 面（cadence={slot.get('cadence')}），"
+                    f"提前探测必须在某次 attempt 上写 wakeup_reason 说明依据"
+                )
 
     for name, detail in source_details.items():
         if not isinstance(detail.get("final_layer_index"), int):
@@ -863,13 +884,18 @@ def validate_daily_artifacts(
     profile: dict[str, Any] | None = None,
 ) -> list[str]:
     errors: list[str] = []
-    due_names = (
-        due_discovery_names(project_root, str(report.get("date", "")))
+    cadence_plan = (
+        trusted_cadence_plan(project_root, str(report.get("date", "")), whitelist)
         if project_root is not None
         else None
     )
+    due_names = _due_names_from_plan(cadence_plan)
     errors.extend(validate_candidate_ledger_schema(ledger))
-    errors.extend(validate_fetch_status_integrity(report, whitelist, due_names=due_names))
+    errors.extend(
+        validate_fetch_status_integrity(
+            report, whitelist, due_names=due_names, cadence_plan=cadence_plan
+        )
+    )
     errors.extend(validate_source_attempt_refs(report, ledger))
     errors.extend(validate_candidate_ledger_semantics(ledger))
     errors.extend(validate_action_item_references(report))
@@ -1148,8 +1174,15 @@ def build_daily_qa_diff(
 ) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     source_details = report.get("fetch_status", {}).get("source_details", {})
+    # QA 与阻塞校验必须用同一份 due baseline，否则合法跳过的非 due 面会被报成 high
+    # missed_discovery，run.log 数字失真，还会诱导第二天补跑、抵消调度收益。
+    due_names = _due_names_from_plan(
+        trusted_cadence_plan(project_root, str(report.get("date", "")), whitelist)
+        if project_root is not None
+        else None
+    )
 
-    for name in missing_fetch_status_coverage(report, whitelist):
+    for name in missing_fetch_status_coverage(report, whitelist, due_names=due_names):
         findings.append(
             _make_finding(
                 "missed_discovery",

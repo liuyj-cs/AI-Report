@@ -4,18 +4,22 @@
 ## 新增需求
 
 ### 需求: 信源面命中统计台账
-`finalize-daily` 在制品校验通过后必须把当日各信源面的探测结果写入 `cache/source_stats.json`(结构:按日期 → 面名 → `{attempts, hit}`);`hit` 必须按「该面 ∈ `fetch_status.succeeded` 且 ∉ `fetch_status.empty`」确定性判定;写入必须按日期键幂等,且应当在写入时修剪超过 45 天的条目。dry-run 同样必须写入(统计对象是采集事实,不是投递结果)。
+`finalize-daily` 在制品校验通过后必须把当日各信源面的探测结果写入 `cache/source_stats.json`(结构:按日期 → 面名 → `{attempts, hit}`);`hit` 必须按「该面 ∈ `fetch_status.succeeded` 且 ∉ `fetch_status.empty`」确定性判定;写入必须按日期键幂等,且应当在写入时修剪超过 45 天的条目。整个 read→prune→update→write 必须在跨进程文件锁内完成,并以同目录临时文件 + 原子替换落盘(并发 finalize 不得丢日期,写入中断不得留下半个台账)。dry-run 同样必须写入(统计对象是采集事实,不是投递结果)。
 
 #### 场景: 重跑 finalize 不重复计数
 - **当** 同一日期的 `finalize-daily` 重复执行
 - **则** 该日期在台账中的条目被整体覆盖,不产生重复或累加
 
 #### 场景: 台账损坏不阻塞日报
-- **当** `source_stats.json` 无法解析
-- **则** 视为空台账继续运行,全部面回退每日探查,禁止因此阻塞 finalize
+- **当** `source_stats.json` 无法解析,或解析出的顶层/`days` 不是对象(如合法 JSON `[]`)
+- **则** 视为空台账继续运行,全部面回退每日探查,禁止因此抛异常或阻塞 finalize
+
+#### 场景: 局部损坏只丢损坏部分
+- **当** 台账某一天的 entry 或某个面的 record 结构非法
+- **则** 只丢弃该条,其余历史保留(不得为一条坏数据清空整个调度依据)
 
 ### 需求: 采集节奏分层调度
-`init-daily` 必须依据台账近 30 天数据为每个信源面计算 `cadence`(`daily` / `every_2_days` / `weekly`)与当日 `due`,写入 `discovery_manifest.json`(`required_sources[i].cadence/.due/.last_probed` 与顶层 `cadence_summary`),并在 run.log 记录 `CADENCE due=N skipped=M`。分档规则:近 30 天命中日数 ≥3 为 `daily`,1-2 为 `every_2_days`,0 且实探日 ≥10 且台账首见 ≥14 天为 `weekly`;统计不足的面必须回退 `daily`。以下豁免面必须恒为 `daily`:`core_sources` 成员、`authority_tier == 1` 的源、`category == hard_data` 的源、whitelist 标 `cadence: daily` pin 的源、以及聚合探针/搜索/source_family/tracking 面;其中 interview 与 methodology 两个发现面应当固定为 `every_2_days`。非 due 面允许 AI 因外部信号唤醒探测,唤醒的 attempts 应当记录 `wakeup_reason`;禁止把 cadence 用于正文取舍或排序判断。
+`init-daily` 必须依据台账近 30 天数据为每个信源面计算 `cadence`(`daily` / `every_2_days` / `weekly`)与当日 `due`,写入 `discovery_manifest.json`(`required_sources[i].cadence/.due/.last_probed` 与顶层 `cadence_summary`),并在 run.log 记录 `CADENCE due=N skipped=M`。分档规则:近 30 天命中日数 ≥3 为 `daily`,1-2 为 `every_2_days`,0 且实探日 ≥10 且台账首见 ≥14 天为 `weekly`;统计不足的面必须回退 `daily`。以下豁免面必须恒为 `daily`:`core_sources` 成员、`authority_tier == 1` 的源、`category == hard_data` 的源、whitelist 标 `cadence: daily` pin 的源、以及聚合探针/搜索/source_family/tracking 面;其中 interview 与 methodology 两个发现面应当固定为 `every_2_days`。非 due 面允许 AI 因外部信号唤醒探测,唤醒面必须在某次 attempt 上记录非空 `wakeup_reason`,缺失即 finalize 失败(唤醒本身合法,但越过调度计划的依据必须可审计);禁止把 cadence 用于正文取舍或排序判断。
 
 #### 场景: 长尾零命中面降为每周
 - **当** 某非豁免源近 30 天命中 0 次、实探日 ≥10、台账首见 ≥14 天,且距最近一次实探不足 7 天
@@ -26,11 +30,19 @@
 - **则** 该面 `cadence=daily`,不因零命中降频
 
 ### 需求: 覆盖校验以 due 面为基准
-`finalize-daily` 的 fetch_status 覆盖校验必须以当日 `discovery_manifest.json` 中 `due=true` 的面为基准:due 面缺席 `source_details` 必须报错;非 due 面缺席禁止报错;非 due 面出现(唤醒)必须被接受且不产生告警。当日 manifest 缺失或不含 cadence 字段时,应当回退 whitelist 全量基准(向后兼容)。
+`finalize-daily` 的 fetch_status 覆盖校验必须以当日 `discovery_manifest.json` 中 `due=true` 的面为基准:due 面缺席 `source_details` 必须报错;非 due 面缺席禁止报错;非 due 面出现(唤醒)必须被接受且不产生告警。当日 manifest 缺失、不含 cadence 字段、`date` 与目标日期不符、slot 结构非法、或 `cadence_plan` 未覆盖当前 whitelist 的全部 required 面时,必须回退 whitelist 全量基准——收窄覆盖基准的方向一律 fail-closed,残缺 plan 会让 finalize 用短名单做阻塞校验、放行漏采日报。QA diff 与阻塞校验必须共用同一份经完整性校验的 due 基准,否则合法跳过的非 due 面会被报成 `missed_discovery` 假阳性。
 
 #### 场景: 降频面缺席不报错
 - **当** 某面当日 `due=false` 且未出现在 `fetch_status.source_details`
-- **则** 覆盖校验通过,该缺席不进入错误清单
+- **则** 覆盖校验通过,该缺席不进入错误清单,且 QA diff 不产生 `missed_discovery` finding
+
+#### 场景: 残缺 plan 回退全量
+- **当** manifest 的 `cadence_plan` 未覆盖 whitelist 当前全部 required 面(如 init 之后新增了源)
+- **则** 该 plan 整体不被采信,覆盖校验回退 whitelist 全量基准
+
+#### 场景: 唤醒未留理由即阻塞
+- **当** 某 `due=false` 的面出现在 `source_details`,但没有任何 attempt 带非空 `wakeup_reason`
+- **则** finalize-daily 校验失败并点名该面
 
 ### 需求: fetch_chain 逐层 surface_kind 标注
 whitelist 中每个 `webfetch` 层必须标注 `surface_kind: feed | static`(`github_releases` 层缺省视为 feed;websearch 层不标注);未标注的 `webfetch` 层应当按 `static` 处理。空结果语义按层判定:final 层为 `feed` 时,窗口内空必须视为合法成功,禁止据此强制下穿;final 层为 `static` 时,`cn_labs` / `hard_data` 源必须下穿搜索层后才能判空,未下穿即 finalize 阻塞(阻塞范围禁止扩大到其他类别)。`cn_labs` / `hard_data` 另需满足**链内穷尽**:停在 `feed` 层且空时,只要该链里还有未触达的抓取面(`webfetch` / `github_releases`),同样必须继续下穿,否则 finalize 阻塞——单个 feed 面只覆盖该源的一部分发布口径(API changelog 不覆盖 HF 权重发布)。判定「走到哪一层」必须依据 `attempts[]` 中真实出现过的最大 `layer_index`,禁止采信自报的 `final_layer_index`。源级 `empty_is_conclusive` 字段退役,代码禁止再读取。测试必须强制全部 `webfetch` 层标注齐全。

@@ -51,7 +51,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - `discovery_manifest.json` 的 `cadence_plan` 给出每个面的 `cadence`（`daily` / `every_2_days` / `weekly`）与当日 `due`；`cadence_summary` 是当日 due / skipped 汇总，`init-daily` 同时在 run.log 写 `CADENCE due=N skipped=M`
      - 分档由脚本按 `cache/source_stats.json` 近 30 天命中率确定性计算（命中日 ≥3 → daily；1-2 → every_2_days；0 且实探 ≥10 日且台账首见 ≥14 天 → weekly；统计不足一律 daily）。**核心源、tier1 官方、hard_data、标了 `cadence: daily` 的源、以及各聚合探针/搜索面恒为 daily**；访谈与方法论两个发现面固定 every_2_days
      - **`due=true` 的面必须全部跑完**——这是当日首轮覆盖的基准，finalize 按它校验 `fetch_status` 覆盖（不是按 whitelist 全量）
-     - **非 due 面不是禁区**：若当日外部信号（媒体、探针、追踪事件）指向某个降频面，照常唤醒探测，并在该面的 attempt 里写 `wakeup_reason` 说明为何提前探。唤醒不会导致校验失败
+     - **非 due 面不是禁区，但唤醒要留理由**：若当日外部信号（媒体、探针、追踪事件）指向某个降频面，照常唤醒探测——**必须在该面某次 attempt 上写非空 `wakeup_reason` 说明依据，否则 `finalize-daily` 校验失败**。这不是拦你唤醒，是让"为什么越过调度计划"可审计；没有这条，唤醒就成了绕过调度的免费口子
      - cadence 只回答"今天探不探"，**不参与**正文取舍、排序或重要性判断；不要因为某个面是 daily 就默认它的内容更重要
      - 台账缺失/损坏 → 全部面回 daily（fail-open），日报照跑
 

@@ -11,34 +11,91 @@ run actually probed — so dry-run writes here too.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import date, timedelta
+import fcntl
 import json
+import os
 from pathlib import Path
+import tempfile
 from typing import Any
 
 STATS_RETENTION_DAYS = 45
+EMPTY_STATS: dict[str, Any] = {"version": "1.0", "days": {}}
 
 
 def source_stats_path(project_root: Path) -> Path:
     return project_root / "cache" / "source_stats.json"
 
 
+def _clean_record(record: Any) -> dict[str, Any] | None:
+    if not isinstance(record, dict):
+        return None
+    attempts = record.get("attempts")
+    return {
+        "attempts": attempts if isinstance(attempts, int) else 0,
+        "hit": bool(record.get("hit")),
+    }
+
+
 def load_source_stats(project_root: Path) -> dict[str, Any]:
-    """Read the ledger; a missing or corrupt file reads as empty (fail-open).
+    """Read the ledger; anything unreadable or malformed reads as empty (fail-open).
 
     An empty ledger means every surface falls back to daily probing, i.e. today's
-    behaviour — losing the ledger must never block a report.
+    behaviour — losing the ledger must never block a report. That contract covers
+    structural damage too, not just unparseable bytes: a legal JSON ``[]`` used to
+    raise ``AttributeError`` and take down every later ``init-daily``.
+
+    Damage is contained to the smallest unit that is actually broken: a bad day (or
+    a bad per-surface record) is dropped, the rest of the history survives — losing
+    30 days of scheduling data over one corrupt row would be its own outage.
     """
     path = source_stats_path(project_root)
     if not path.exists():
-        return {"version": "1.0", "days": {}}
+        return dict(EMPTY_STATS)
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {"version": "1.0", "days": {}}
-    if not isinstance(payload.get("days"), dict):
-        return {"version": "1.0", "days": {}}
-    return payload
+        return dict(EMPTY_STATS)
+    if not isinstance(payload, dict) or not isinstance(payload.get("days"), dict):
+        return dict(EMPTY_STATS)
+
+    days: dict[str, Any] = {}
+    for day, entry in payload["days"].items():
+        if not isinstance(day, str) or not isinstance(entry, dict):
+            continue
+        cleaned = {
+            name: record
+            for name, raw in entry.items()
+            if isinstance(name, str) and (record := _clean_record(raw)) is not None
+        }
+        days[day] = cleaned
+    return {"version": "1.0", "days": days}
+
+
+@contextmanager
+def _locked(path: Path):
+    """跨进程互斥整个 read→prune→update→write，避免并发 finalize 丢日期。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    with lock_path.open("w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def _write_atomic(path: Path, payload: dict[str, Any]) -> None:
+    """同目录临时文件 + os.replace：写到一半被打断也不会留下半个台账。"""
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=".source_stats-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        os.replace(tmp_name, path)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
 
 
 def _prune(days: dict[str, Any], today: str) -> dict[str, Any]:
@@ -74,14 +131,13 @@ def record_source_stats(report: dict[str, Any], project_root: Path, today: str) 
             "hit": name in succeeded and name not in empty,
         }
         for name, detail in source_details.items()
+        if isinstance(detail, dict)
     }
 
-    stats = load_source_stats(project_root)
-    days = _prune(dict(stats.get("days", {})), today)
-    days[today] = entry
-    payload = {"version": "1.0", "days": days}
-
     path = source_stats_path(project_root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    with _locked(path):
+        stats = load_source_stats(project_root)
+        days = _prune(dict(stats.get("days", {})), today)
+        days[today] = entry
+        _write_atomic(path, {"version": "1.0", "days": days})
     return len(entry)

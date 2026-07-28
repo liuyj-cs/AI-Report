@@ -553,10 +553,18 @@ def write_discovery_manifest(cache_dir: Path, manifest: dict[str, Any]) -> Path:
     return path
 
 
-def due_discovery_names(project_root: Path, target_date: str) -> list[str] | None:
-    """当日 manifest 里 due=true 的面;manifest 缺失/损坏/无 cadence 段时返回 None。
+def trusted_cadence_plan(
+    project_root: Path,
+    target_date: str,
+    whitelist: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """当日 manifest 的 cadence_plan;任何不可信迹象都返回 None。
 
-    None 让调用方回退 whitelist 全量基准——历史缓存与手工重跑照旧可用。
+    **收窄覆盖基准的方向必须 fail-closed**:一份残缺的 plan 会让 finalize 用短名单做
+    阻塞校验,把漏采日报放行,所以宁可回退全量多报几条缺失。传入 whitelist 时还会校验
+    plan 覆盖当前全部 required 面——init 之后 whitelist 增源、或 manifest 被部分覆盖,
+    都不能静默缩窄。QA 与阻塞校验必须共用本函数的结果,否则合法跳过的面会被 QA 报成
+    漏采,诱导第二天补跑、抵消调度收益。
     """
     path = project_root / "cache" / target_date / "discovery_manifest.json"
     if not path.exists():
@@ -565,16 +573,36 @@ def due_discovery_names(project_root: Path, target_date: str) -> list[str] | Non
         manifest = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
+    if not isinstance(manifest, dict):
+        return None
+    # manifest 自称的日期与被校验的日期不符 → 多半是复制来的旧文件,不可作基准
+    manifest_date = manifest.get("date")
+    if manifest_date is not None and manifest_date != target_date:
+        return None
     plan = manifest.get("cadence_plan")
     if not isinstance(plan, dict) or not plan:
         return None
-    due = [name for name, slot in plan.items() if isinstance(slot, dict) and slot.get("due")]
-    # due 塌到远少于面总数说明 plan 本身不可信（坏台账、坏日期、同日重跑残留）。
-    # 窄基准会让覆盖校验对"只抓了两个源"的日报放行，是 fail-open 的方向错误——
-    # 宁可回退 whitelist 全量多报几条缺失，也不放行一份没采集的日报。
-    if len(due) < len(plan) * DUE_BASELINE_MIN_RATIO:
+    if any(not isinstance(slot, dict) or "due" not in slot for slot in plan.values()):
         return None
-    return due or None
+    if whitelist is not None and not set(required_discovery_names(whitelist)) <= set(plan):
+        return None
+    due = [name for name, slot in plan.items() if slot.get("due")]
+    # due 塌到远少于面总数说明 plan 本身不可信(坏台账、坏日期、同日重跑残留)。
+    if not due or len(due) < len(plan) * DUE_BASELINE_MIN_RATIO:
+        return None
+    return plan
+
+
+def due_discovery_names(
+    project_root: Path,
+    target_date: str,
+    whitelist: dict[str, Any] | None = None,
+) -> list[str] | None:
+    """当日 due=true 的面名单;manifest 不可信时返回 None（调用方回退全量基准）。"""
+    plan = trusted_cadence_plan(project_root, target_date, whitelist)
+    if plan is None:
+        return None
+    return [name for name, slot in plan.items() if slot.get("due")]
 
 
 def missing_fetch_status_coverage(
