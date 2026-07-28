@@ -39,7 +39,7 @@
 - **则** 该面 `cadence=daily`,不因零命中降频
 
 ### 需求: 覆盖校验以 due 面为基准
-`finalize-daily` 的 fetch_status 覆盖校验必须以当日 `discovery_manifest.json` 中 `due=true` 的面为基准:due 面缺席 `source_details` 必须报错;非 due 面缺席禁止报错;非 due 面出现(唤醒)必须被接受且不产生告警。`cadence_plan` 的信任判据必须是**重算比对**:以当前 whitelist 与台账重新调用 `compute_cadence`,与 manifest 中存储的 plan 逐字段全等才可采信,任何偏离一律回退 whitelist 全量基准。禁止用逐字段规则(类型、语义自洽、固定 cadence 策略一致等)替代该比对——plan 是本流程自己的纯函数输出,「是否可信」等价于「是否等于该函数的输出」,逐字段规则只是对这个等价判断的近似,必然留下绕过路径。manifest 缺失、`date` 与目标日期不符、或未传 whitelist 无从重算时,同样必须回退全量基准——收窄覆盖基准的方向一律 fail-closed,残缺 plan 会让 finalize 用短名单做阻塞校验、放行漏采日报。QA diff 与阻塞校验必须共用同一份经完整性校验的 due 基准,否则合法跳过的非 due 面会被报成 `missed_discovery` 假阳性。
+`finalize-daily` 的 fetch_status 覆盖校验必须以当日 `discovery_manifest.json` 中 `due=true` 的面为基准:due 面缺席 `source_details` 必须报错;非 due 面缺席禁止报错;非 due 面出现(唤醒)必须被接受且不产生告警。`cadence_plan` 的信任判据必须是**重算比对**:以当前 whitelist 与台账重新调用 `compute_cadence`,与 manifest 中存储的 plan 逐字段全等才可采信,任何偏离一律回退 whitelist 全量基准。禁止用逐字段规则(类型、语义自洽、固定 cadence 策略一致等)替代该比对——plan 是本流程自己的纯函数输出,「是否可信」等价于「是否等于该函数的输出」,逐字段规则只是对这个等价判断的近似,必然留下绕过路径。manifest 缺失或 `date` 与目标日期不符时,同样必须回退全量基准。承载该判据的参数(whitelist、cadence plan)禁止设默认值——可省略即等于保留一条弱校验旁路,契约必须由函数签名强制;due 名单必须从 cadence plan 内部派生,不得作为独立参数传入——收窄覆盖基准的方向一律 fail-closed,残缺 plan 会让 finalize 用短名单做阻塞校验、放行漏采日报。QA diff 与阻塞校验必须共用同一份经完整性校验的 due 基准,否则合法跳过的非 due 面会被报成 `missed_discovery` 假阳性。
 
 #### 场景: 降频面缺席不报错
 - **当** 某面当日 `due=false` 且未出现在 `fetch_status.source_details`
@@ -58,6 +58,10 @@
   `last_probed: null` 却不 due、due 与间隔不符)、恒 daily 豁免面被改成 `weekly`、慢轨面被改成 `daily`、
   `last_probed` 与台账实际探测记录不符、多一个面或少一个面
 - **则** 该 plan 整体不被采信,回退 whitelist 全量基准
+
+#### 场景: 省略参数不得退回弱校验
+- **当** 调用方省略 whitelist 或 cadence plan
+- **则** 必须报错(参数无默认值),禁止静默走弱判据或跳过唤醒审计
 
 #### 场景: 真实产出必须能通过自己的校验
 - **当** plan 由 `compute_cadence` 在当前 whitelist 与台账上真实算出(含已降频的面)

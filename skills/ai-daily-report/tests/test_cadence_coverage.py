@@ -15,6 +15,22 @@ def _report(finalized_fetch_status, whitelist):
     return {"date": "2026-04-18", "fetch_status": finalized_fetch_status(whitelist)}
 
 
+def _plan_with_due(whitelist, due_names):
+    """构造一份「只有这些面 due」的 cadence_plan，用于直接测试 integrity 的基准行为。
+
+    这里不经过 trusted_cadence_plan，因此不受重算比对约束——被测的是 integrity 自身
+    如何消费一份给定的 plan，plan 的可信性由 authority 测试单独把关。
+    """
+    from discovery import required_discovery_names
+
+    return {
+        name: {"cadence": "daily" if name in due_names else "weekly",
+               "due": name in due_names,
+               "last_probed": None if name in due_names else "2026-04-15"}
+        for name in required_discovery_names(whitelist)
+    }
+
+
 def _drop_surface(report, name):
     payload = deepcopy(report)
     payload["fetch_status"]["source_details"].pop(name, None)
@@ -23,45 +39,30 @@ def _drop_surface(report, name):
     return payload
 
 
-def test_due_names_reads_manifest_cadence_plan(tmp_path):
-    cache_dir = tmp_path / "cache" / "2026-04-18"
-    cache_dir.mkdir(parents=True)
-    (cache_dir / "discovery_manifest.json").write_text(
-        json.dumps(
-            {
-                "date": "2026-04-18",
-                "cadence_plan": {
-                    "OpenAI": {"cadence": "daily", "due": True, "last_probed": None},
-                    LONGTAIL: {"cadence": "weekly", "due": False, "last_probed": "2026-04-17"},
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    assert due_discovery_names(tmp_path, "2026-04-18") == ["OpenAI"]
+# 「读取 manifest 的 due 名单」正向用例已移除：判据是重算比对，手工 plan 不再被接受；
+# 正向断言见 test_cadence_plan_authority.py::test_authentic_plan_is_accepted。
 
 
-def test_due_names_returns_none_when_manifest_missing(tmp_path):
-    assert due_discovery_names(tmp_path, "2026-04-18") is None
+def test_due_names_returns_none_when_manifest_missing(tmp_path, sample_whitelist):
+    assert due_discovery_names(tmp_path, "2026-04-18", sample_whitelist) is None
 
 
-def test_due_names_returns_none_for_legacy_manifest_without_cadence(tmp_path):
+def test_due_names_returns_none_for_legacy_manifest_without_cadence(tmp_path, sample_whitelist):
     cache_dir = tmp_path / "cache" / "2026-04-18"
     cache_dir.mkdir(parents=True)
     (cache_dir / "discovery_manifest.json").write_text(
         json.dumps({"version": "1.0", "required_sources": []}), encoding="utf-8"
     )
 
-    assert due_discovery_names(tmp_path, "2026-04-18") is None
+    assert due_discovery_names(tmp_path, "2026-04-18", sample_whitelist) is None
 
 
-def test_due_names_returns_none_for_corrupt_manifest(tmp_path):
+def test_due_names_returns_none_for_corrupt_manifest(tmp_path, sample_whitelist):
     cache_dir = tmp_path / "cache" / "2026-04-18"
     cache_dir.mkdir(parents=True)
     (cache_dir / "discovery_manifest.json").write_text("{not json", encoding="utf-8")
 
-    assert due_discovery_names(tmp_path, "2026-04-18") is None
+    assert due_discovery_names(tmp_path, "2026-04-18", sample_whitelist) is None
 
 
 def test_missing_coverage_defaults_to_full_whitelist(finalized_fetch_status):
@@ -92,11 +93,20 @@ def test_missing_coverage_still_reports_absent_due_surface(finalized_fetch_statu
 
 
 def test_awakened_non_due_surface_is_accepted(finalized_fetch_status):
-    """非 due 面被 AI 唤醒后出现在 source_details：接受，不报错也不告警。"""
+    """非 due 面被 AI 唤醒后出现在 source_details：接受，不报错也不告警。
+
+    唤醒本身合法——只要留下 wakeup_reason 说明依据（那是后来加的审计要求，
+    见 test_no_downgrade_bypass.py::test_wakeup_audit_cannot_be_silently_skipped）。
+    """
     whitelist = load_whitelist()
     report = _report(finalized_fetch_status, whitelist)
+    from discovery import required_discovery_names
 
-    errors = validate_fetch_status_integrity(report, whitelist, due_names=["OpenAI"])
+    all_names = required_discovery_names(whitelist)
+    plan = _plan_with_due(whitelist, [n for n in all_names if n != LONGTAIL])
+    report["fetch_status"]["source_details"][LONGTAIL]["attempts"][0]["wakeup_reason"] = "媒体信号指向该源当日有发布"
+
+    errors = validate_fetch_status_integrity(report, whitelist, plan)
 
     assert errors == []
 
@@ -105,7 +115,7 @@ def test_integrity_reports_missing_due_surface(finalized_fetch_status):
     whitelist = load_whitelist()
     report = _drop_surface(_report(finalized_fetch_status, whitelist), LONGTAIL)
 
-    errors = validate_fetch_status_integrity(report, whitelist, due_names=["OpenAI", LONGTAIL])
+    errors = validate_fetch_status_integrity(report, whitelist, _plan_with_due(whitelist, ["OpenAI", LONGTAIL]))
 
     assert any(LONGTAIL in error for error in errors)
 
@@ -114,7 +124,7 @@ def test_integrity_skips_missing_non_due_surface(finalized_fetch_status):
     whitelist = load_whitelist()
     report = _drop_surface(_report(finalized_fetch_status, whitelist), LONGTAIL)
 
-    errors = validate_fetch_status_integrity(report, whitelist, due_names=["OpenAI"])
+    errors = validate_fetch_status_integrity(report, whitelist, _plan_with_due(whitelist, ["OpenAI"]))
 
     assert not any(LONGTAIL in error for error in errors)
 

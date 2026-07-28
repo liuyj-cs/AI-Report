@@ -109,13 +109,7 @@ def test_complete_plan_is_used(tmp_path, sample_whitelist):
     assert "OpenAI" in due
 
 
-def test_whitelist_omitted_keeps_backward_compatible_behaviour(tmp_path, sample_whitelist):
-    """不传 whitelist 时维持旧行为（只做比例守卫），不破坏既有调用方。"""
-    _write_manifest(tmp_path, {"date": DATE, "cadence_plan": _full_plan(sample_whitelist)})
-
-    assert due_discovery_names(tmp_path, DATE) is not None
-
-
+# 「省略 whitelist 仍可用」的用例已删除，理由同上：那是旁路，不是契约。
 # --- P1-2: 台账结构损坏必须 fail-open --------------------------------------
 
 
@@ -259,9 +253,7 @@ def test_awakened_surface_without_reason_is_rejected(finalized_fetch_status):
     plan = _full_plan(whitelist)
     plan[cold] = {"cadence": "weekly", "due": False, "last_probed": "2026-07-25"}
 
-    errors = validate_fetch_status_integrity(
-        {"fetch_status": fs}, whitelist, due_names=[n for n in plan if plan[n]["due"]], cadence_plan=plan
-    )
+    errors = validate_fetch_status_integrity({"fetch_status": fs}, whitelist, plan)
 
     assert any(cold in error and "wakeup_reason" in error for error in errors)
 
@@ -274,9 +266,7 @@ def test_awakened_surface_with_reason_passes(finalized_fetch_status):
     plan = _full_plan(whitelist)
     plan[cold] = {"cadence": "weekly", "due": False, "last_probed": "2026-07-25"}
 
-    errors = validate_fetch_status_integrity(
-        {"fetch_status": fs}, whitelist, due_names=[n for n in plan if plan[n]["due"]], cadence_plan=plan
-    )
+    errors = validate_fetch_status_integrity({"fetch_status": fs}, whitelist, plan)
 
     assert not any(cold in error for error in errors)
 
@@ -286,8 +276,6 @@ def test_due_surface_never_needs_wakeup_reason(finalized_fetch_status):
     fs = finalized_fetch_status(whitelist)
     plan = _full_plan(whitelist)
 
-    errors = validate_fetch_status_integrity(
-        {"fetch_status": fs}, whitelist, due_names=list(plan), cadence_plan=plan
-    )
+    errors = validate_fetch_status_integrity({"fetch_status": fs}, whitelist, plan)
 
     assert not any("wakeup_reason" in error for error in errors)

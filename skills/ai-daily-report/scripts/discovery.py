@@ -36,9 +36,6 @@ CADENCE_MIN_PROBED_DAYS = 10
 # 已降频的面按稀疏节奏探测，30 天里本就只有 4-5 次；用 daily 档的样本量要求会让档位震荡。
 CADENCE_MIN_SPARSE_PROBED_DAYS = 4
 CADENCE_MIN_LEDGER_AGE_DAYS = 14
-# due 面占比低于此值即认为 plan 不可信，覆盖校验回退 whitelist 全量（fail-closed）。
-# 豁免面（核心源/tier1/hard_data/聚合面）恒 due，健康状态下占比远高于这个下限。
-DUE_BASELINE_MIN_RATIO = 0.25
 CADENCE_DAILY_HIT_DAYS = 3
 DEFAULT_SOURCE_FAMILIES = {
     "official_release_surface": {
@@ -561,45 +558,10 @@ def write_discovery_manifest(cache_dir: Path, manifest: dict[str, Any]) -> Path:
     return path
 
 
-def _valid_cadence_slot(slot: Any, target: date) -> bool:
-    """slot 必须类型合法**且语义可能**——manifest 是我们自己算出来的,直接验算一遍。
-
-    只查类型不够:`{"cadence":"daily","due":false,"last_probed":null}` 每个字段都合规,
-    却与 compute_cadence 的语义直接矛盾(daily 面间隔 1 天、last_probed 最早也只能是
-    昨天,不可能不到期;从没探过的面更不可能不到期)。这种 slot 只能来自伪造或损坏,
-    放行就等于让一份"看起来正常"的窄 due 名单去做阻塞校验。
-
-    把 due 重新推导一遍再比对,一条不变量覆盖全部组合:daily 恒 due、last_probed 为空
-    恒 due、其余按间隔算——都是这个等式的特例。
-    """
-    if not isinstance(slot, dict):
-        return False
-    cadence = slot.get("cadence")
-    if cadence not in CADENCE_INTERVALS:
-        return False
-    due = slot.get("due")
-    if type(due) is not bool:
-        return False
-
-    last_probed = slot.get("last_probed")
-    if last_probed is None:
-        return due is True
-    if not isinstance(last_probed, str):
-        return False
-    try:
-        probed = date.fromisoformat(last_probed)
-    except ValueError:
-        return False
-    # last_probed 是"往日":compute_cadence 只取严格早于 target 的记录,当日或未来都是坏数据
-    if probed >= target:
-        return False
-    return due is ((target - probed).days >= CADENCE_INTERVALS[cadence])
-
-
 def trusted_cadence_plan(
     project_root: Path,
     target_date: str,
-    whitelist: dict[str, Any] | None = None,
+    whitelist: dict[str, Any],
 ) -> dict[str, Any] | None:
     """当日 manifest 的 cadence_plan;任何不可信迹象都返回 None。
 
@@ -610,7 +572,8 @@ def trusted_cadence_plan(
     留缝:PR #5 的四轮 review 在同一个函数上找到 5 个绕过,每个都是上一版规则没覆盖到
     的那一小块。改判据本身,这条路才收敛。
 
-    传 whitelist 才能重算;不传时退回结构与比例守卫(向后兼容,调用方自负)。
+    `whitelist` 是必需参数,没有"省略它就走弱校验"的旁路——那条旁路等于把契约强度交给
+    调用点,而 review 已经证明弱判据不完备。契约必须由签名强制。
 
     **收窄覆盖基准的方向必须 fail-closed**:比对不符只意味着"这份 plan 不是我算的"
     (whitelist 变了、manifest 被改、台账被动过),此时回退 whitelist 全量多报几条缺失,
@@ -639,28 +602,16 @@ def trusted_cadence_plan(
     except ValueError:
         return None
 
-    if whitelist is not None:
-        # 完备判据：重算一次，逐字段全等才采信。任何偏离——类型、语义、固定 cadence
-        # 策略、伪造的 last_probed、多一个面少一个面——都在这一次比较里被拒。
-        expected = compute_cadence(whitelist, load_source_stats(project_root), target_date)
-        return expected if plan == expected else None
-
-    # 未传 whitelist：无从重算，退回结构与比例守卫（弱判据，仅为向后兼容保留）
-    if not all(_valid_cadence_slot(slot, target) for slot in plan.values()):
-        return None
-    due = [name for name, slot in plan.items() if slot["due"]]
-    # 兜底:结构全合法但 due 仍塌到远少于面总数(坏台账、同日重跑残留)。这只是最后
-    # 一道网,不能替代上面的类型校验——`due: null` 会被 truthiness 读成"不用探",
-    # 精心构造的比例甚至能擦过这道阈值。
-    if not due or len(due) < len(plan) * DUE_BASELINE_MIN_RATIO:
-        return None
-    return plan
+    # 完备判据：重算一次，逐字段全等才采信。任何偏离——类型、语义、固定 cadence
+    # 策略、伪造的 last_probed、多一个面少一个面——都在这一次比较里被拒。
+    expected = compute_cadence(whitelist, load_source_stats(project_root), target_date)
+    return expected if plan == expected else None
 
 
 def due_discovery_names(
     project_root: Path,
     target_date: str,
-    whitelist: dict[str, Any] | None = None,
+    whitelist: dict[str, Any],
 ) -> list[str] | None:
     """当日 due=true 的面名单;manifest 不可信时返回 None（调用方回退全量基准）。"""
     plan = trusted_cadence_plan(project_root, target_date, whitelist)

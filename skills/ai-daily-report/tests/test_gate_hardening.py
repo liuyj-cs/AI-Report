@@ -71,34 +71,9 @@ def test_same_day_reinit_does_not_shrink_due_baseline(sample_whitelist):
 # test_cadence_plan_authority.py::test_same_day_record_does_not_affect_ranking。
 
 
-def test_narrow_due_list_falls_back_to_full_baseline(tmp_path):
-    """due 塌到远少于豁免面数量 → plan 不可信，回退全量。"""
-    cache_dir = tmp_path / "cache" / TARGET
-    cache_dir.mkdir(parents=True)
-    plan = {f"surface-{i}": {"cadence": "weekly", "due": False, "last_probed": None} for i in range(73)}
-    plan["OpenAI"] = {"cadence": "daily", "due": True, "last_probed": None}
-    plan["Anthropic"] = {"cadence": "daily", "due": True, "last_probed": None}
-    (cache_dir / "discovery_manifest.json").write_text(
-        json.dumps({"date": TARGET, "cadence_plan": plan}), encoding="utf-8"
-    )
-
-    assert due_discovery_names(tmp_path, TARGET) is None
-
-
-def test_healthy_due_list_is_used(tmp_path):
-    cache_dir = tmp_path / "cache" / TARGET
-    cache_dir.mkdir(parents=True)
-    plan = {f"surface-{i}": {"cadence": "daily", "due": True, "last_probed": None} for i in range(60)}
-    plan["cold"] = {"cadence": "weekly", "due": False, "last_probed": "2026-07-24"}
-    (cache_dir / "discovery_manifest.json").write_text(
-        json.dumps({"date": TARGET, "cadence_plan": plan}), encoding="utf-8"
-    )
-
-    due = due_discovery_names(tmp_path, TARGET)
-
-    assert due is not None
-    assert "cold" not in due
-    assert len(due) == 60
+# 「比例守卫」相关的两个用例已删除：该守卫是弱判据的一部分，已随之移除。
+# 窄/健康 due 名单的判定现在由重算比对天然覆盖——不等于重算结果就回退全量，
+# 断言见 test_cadence_plan_authority.py。
 
 
 def test_sparse_rule_does_not_demote_after_pipeline_outage(sample_whitelist):

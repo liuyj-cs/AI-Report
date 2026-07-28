@@ -46,18 +46,7 @@ def test_future_entries_do_not_count_as_probes(sample_whitelist):
     assert plan[LONGTAIL]["cadence"] == "weekly"
 
 
-def test_empty_due_list_falls_back_to_full_baseline(tmp_path):
-    """cadence_plan 存在但一个 due 都没有 → 视为不可信，回退 whitelist 全量。"""
-    cache_dir = tmp_path / "cache" / TARGET
-    cache_dir.mkdir(parents=True)
-    (cache_dir / "discovery_manifest.json").write_text(
-        json.dumps(
-            {"cadence_plan": {"OpenAI": {"cadence": "daily", "due": False, "last_probed": None}}}
-        ),
-        encoding="utf-8",
-    )
-
-    assert due_discovery_names(tmp_path, TARGET) is None
+# 「空 due 名单回退」用例已删除：同属比例守卫，已由重算比对覆盖。
 
 
 def test_invalid_target_date_raises_clear_error(sample_whitelist):

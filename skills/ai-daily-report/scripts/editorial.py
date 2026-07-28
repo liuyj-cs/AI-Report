@@ -177,18 +177,22 @@ def _due_names_from_plan(cadence_plan: dict[str, Any] | None) -> list[str] | Non
 def validate_fetch_status_integrity(
     report: dict[str, Any],
     whitelist: dict[str, Any],
-    due_names: list[str] | None = None,
-    cadence_plan: dict[str, Any] | None = None,
+    cadence_plan: dict[str, Any] | None,
 ) -> list[str]:
-    """覆盖校验:due_names 给出时以当日 due 面为基准,否则回退 whitelist 全量。
+    """覆盖校验:cadence_plan 非空时以当日 due 面为基准,为 None 时回退 whitelist 全量。
 
     非 due 面缺席不报错(降频是计划内的);非 due 面出现是 AI 唤醒,允许——但必须留下
     `wakeup_reason`。否则"为什么越过调度计划"无从审计,唤醒就成了绕过调度的免费口子。
+
+    `cadence_plan` 是必需参数(可显式传 None 表示"没有可信 plan",但不能省略):它同时
+    决定覆盖基准与唤醒审计,给它默认值就等于让调用方能静默关掉唤醒审计。due 名单在
+    内部从 plan 推导,不单独传——同一事实两个来源,迟早会不一致。
     """
     errors: list[str] = []
     fetch_status = report.get("fetch_status", {})
     source_details = fetch_status.get("source_details", {})
     advisory_surfaces = set(required_source_family_names(whitelist))
+    due_names = _due_names_from_plan(cadence_plan)
 
     for missing_name in missing_fetch_status_coverage(report, whitelist, due_names=due_names):
         if missing_name in advisory_surfaces:
@@ -889,13 +893,8 @@ def validate_daily_artifacts(
         if project_root is not None
         else None
     )
-    due_names = _due_names_from_plan(cadence_plan)
     errors.extend(validate_candidate_ledger_schema(ledger))
-    errors.extend(
-        validate_fetch_status_integrity(
-            report, whitelist, due_names=due_names, cadence_plan=cadence_plan
-        )
-    )
+    errors.extend(validate_fetch_status_integrity(report, whitelist, cadence_plan))
     errors.extend(validate_source_attempt_refs(report, ledger))
     errors.extend(validate_candidate_ledger_semantics(ledger))
     errors.extend(validate_action_item_references(report))

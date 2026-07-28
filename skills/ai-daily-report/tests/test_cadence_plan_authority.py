@@ -205,12 +205,7 @@ def test_same_day_record_does_not_affect_ranking(tmp_path, sample_whitelist):
     assert before == after
 
 
-# --- 向后兼容：不传 whitelist 时不做重算 ------------------------------------
-
-
-def test_without_whitelist_falls_back_to_structural_checks(tmp_path, sample_whitelist):
-    """既有调用方不传 whitelist 时仍可用（只做结构与比例守卫，不重算）。"""
-    _seed_stats(tmp_path)
-    _write_plan(tmp_path, _authentic(tmp_path, sample_whitelist))
-
-    assert trusted_cadence_plan(tmp_path, DATE) is not None
+# 原「不传 whitelist 时走弱判据」的用例已删除：它把一条不安全的兼容行为固化成了契约。
+# 那条兼容分支是为一个不存在的约束做的妥协——仓内两个生产调用都传了 whitelist，而这个
+# PR 尚未合并，根本没有"既有调用方"。whitelist 现为必需参数，省略即 TypeError，
+# 断言见 test_no_downgrade_bypass.py。
