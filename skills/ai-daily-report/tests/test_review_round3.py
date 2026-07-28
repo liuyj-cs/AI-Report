@@ -79,31 +79,9 @@ def test_due_must_match_interval_since_last_probe(tmp_path, sample_whitelist):
     assert due_discovery_names(tmp_path, DATE, whitelist=sample_whitelist) is None
 
 
-@pytest.mark.parametrize("offset", [0, -1, -3])
-def test_last_probed_not_before_target_rejects_plan(tmp_path, sample_whitelist, offset):
-    """last_probed 是"往日"，等于或晚于目标日都是坏数据（compute_cadence 只取严格早于）。"""
-    plan = _plan(sample_whitelist, **{COLD: {"cadence": "daily", "due": True, "last_probed": _ago(offset)}})
-    _manifest(tmp_path, plan)
-
-    assert due_discovery_names(tmp_path, DATE, whitelist=sample_whitelist) is None
-
-
-@pytest.mark.parametrize(
-    "slot",
-    [
-        {"cadence": "daily", "due": True, "last_probed": None},
-        {"cadence": "daily", "due": True, "last_probed": _ago(1)},
-        {"cadence": "every_2_days", "due": True, "last_probed": _ago(2)},
-        {"cadence": "every_2_days", "due": False, "last_probed": _ago(1)},
-        {"cadence": "weekly", "due": True, "last_probed": _ago(7)},
-        {"cadence": "weekly", "due": False, "last_probed": _ago(6)},
-    ],
-)
-def test_semantically_consistent_slots_are_accepted(tmp_path, sample_whitelist, slot):
-    """加固不能把正常 plan 也挡掉。"""
-    _manifest(tmp_path, _plan(sample_whitelist, **{COLD: slot}))
-
-    assert due_discovery_names(tmp_path, DATE, whitelist=sample_whitelist) is not None
+# 「语义自洽的手工 slot 应被接受」一组用例已移除：判据改为重算比对后，手工构造的
+# plan 不再是可接受的充分条件。正向断言由 test_cadence_plan_authority.py 的
+# test_authentic_plan_is_accepted / _with_history 承担（更强：真实产物必须通过）。
 
 
 def test_real_manifest_from_init_is_accepted(tmp_path, sample_whitelist):

@@ -65,18 +65,10 @@ def test_same_day_reinit_does_not_shrink_due_baseline(sample_whitelist):
     assert plan["Aider"]["due"] is True
 
 
-def test_today_entry_still_counts_for_hit_ranking(sample_whitelist):
-    """当天的记录仍参与命中率统计——只是不当作"上次探测时间"。"""
-    target = date.fromisoformat(TARGET)
-    days = {
-        (target - timedelta(days=offset)).isoformat(): {"Aider": {"attempts": 1, "hit": False}}
-        for offset in range(1, 21)
-    }
-    days[TARGET] = {"Aider": {"attempts": 1, "hit": True}}
-
-    plan = compute_cadence(sample_whitelist, days and {"version": "1.0", "days": days}, TARGET)
-
-    assert plan["Aider"]["cadence"] == "every_2_days"  # 当天那次命中把它从 weekly 拉回
+# test_today_entry_still_counts_for_hit_ranking 已删除：它断言当天记录参与命中率
+# 统计，而那个设计会让 init 与 finalize 重算结果不一致（重跑 finalize 自我否定），
+# 语义上也是用今天探的结果决定今天该不该探。相反的断言见
+# test_cadence_plan_authority.py::test_same_day_record_does_not_affect_ranking。
 
 
 def test_narrow_due_list_falls_back_to_full_baseline(tmp_path):

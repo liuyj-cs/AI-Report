@@ -28,7 +28,7 @@
   该面因统计不足回 `daily`
 
 ### 需求: 采集节奏分层调度
-`init-daily` 必须依据台账近 30 天数据为每个信源面计算 `cadence`(`daily` / `every_2_days` / `weekly`)与当日 `due`,写入 `discovery_manifest.json`(`required_sources[i].cadence/.due/.last_probed` 与顶层 `cadence_summary`),并在 run.log 记录 `CADENCE due=N skipped=M`。分档规则:近 30 天命中日数 ≥3 为 `daily`,1-2 为 `every_2_days`,0 且实探日 ≥10 且台账首见 ≥14 天为 `weekly`;统计不足的面必须回退 `daily`。**实探日只计 `attempts > 0` 的记录**——`attempts: 0` 表示当天记了一笔但没真去探(面被跳过),它是合法审计留痕,但禁止计入实探日、禁止作为 `last_probed`、也禁止计入 `source-stats` 的 `probed_days` 汇总。以下豁免面必须恒为 `daily`:`core_sources` 成员、`authority_tier == 1` 的源、`category == hard_data` 的源、whitelist 标 `cadence: daily` pin 的源、以及聚合探针/搜索/source_family/tracking 面;其中 interview 与 methodology 两个发现面应当固定为 `every_2_days`。非 due 面允许 AI 因外部信号唤醒探测,唤醒面必须在某次 attempt 上记录非空 `wakeup_reason`,缺失即 finalize 失败(唤醒本身合法,但越过调度计划的依据必须可审计);禁止把 cadence 用于正文取舍或排序判断。
+`init-daily` 必须依据台账近 30 天数据为每个信源面计算 `cadence`(`daily` / `every_2_days` / `weekly`)与当日 `due`,写入 `discovery_manifest.json`(`required_sources[i].cadence/.due/.last_probed` 与顶层 `cadence_summary`),并在 run.log 记录 `CADENCE due=N skipped=M`。分档规则:近 30 天命中日数 ≥3 为 `daily`,1-2 为 `every_2_days`,0 且实探日 ≥10 且台账首见 ≥14 天为 `weekly`;统计不足的面必须回退 `daily`。分档与 `last_probed` 只依据**严格早于目标日期**的记录(当天记录不得参与,否则 `init` 与 `finalize` 的重算结果会不一致、重跑 finalize 自我否定,语义上也是用当天采集结果决定当天是否采集)。**实探日只计 `attempts > 0` 的记录**——`attempts: 0` 表示当天记了一笔但没真去探(面被跳过),它是合法审计留痕,但禁止计入实探日、禁止作为 `last_probed`、也禁止计入 `source-stats` 的 `probed_days` 汇总。以下豁免面必须恒为 `daily`:`core_sources` 成员、`authority_tier == 1` 的源、`category == hard_data` 的源、whitelist 标 `cadence: daily` pin 的源、以及聚合探针/搜索/source_family/tracking 面;其中 interview 与 methodology 两个发现面应当固定为 `every_2_days`。非 due 面允许 AI 因外部信号唤醒探测,唤醒面必须在某次 attempt 上记录非空 `wakeup_reason`,缺失即 finalize 失败(唤醒本身合法,但越过调度计划的依据必须可审计);禁止把 cadence 用于正文取舍或排序判断。
 
 #### 场景: 长尾零命中面降为每周
 - **当** 某非豁免源近 30 天命中 0 次、实探日 ≥10、台账首见 ≥14 天,且距最近一次实探不足 7 天
@@ -39,7 +39,7 @@
 - **则** 该面 `cadence=daily`,不因零命中降频
 
 ### 需求: 覆盖校验以 due 面为基准
-`finalize-daily` 的 fetch_status 覆盖校验必须以当日 `discovery_manifest.json` 中 `due=true` 的面为基准:due 面缺席 `source_details` 必须报错;非 due 面缺席禁止报错;非 due 面出现(唤醒)必须被接受且不产生告警。当日 manifest 缺失、不含 cadence 字段、`date` 缺失或与目标日期不符、任一 slot 字段类型非法(`cadence` 不在合法枚举内、`due` 不是布尔、`last_probed` 既非 null 也非合法日期字符串)、任一 slot 语义不可能(`due` 与「按 `cadence` 间隔和 `last_probed` 重新推导出的到期状态」不一致、`last_probed` 不早于目标日期)、或 `cadence_plan` 未覆盖当前 whitelist 的全部 required 面时,必须回退 whitelist 全量基准——收窄覆盖基准的方向一律 fail-closed,残缺 plan 会让 finalize 用短名单做阻塞校验、放行漏采日报。QA diff 与阻塞校验必须共用同一份经完整性校验的 due 基准,否则合法跳过的非 due 面会被报成 `missed_discovery` 假阳性。
+`finalize-daily` 的 fetch_status 覆盖校验必须以当日 `discovery_manifest.json` 中 `due=true` 的面为基准:due 面缺席 `source_details` 必须报错;非 due 面缺席禁止报错;非 due 面出现(唤醒)必须被接受且不产生告警。`cadence_plan` 的信任判据必须是**重算比对**:以当前 whitelist 与台账重新调用 `compute_cadence`,与 manifest 中存储的 plan 逐字段全等才可采信,任何偏离一律回退 whitelist 全量基准。禁止用逐字段规则(类型、语义自洽、固定 cadence 策略一致等)替代该比对——plan 是本流程自己的纯函数输出,「是否可信」等价于「是否等于该函数的输出」,逐字段规则只是对这个等价判断的近似,必然留下绕过路径。manifest 缺失、`date` 与目标日期不符、或未传 whitelist 无从重算时,同样必须回退全量基准——收窄覆盖基准的方向一律 fail-closed,残缺 plan 会让 finalize 用短名单做阻塞校验、放行漏采日报。QA diff 与阻塞校验必须共用同一份经完整性校验的 due 基准,否则合法跳过的非 due 面会被报成 `missed_discovery` 假阳性。
 
 #### 场景: 降频面缺席不报错
 - **当** 某面当日 `due=false` 且未出现在 `fetch_status.source_details`
@@ -53,10 +53,15 @@
 - **当** 任一 slot 的 `due` 是 `null` / `0` / `"false"` 等非布尔值(即使 due 面占比恰好越过兜底阈值)
 - **则** 该 plan 整体不被采信,回退 whitelist 全量基准
 
-#### 场景: 类型合法但语义不可能的 slot 同样拒绝
-- **当** 任一 slot 出现语义矛盾——`cadence: daily` 却 `due: false`、`last_probed: null` 却 `due: false`、
-  `due` 与按间隔推导的结果不符、或 `last_probed` 等于/晚于目标日期
-- **则** 该 plan 整体不被采信,回退 whitelist 全量基准(manifest 由本流程自己生成,必须能被重新验算)
+#### 场景: 任何偏离重算结果的 plan 都被拒绝
+- **当** manifest 中的 plan 与重算结果存在任何差异——字段类型非法、语义矛盾(`daily` 却不 due、
+  `last_probed: null` 却不 due、due 与间隔不符)、恒 daily 豁免面被改成 `weekly`、慢轨面被改成 `daily`、
+  `last_probed` 与台账实际探测记录不符、多一个面或少一个面
+- **则** 该 plan 整体不被采信,回退 whitelist 全量基准
+
+#### 场景: 真实产出必须能通过自己的校验
+- **当** plan 由 `compute_cadence` 在当前 whitelist 与台账上真实算出(含已降频的面)
+- **则** 必须被采信,且降频面不出现在 due 名单中
 
 #### 场景: 唤醒未留理由即阻塞
 - **当** 某 `due=false` 的面出现在 `source_details`,但没有任何 attempt 带非空 `wakeup_reason`

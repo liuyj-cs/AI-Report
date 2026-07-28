@@ -23,6 +23,34 @@ def _write_manifest(tmp_path, payload):
     )
 
 
+COLD_SURFACE = "Aider"
+
+
+def _seed_downgraded_surface(tmp_path, name=COLD_SURFACE):
+    """给某个面播足够的真实零命中历史，让 compute_cadence 真的把它降到 weekly。"""
+    from datetime import date, timedelta
+
+    from source_stats import source_stats_path
+
+    target = date.fromisoformat(DATE)
+    days = {
+        (target - timedelta(days=offset)).isoformat(): {name: {"attempts": 2, "hit": False}}
+        for offset in range(1, 21)
+    }
+    days[(target - timedelta(days=40)).isoformat()] = {name: {"attempts": 2, "hit": False}}
+    path = source_stats_path(tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"version": "1.0", "days": days}, ensure_ascii=False), encoding="utf-8")
+    return name
+
+
+def _authentic_plan(tmp_path, whitelist):
+    from discovery import compute_cadence
+    from source_stats import load_source_stats
+
+    return compute_cadence(whitelist, load_source_stats(tmp_path), DATE)
+
+
 def _full_plan(whitelist, due=True):
     return {
         name: {"cadence": "daily", "due": due, "last_probed": None}
@@ -64,9 +92,14 @@ def test_malformed_slot_falls_back(tmp_path, sample_whitelist):
 
 
 def test_complete_plan_is_used(tmp_path, sample_whitelist):
-    plan = _full_plan(sample_whitelist)
-    cold = "Aider"
-    plan[cold] = {"cadence": "weekly", "due": False, "last_probed": "2026-07-25"}
+    """真实产出的 plan 被采信，其中降频面不进 due 名单。
+
+    plan 由 compute_cadence 真实算出而非手工拼装——判据是重算比对，手工 plan 不再
+    是"可接受"的充分条件（见 test_cadence_plan_authority.py）。
+    """
+    cold = _seed_downgraded_surface(tmp_path)
+    plan = _authentic_plan(tmp_path, sample_whitelist)
+    assert plan[cold]["due"] is False  # 前置：这份 plan 里确实有降频面
     _write_manifest(tmp_path, {"date": DATE, "cadence_plan": plan})
 
     due = due_discovery_names(tmp_path, DATE, whitelist=sample_whitelist)
@@ -183,13 +216,13 @@ def test_concurrent_writers_do_not_lose_days(tmp_path):
 def test_qa_diff_does_not_flag_legitimately_skipped_surface(tmp_path, finalized_fetch_status):
     whitelist = load_whitelist()
     fs = finalized_fetch_status(whitelist)
-    cold = "Aider"
+    cold = _seed_downgraded_surface(tmp_path)
     fs["source_details"].pop(cold)
     fs["succeeded"] = [n for n in fs["succeeded"] if n != cold]
     fs["empty"] = [n for n in fs["empty"] if n != cold]
 
-    plan = _full_plan(whitelist)
-    plan[cold] = {"cadence": "weekly", "due": False, "last_probed": "2026-07-25"}
+    plan = _authentic_plan(tmp_path, whitelist)
+    assert plan[cold]["due"] is False
     _write_manifest(tmp_path, {"date": DATE, "cadence_plan": plan})
 
     qa = build_daily_qa_diff(

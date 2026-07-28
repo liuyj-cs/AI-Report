@@ -134,11 +134,24 @@ def test_finalize_accepts_report_missing_non_due_surface(
     stripped = _drop_surface(report, LONGTAIL)
     (cache_dir / "report.json").write_text(json.dumps(stripped, ensure_ascii=False), encoding="utf-8")
 
-    plan = {
-        name: {"cadence": "daily", "due": name != LONGTAIL, "last_probed": None}
-        for name in stripped["fetch_status"]["source_details"]
+    # plan 必须是 compute_cadence 的真实产出——finalize 会重算比对
+    from datetime import date, timedelta
+
+    from discovery import compute_cadence
+    from source_stats import load_source_stats, source_stats_path
+
+    target = date.fromisoformat(DATE)
+    days = {
+        (target - timedelta(days=offset)).isoformat(): {LONGTAIL: {"attempts": 2, "hit": False}}
+        for offset in range(1, 21)
     }
-    plan[LONGTAIL] = {"cadence": "weekly", "due": False, "last_probed": "2026-04-15"}
+    days[(target - timedelta(days=40)).isoformat()] = {LONGTAIL: {"attempts": 2, "hit": False}}
+    stats_path = source_stats_path(tmp_path)
+    stats_path.parent.mkdir(parents=True, exist_ok=True)
+    stats_path.write_text(json.dumps({"version": "1.0", "days": days}), encoding="utf-8")
+
+    plan = compute_cadence(whitelist, load_source_stats(tmp_path), DATE)
+    assert plan[LONGTAIL]["due"] is False
     (cache_dir / "discovery_manifest.json").write_text(
         json.dumps({"date": DATE, "cadence_plan": plan}), encoding="utf-8"
     )

@@ -183,10 +183,14 @@ def _exempt_daily_names(whitelist: dict[str, Any]) -> set[str]:
 
 
 def _ledger_series(stats: dict[str, Any], name: str, target: date) -> list[tuple[date, bool]]:
-    """台账里该面的 (日期, 是否命中) 序列，只取**真实探测过**且不晚于 target 的天。
+    """台账里该面的 (日期, 是否命中) 序列，只取**真实探测过**且**严格早于** target 的天。
 
-    未来日期是坏数据（--date 笔误、时钟偏移），必须丢弃：留着会让 last_probed 跑到
-    未来，due 的日期差变负，把包括核心源在内的所有面判成"今天不用探"。
+    严格早于是幂等的前提：finalize 会写入当天记录，若当天记录参与分档，init 算出的
+    plan 与 finalize 重算的结果就会不一致，重跑 finalize 会自我否定。语义上也只能这样
+    ——用"今天探的结果"决定"今天该不该探"是因果倒置。
+
+    未来日期同样丢弃（--date 笔误、时钟偏移）：留着会让 last_probed 跑到未来，due 的
+    日期差变负，把包括核心源在内的所有面判成"今天不用探"。
 
     ``attempts <= 0`` 的记录是"当天记了一笔但没真去探"（面被跳过）——它是合法的审计
     留痕，但**不是实探日**。算进来会让一串跳过被读成一串"探过、没命中"，直接架空
@@ -204,7 +208,7 @@ def _ledger_series(stats: dict[str, Any], name: str, target: date) -> list[tuple
             parsed = date.fromisoformat(day)
         except ValueError:
             continue
-        if parsed > target:
+        if parsed >= target:
             continue
         series.append((parsed, bool(record.get("hit"))))
     return sorted(series)
@@ -252,10 +256,7 @@ def compute_cadence(
     plan: dict[str, dict[str, Any]] = {}
     for name in required_discovery_names(whitelist):
         series = _ledger_series(stats, name, target)
-        # last_probed 只看"往日"：当天的记录（同日重跑 init-daily 就会有）若算进来，
-        # 每个面都会变成"今天刚探过、不用再探"，due 集体塌掉。命中率统计仍用全序列。
-        previous = [day for day, _ in series if day < target]
-        last_probed = previous[-1] if previous else None
+        last_probed = series[-1][0] if series else None
         if name in exempt:
             cadence = "daily"
         elif name in SLOW_TRACK_SURFACES:
@@ -602,11 +603,21 @@ def trusted_cadence_plan(
 ) -> dict[str, Any] | None:
     """当日 manifest 的 cadence_plan;任何不可信迹象都返回 None。
 
-    **收窄覆盖基准的方向必须 fail-closed**:一份残缺的 plan 会让 finalize 用短名单做
-    阻塞校验,把漏采日报放行,所以宁可回退全量多报几条缺失。传入 whitelist 时还会校验
-    plan 覆盖当前全部 required 面——init 之后 whitelist 增源、或 manifest 被部分覆盖,
-    都不能静默缩窄。QA 与阻塞校验必须共用本函数的结果,否则合法跳过的面会被 QA 报成
-    漏采,诱导第二天补跑、抵消调度收益。
+    **判据是重算比对,不是逐字段校验。** `cadence_plan` 是本流程自己用
+    `compute_cadence(whitelist, stats, date)` 算出来再序列化到磁盘的,所以"这份 plan
+    可不可信"等价于"它是不是那个纯函数的输出"——唯一完备的验证就是重新调一次再比。
+    逐字段规则(类型、语义自洽、策略一致…)都只是在用近似逼近这个等价判断,近似必然
+    留缝:PR #5 的四轮 review 在同一个函数上找到 5 个绕过,每个都是上一版规则没覆盖到
+    的那一小块。改判据本身,这条路才收敛。
+
+    传 whitelist 才能重算;不传时退回结构与比例守卫(向后兼容,调用方自负)。
+
+    **收窄覆盖基准的方向必须 fail-closed**:比对不符只意味着"这份 plan 不是我算的"
+    (whitelist 变了、manifest 被改、台账被动过),此时回退 whitelist 全量多报几条缺失,
+    远好于用一份来路不明的短名单去放行漏采日报。
+
+    QA 与阻塞校验必须共用本函数的结果,否则合法跳过的面会被 QA 报成漏采,诱导第二天
+    补跑、抵消调度收益。
     """
     path = project_root / "cache" / target_date / "discovery_manifest.json"
     if not path.exists():
@@ -627,9 +638,15 @@ def trusted_cadence_plan(
         target = date.fromisoformat(target_date)
     except ValueError:
         return None
+
+    if whitelist is not None:
+        # 完备判据：重算一次，逐字段全等才采信。任何偏离——类型、语义、固定 cadence
+        # 策略、伪造的 last_probed、多一个面少一个面——都在这一次比较里被拒。
+        expected = compute_cadence(whitelist, load_source_stats(project_root), target_date)
+        return expected if plan == expected else None
+
+    # 未传 whitelist：无从重算，退回结构与比例守卫（弱判据，仅为向后兼容保留）
     if not all(_valid_cadence_slot(slot, target) for slot in plan.values()):
-        return None
-    if whitelist is not None and not set(required_discovery_names(whitelist)) <= set(plan):
         return None
     due = [name for name, slot in plan.items() if slot["due"]]
     # 兜底:结构全合法但 due 仍塌到远少于面总数(坏台账、同日重跑残留)。这只是最后

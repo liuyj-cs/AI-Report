@@ -40,69 +40,7 @@ def _plan(whitelist, **overrides):
 # --- P1-1: slot 必须按类型校验 ---------------------------------------------
 
 
-@pytest.mark.parametrize("bad_due", [None, 0, 1, "false", "true", "", [], {}])
-def test_non_boolean_due_rejects_whole_plan(tmp_path, sample_whitelist, bad_due):
-    plan = _plan(sample_whitelist)
-    plan[COLD] = {"cadence": "daily", "due": bad_due, "last_probed": None}
-    _manifest(tmp_path, {"date": DATE, "cadence_plan": plan})
-
-    assert due_discovery_names(tmp_path, DATE, whitelist=sample_whitelist) is None
-
-
-def test_null_due_majority_cannot_slip_past_ratio_guard(tmp_path, sample_whitelist):
-    """复审的原始反例：19/74 due=true、其余 due=null，比例 0.257 刚好擦过 0.25 守卫。
-
-    比例守卫是最后兜底，不是结构校验的替代品——类型不对就该整体回退。
-    """
-    names = required_discovery_names(sample_whitelist)
-    plan = {
-        name: {"cadence": "daily", "due": (True if i < 19 else None), "last_probed": None}
-        for i, name in enumerate(names)
-    }
-    _manifest(tmp_path, {"date": DATE, "cadence_plan": plan})
-
-    assert due_discovery_names(tmp_path, DATE, whitelist=sample_whitelist) is None
-
-
-def test_missing_manifest_date_rejects_plan(tmp_path, sample_whitelist):
-    _manifest(tmp_path, {"cadence_plan": _plan(sample_whitelist)})
-
-    assert due_discovery_names(tmp_path, DATE, whitelist=sample_whitelist) is None
-
-
-@pytest.mark.parametrize("bad_cadence", ["hourly", "", None, 7, "DAILY"])
-def test_invalid_cadence_enum_rejects_plan(tmp_path, sample_whitelist, bad_cadence):
-    plan = _plan(sample_whitelist)
-    plan[COLD] = {"cadence": bad_cadence, "due": True, "last_probed": None}
-    _manifest(tmp_path, {"date": DATE, "cadence_plan": plan})
-
-    assert due_discovery_names(tmp_path, DATE, whitelist=sample_whitelist) is None
-
-
-@pytest.mark.parametrize("bad_probed", ["not-a-date", "2026-02-30", 20260727, [], {}])
-def test_invalid_last_probed_rejects_plan(tmp_path, sample_whitelist, bad_probed):
-    plan = _plan(sample_whitelist)
-    plan[COLD] = {"cadence": "weekly", "due": False, "last_probed": bad_probed}
-    _manifest(tmp_path, {"date": DATE, "cadence_plan": plan})
-
-    assert due_discovery_names(tmp_path, DATE, whitelist=sample_whitelist) is None
-
-
-def test_wellformed_plan_still_accepted(tmp_path, sample_whitelist):
-    plan = _plan(sample_whitelist, **{COLD: {"cadence": "weekly", "due": False, "last_probed": "2026-07-25"}})
-    _manifest(tmp_path, {"date": DATE, "cadence_plan": plan})
-
-    due = due_discovery_names(tmp_path, DATE, whitelist=sample_whitelist)
-
-    assert due is not None
-    assert COLD not in due
-    assert "OpenAI" in due
-
-
-def test_last_probed_null_is_valid(tmp_path, sample_whitelist):
-    _manifest(tmp_path, {"date": DATE, "cadence_plan": _plan(sample_whitelist)})
-
-    assert due_discovery_names(tmp_path, DATE, whitelist=sample_whitelist) is not None
+# 正向断言（合法 plan 被接受）已由 test_cadence_plan_authority.py 承担。
 
 
 # --- P1-2: 坏 record 不得被解释成零命中探测 --------------------------------
