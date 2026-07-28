@@ -2,7 +2,7 @@
 """Deterministic discovery helpers for AI-authored report runs."""
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 import json
 from pathlib import Path
 import re

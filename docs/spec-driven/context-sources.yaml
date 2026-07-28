@@ -1,0 +1,10 @@
+# docs/spec-driven/context-sources.yaml
+# 首次 intake 生成;团队可手改;后续 change 复用,不重复探测。
+
+provider: inline
+verify_commands:
+  source: inline
+  ref: "cd skills/ai-daily-report && python3 -m pytest tests -q"
+red_lines: AGENTS.md
+test_policy: tdd
+normative_keywords: [必须, 禁止, 应当]

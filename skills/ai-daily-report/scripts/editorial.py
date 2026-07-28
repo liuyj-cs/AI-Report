@@ -991,14 +991,58 @@ def recall_probe_findings(report: dict[str, Any], whitelist: dict[str, Any]) -> 
     return []
 
 
+FETCH_LAYER_TYPES = ("webfetch", "github_releases")
+
+
+def _final_layer_index(detail: dict[str, Any]) -> int | None:
+    """实际走到的最深层，按 attempts 实迹算，不信自报的 final_layer_index。
+
+    ``final_layer_index`` 由 AI 填写：只抓了 Layer-0 却写 2，就能让"链内是否穷尽"
+    的判定失效——守门必须建立在留痕上，不能建立在自我声明上。attempts 为空时返回
+    None，由调用方 fail-closed 处理。
+    """
+    indexes = [
+        attempt.get("layer_index")
+        for attempt in (detail.get("attempts") or [])
+        if isinstance(attempt.get("layer_index"), int)
+    ]
+    return max(indexes) if indexes else None
+
+
+def _has_later_fetch_layer(source: dict[str, Any], index: int | None) -> bool:
+    """该源链里，命中层之后是否还有没走到的抓取面（webfetch / github_releases）。"""
+    if index is None:
+        return False
+    chain = source.get("fetch_chain", [])
+    return any(layer.get("type") in FETCH_LAYER_TYPES for layer in chain[index + 1 :])
+
+
+def _final_layer_surface_kind(source: dict[str, Any], detail: dict[str, Any]) -> str:
+    """定位 final attempt 落在哪一层，取该层的 surface_kind。
+
+    未标注的 webfetch 层按 ``static`` 处理（= 改造前的行为），层号缺失或越界同样
+    按 ``static``：保守缺省不给漏采开口子。``github_releases`` 天生是倒序发布面。
+    """
+    index = _final_layer_index(detail)
+    chain = source.get("fetch_chain", [])
+    if not isinstance(index, int) or not 0 <= index < len(chain):
+        return "static"
+    layer = chain[index]
+    default = "feed" if layer.get("type") == "github_releases" else "static"
+    kind = layer.get("surface_kind", default)
+    return kind if kind in ("feed", "static") else default
+
+
 def recall_fallback_findings(report: dict[str, Any], whitelist: dict[str, Any]) -> list[dict[str, Any]]:
-    """Flag sources that hit an empty official/static surface but never ran the
+    """Flag sources that hit an empty *static* surface but never ran the
     configured websearch fallback.
 
     ``empty_in_window`` is only authoritative on a genuine reverse-chron feed.
     On a static docs / product-home / aggregator surface it usually means "this
     page can't show news", not "there is no news" — so the search layer must run.
-    Feeds whose emptiness is authoritative opt out via ``empty_is_conclusive: true``.
+    Which is which is declared per layer in whitelist (``surface_kind``), not
+    inferred per source category: the same source often mixes a static product
+    home with a dated changelog feed.
     """
     fetch_status = report.get("fetch_status", {})
     empty = set(fetch_status.get("empty") or [])
@@ -1008,24 +1052,34 @@ def recall_fallback_findings(report: dict[str, Any], whitelist: dict[str, Any]) 
     findings: list[dict[str, Any]] = []
     for source in iter_named_sources(whitelist):
         name = source["name"]
-        if name not in empty or source.get("empty_is_conclusive"):
+        if name not in empty:
             continue
         if source.get("category") not in HIGH_RECALL_CATEGORIES:
             continue
         chain = source.get("fetch_chain", [])
         if not any(layer.get("type") in SEARCH_LAYER_TYPES for layer in chain):
             continue
-        attempts = source_details.get(name, {}).get("attempts") or []
+        detail = source_details.get(name, {})
+        attempts = detail.get("attempts") or []
         if any(attempt.get("layer_type") in SEARCH_LAYER_TYPES for attempt in attempts):
             continue
-        findings.append(
-            _make_finding(
-                "missed_discovery",
-                "high",
-                f"{name} 在官方/静态面命中空后未下穿 websearch 兜底层；empty≠无新闻，可能漏采（finalize 阻塞项）。",
-                source_name=name,
-                suggested_fix="对该源执行 websearch_scoped/broad 并把命中或空结果写入 attempts；确为倒序新闻面且空即权威时，在 whitelist 标 empty_is_conclusive: true。",
+        index = _final_layer_index(detail)
+        if _final_layer_surface_kind(source, detail) == "feed":
+            # feed 空即权威，但只对"该源最后一个抓取面"成立：开源权重厂商的发布
+            # 第一现场是 HF/GitHub，早期 feed（如 API changelog）覆盖不了它们，
+            # 停在那里判空照样漏采。
+            if not _has_later_fetch_layer(source, index):
+                continue
+            reason = (
+                f"{name} 在第 {index} 层 feed 面判空后就停下，链里还有未触达的抓取面；"
+                "该层覆盖不了这个源的全部发布口径（HF/GitHub 权重面才是开源模型的发布第一现场），可能漏采（finalize 阻塞项）。"
             )
+            fix = "继续下穿该源 fetch_chain 里后续的 webfetch/github_releases 面（或直接跑搜索层），并把命中或空结果写入 attempts。"
+        else:
+            reason = f"{name} 在静态面命中空后未下穿 websearch 兜底层；static 面 empty≠无新闻，可能漏采（finalize 阻塞项）。"
+            fix = "对该源执行 websearch_scoped/broad 并把命中或空结果写入 attempts；确为带日期的倒序发布面时，在 whitelist 给该层标 surface_kind: feed。"
+        findings.append(
+            _make_finding("missed_discovery", "high", reason, source_name=name, suggested_fix=fix)
         )
     return findings
 
@@ -1080,7 +1134,6 @@ def build_daily_qa_diff(
 ) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     source_details = report.get("fetch_status", {}).get("source_details", {})
-
     for name in missing_fetch_status_coverage(report, whitelist):
         findings.append(
             _make_finding(

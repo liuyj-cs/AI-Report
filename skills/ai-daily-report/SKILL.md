@@ -60,10 +60,11 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
    - **「成功」判定**（这一步至关重要，否则会掉进伪成功陷阱）
      - HTTP 200 + 页面体感为真实内容（含可读文本，非纯 CSS / 空骨架 / 登录墙）
-     - **窗口内 0 条目（empty_in_window）按信源面类型分两类处理（关键，否则长尾信源会集体静默漏采）**：
-       - **倒序新闻/发布 feed 面**——官方 news/blog 列表、release notes、GitHub releases、GitHub 组织 `?sort=updated`、HuggingFace 组织 `?sort=created` 等"会随新发布更新、每条都带日期"的列表页：empty 属于**合法成功**，**不**继续下层；这类源可在 whitelist 标 `empty_is_conclusive: true`
-       - **静态/产品/文档/聚合面**——产品首页、API/使用介绍页、聊天入口、JS 壳、看板/排行榜首屏：empty **不代表"无新闻"，只代表"这个面展示不了新闻"** → **必须继续下穿** 该源 fetch_chain 里后续的 HF/GitHub 倒序面与 websearch_scoped/broad；跑完搜索层仍空，才能判为该源空
-     - **cn_labs 与 hard_data 源默认按"静态/必须下穿"处理**：官方静态面命中空后，必须走完 HuggingFace 组织(sort=created) / GitHub 组织(sort=updated) 倒序面 + websearch + 媒体一跳，才能判定"窗口内无发布"。开源权重模型的"发布"第一现场通常是 HF 上的新权重，不是官网博客——HF/GitHub 倒序面比官网更可靠。**此规则自 2026-07 起为 finalize 阻塞项**：这两类源若整链停在 Layer-0 静态面且空、无搜索层 attempt，`finalize-daily` 直接失败（不再只是 qa_diff 告警）
+     - **窗口内 0 条目（empty_in_window）按该层的 `surface_kind` 判定（whitelist 数据说了算，不靠现场体感）**：
+       - **`surface_kind: feed`**——官方 news/blog 列表、changelog、release notes、GitHub releases、GitHub 组织 `?sort=updated`、HuggingFace 组织 `?sort=created`、结构化 API 等"每条都带日期的倒序列表"：empty 属于**合法成功**，**不**继续下层
+       - **`surface_kind: static`**——产品首页、API/使用介绍页、聊天入口、JS 壳、看板/排行榜首屏：empty **不代表"无新闻"，只代表"这个面展示不了新闻"** → **必须继续下穿** 该源 fetch_chain 里后续的 feed 面与 websearch_scoped/broad；跑完搜索层仍空，才能判为该源空
+       - 未标注的 `webfetch` 层按 `static` 处理；`github_releases` 层缺省 `feed`。标注判据与齐全性由 whitelist 头部注释与 `tests/test_whitelist_annotations.py` 机器门守恒——**不要在跑日报时临时改判某个面的类型**，该改标注就改 whitelist
+     - **cn_labs 与 hard_data 是 finalize 阻塞项，且判空规则比通则更严**：这两类源除了「`static` 层空必须下穿搜索层」外，**`feed` 层空也不能立刻收工**——只要链里还有未触达的抓取面（webfetch / github_releases），就必须继续下穿；停在中途 `finalize-daily` 直接失败（不只是 qa_diff 告警）。原因是单个 feed 面只覆盖该源的一部分发布口径（API changelog ≠ 权重发布），开源权重的第一现场通常是 HF 上的新权重。**判据按 `attempts[]` 里真实出现过的最大 `layer_index` 算，不看自报的 `final_layer_index`**——留痕说了算，声明一个层号不算走过。对 `cn_labs`，走完链内全部抓取面仍空即可判空，不强制再跑 websearch；对 `hard_data`（每源只有一个 `static` 抓取面），走完它还不够，必须跑搜索层。阻塞范围仅这两类；其他类别的 `feed` 面空照旧即停，`surface_kind` 只作为你判断 empty 的输入，不阻断发送
      - 反例：Google AI Blog 经常返回纯 CSS 模板 → 视为 error，进入下一层
      - 反例：HTTP 200 但页面内容是「Please enable JavaScript」/「Cloudflare verification」→ 视为 error
 
@@ -86,7 +87,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
    - **整链全部失败** → 进 `fetch_status.failed`，字段 `{name, reason, attempts: <chain 总尝试次数>}`
    - **整链首层成功** → 进 `fetch_status.succeeded`
-   - **整链成功但窗口内 0 条目** → 同时进 `fetch_status.succeeded` 和 `fetch_status.empty`（仅当最终命中层是 feed 面 / `empty_is_conclusive`，或已跑完搜索层与 HF/GitHub 倒序面仍空时才允许；静态面不得停在 Layer-0 直接判空）
+   - **整链成功但窗口内 0 条目** → 同时进 `fetch_status.succeeded` 和 `fetch_status.empty`（仅当最终命中层 `surface_kind: feed`，或已跑完搜索层与后续 feed 面仍空时才允许；`static` 层不得停下直接判空。`cn_labs` 另需走完链内全部抓取面，见上）
 
    - **对 `general_agent_search_queries`** 仍然由 AI 代理单独执行搜索，命中的条目按 `via_broad_search: true` 处理。
 
@@ -97,7 +98,10 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - **召回探针必须执行**：除逐源白名单、`general_agent_search_queries`、`high_signal_media_queries` 外，日报还必须执行 `recall_probe_queries`，并把结果写入 `fetch_status.source_details["High-Recall Product/Adoption Probes"].attempts[]`。
      - `recall_probe_queries` 不是固定正文规则，只是独立召回面。命中的候选仍由 AI 基于窗口、证据路径、产品相关性和团队可行动性决定进入正文、观察区、`unverified` 或拒绝。
      - 对 Cursor / Zed / IDE 平台化类信号，不要只看 changelog；官方 blog、release post、SDK 公告和 Agent Client Protocol 一类入口都属于 coding/general agent 候选面。
-     - 对 DeepSeek / Qwen / Kimi / 智谱GLM / MiniMax / 豆包 / 混元 等中文头部模型，**首层官方静态面空≠无发布**。判空前必须按顺序走完：① 该源 fetch_chain 配置的 HuggingFace 组织(sort=created) 与 GitHub 组织(sort=updated) 倒序面（开源权重的发布第一现场）；② websearch_scoped/broad；③ 主流媒体一跳。命中后进入 `candidate_ledger`，官方一手（HF/GitHub release）可保 high，纯媒体按 `media_plus_official_one_hop` / `media_only` 降级。绝不允许在官网静态面空结果后直接判定“无内容”。
+     - 对 DeepSeek / Qwen / Kimi / 智谱GLM / MiniMax / 豆包 / 混元 等中文头部模型，**任何单一面空都≠无发布**。这类源的 fetch_chain 里通常有多个抓取面（API changelog、HuggingFace 组织 `sort=created`、GitHub 组织 `sort=updated`、官方 blog），**每个面只覆盖一部分发布口径**——API changelog 记的是接口变更，开源权重的发布第一现场是 HF。所以 cn_labs 的判空规则比通则更严：**即使命中层是 `feed`，只要链里还有没走到的抓取面，就必须继续下穿**（finalize 会阻塞停在中途的链）；走完全部抓取面仍空，才可以判该源空，此时不强制再跑 websearch。若还需要更宽的确认，再走 ② websearch_scoped/broad；③ 主流媒体一跳。命中后进入 `candidate_ledger`，官方一手（HF/GitHub release）可保 high，纯媒体按 `media_plus_official_one_hop` / `media_only` 降级。
+     - **AI HOT 是结构化 API 面**（`aihot.virxact.com/api/v1/items`，匿名只读、无需 Key）。**两层分工是刻意的**：Layer-0 `mode=selected` 是高门槛策展池（实测当日只放行约 8% 条目），标 `static`——它空只说明"策展没放行"，不等于中文圈无新闻，**必须下穿** Layer-1 `mode=all` 全量池（标 `feed`，空即权威）。返回 `{schemaVersion, query, items[], page}`；每条必有 `id / title / source.name / links.aihot / links.original / discoveredAt / selected`，而 `publishedAt / summary / category / score` 键恒在但**值可为 null，取用前必须判空**：`publishedAt` 为空时回退 `discoveredAt` 并按 `published_at_confidence: inferred` 处理。
+       - ⚠️ **静默空集陷阱（必须防）**：非法参数会返回 **HTTP 400 但 body 是 `{"items": [], "page": null}`**——`feed` 层读到它就等于"今天中文圈无 AI 新闻"，是静默漏采。判别信号是 **`page` 为 null**：合法响应的 `page` 一定是对象。见到 `page: null` 一律按该层 error 处理并下穿，**不得**记成 empty。已实测会触发的非法值：`window` 只接受 `24h` / `7d`（`48h` 报 400）、`limit` 上限 100（`101` 报 400）、`mode` 只接受 `selected` / `all`。别自造参数。
+       - `mode=all&limit=50` 实测 `page.hasMore=true`——这是**按需截断，不是全量**。50 条对召回对照够用；确需更多时用 `page.nextCursor` 原样回传翻页，不要把 `hasMore=true` 读成"就这些"。它是**中文圈召回对照面，不是证据源**——tier 2 聚合面，候选照常按 media 降档（`media_only` 不驱动 `action_items`），进正文前用条目自带的 `links.original` 做一跳官方补证。API 不可达时按该层 error 处理，继续下穿后续层
      - 对 Microsoft 365 Copilot、企业 agent 席位、ARR、weekly engagement 等商业采用率信号，优先写入 `market_signals.adoption_signals`，并通过正文 item `ref` 连接到 `general_agents` 或 `frontier_models`。引用必须指向能承载该数字的一手或电话会转录来源；普通新闻稿若不含数字，不可单独作为数字证据。
      - 媒体面不只看“新品发布”，也要覆盖工程化与组织信号，例如套餐/定价波动、agent 架构披露、企业落地案例；但这类条目若缺一跳官方补证，默认最多收口到 `watch` 或 `unverified`
      - 从这两个源提取的条目仍需通过窗口硬卡和跨日去重
@@ -561,9 +565,9 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
 - **单源 fetch_chain 整链失败**：所有层都失败 → 记入 `fetch_status.failed`，继续。被任一层兜底成功不算失败。
 - **核心源阈值**：`core_sources`（8 个，含 2 家 CN）整链失败数 ≥4 → 中止任务、不发邮件、不归档（仅保留 cache 里的 run.log 供排查）
-- **空结果**：仅在最终命中层是**倒序新闻/发布 feed 面**（或 `empty_is_conclusive`）时，窗口内无条目才算合法空，同时进 `succeeded` 与 `empty` 且不穿透下层；**静态/产品/文档/聚合面命中空必须继续下穿** HF/GitHub 倒序面与 websearch 后才能判空（cn_labs / hard_data 默认按此处理）。详见日报步骤 1「成功」判定。
+- **空结果**：一般类别下，最终命中层 `surface_kind: feed` 时窗口内无条目算合法空，同时进 `succeeded` 与 `empty` 且不穿透下层；**`static` 层命中空必须继续下穿**后续 feed 面与 websearch 后才能判空。**`cn_labs` 更严**：feed 层空也只有在它是该链最后一个抓取面时才算数，否则必须继续下穿。未标注 `webfetch` 层按 `static`，`github_releases` 缺省 `feed`。详见日报步骤 1「成功」判定。
 - **伪成功（CSS only / 登录墙 / JS shell）**：视为该层 error，立即进入下一层
-- **召回守门（finalize 自动校验，会阻断发送）**：① 日报 `cn_labs` / `hard_data` 源若停在 Layer-0 静态面且空、未跑搜索层 → **finalize-daily 校验失败（阻断发送）**，错误信息点名源；确属倒序 feed 面空即权威的，在 whitelist 标 `empty_is_conclusive: true`；② 周报若 frontier_models 在 7 天里 ≥3 天为空或日报缺失（缺失=盲天，不算通过；分母固定为窗口 7 天）、或全部 CN 一级厂商整周零产出 → finalize 校验失败、不渲染不发信。确为安静周时，在周报 `source_days.recall_ack` 留证后可放行：`true` 放行全部，或按信号分别放行 `{"frontier": true}` / `{"cn_labs": true}`（也接受列表 `["frontier"]`）——放行 frontier 不会连带掩盖真实的 CN 漏采。⚠️ `recall_ack` 只接受 **布尔 / 对象 / 列表**；裸字符串 `recall_ack: frontier`（YAML 标量）**不生效、会继续阻断**（属刻意 fail-closed；weekly schema 的 `recall_ack` 已加 `oneOf`，非法形态在渲染时即报错）。
+- **召回守门（finalize 自动校验，会阻断发送）**：① 日报 `cn_labs` / `hard_data` 源判空时，两种情形都会让 **finalize-daily 校验失败（阻断发送）**，错误信息点名源——(a) 最终停在 `static` 层且空、未跑搜索层；(b) 停在 `feed` 层且空，但该链里还有没走到的抓取面（`webfetch` / `github_releases`）。判据按 `attempts[]` 里真实出现过的最大 `layer_index` 算，**不看自报的 `final_layer_index`**——留痕说了算。所以 `hard_data`（每源只有一个 `static` 抓取面）实际必须跑搜索层才能判空；`cn_labs` 走完链内全部抓取面即可，不强制搜索层。确属带日期的倒序发布面、空即权威的，去 whitelist 给该层标 `surface_kind: feed`（改数据，不要在当天口头放行）；② 周报若 frontier_models 在 7 天里 ≥3 天为空或日报缺失（缺失=盲天，不算通过；分母固定为窗口 7 天）、或全部 CN 一级厂商整周零产出 → finalize 校验失败、不渲染不发信。确为安静周时，在周报 `source_days.recall_ack` 留证后可放行：`true` 放行全部，或按信号分别放行 `{"frontier": true}` / `{"cn_labs": true}`（也接受列表 `["frontier"]`）——放行 frontier 不会连带掩盖真实的 CN 漏采。⚠️ `recall_ack` 只接受 **布尔 / 对象 / 列表**；裸字符串 `recall_ack: frontier`（YAML 标量）**不生效、会继续阻断**（属刻意 fail-closed；weekly schema 的 `recall_ack` 已加 `oneOf`，非法形态在渲染时即报错）。
 - **render_html.py 失败**：若退出码 1 → Claude 自检 JSON 格式（特别是新增 required 字段 `release_stage` / `published_at_confidence` / `authority_score` / `editorial_tier`，以及 `action_items.references[]` 的 `section` / `editorial_tier`）补齐后重试一次；仍失败则中止并报错
 - **archive.py 失败**：停止流程，但保留 cache HTML 供用户手动取用
 - **finalize-weekly 校验失败**：若缺日报 JSON、`source_days` 不完整、引用无法回指或 `itemRef` 越界 → 停止流程，不归档不发信，先修正 JSON / 日报缓存

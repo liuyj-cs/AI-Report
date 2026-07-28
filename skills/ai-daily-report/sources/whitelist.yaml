@@ -4,18 +4,23 @@
 #   - authority_tier: 1=官方/一级权威，2=主流科技媒体，3=Substack/个人博客
 #   - fetch_chain 是有序列表，runner 从上到下逐层尝试，首次「成功且非伪成功」即停。
 #   - layer types：
-#     * webfetch          {url}              confidence 不变
-#     * github_releases   {repo, path?}      confidence 不变
-#     * websearch_scoped  {queries: []}      confidence 降一档（high→medium）
-#     * websearch_broad   {queries: []}      confidence 强制 medium + via_broad_search 标记
+#     * webfetch          {url, surface_kind} confidence 不变
+#     * github_releases   {repo, path?}       confidence 不变（缺省按 feed）
+#     * websearch_scoped  {queries: []}       confidence 降一档（high→medium）
+#     * websearch_broad   {queries: []}       confidence 强制 medium + via_broad_search 标记
 #   - queries 占位符：{date}、{yesterday}、{week_range}
+#   - surface_kind（每个 webfetch 层必填，机器门 test_whitelist_annotations 守恒）：
+#     * feed   = 每条带日期的倒序列表（官方 news/blog 索引、changelog、release notes、
+#                GitHub 组织 ?sort=updated、HuggingFace 组织 ?sort=created、结构化 API）
+#     * static = 产品首页、API/文档页、聊天入口、JS 壳、看板/排行榜首屏
+#     判不准时一律标 static——保守缺省不给漏采开口子。
 #   - 「成功」判定：HTTP 200 且页面体感为真实内容（非纯 CSS 模板 / 空骨架 / 登录墙）。
-#     窗口内 0 条目（empty_in_window）：仅当命中层是「倒序新闻/发布 feed 面」（官方
-#     news/blog 列表、release notes、GitHub releases、GitHub 组织 ?sort=updated、
-#     HuggingFace 组织 ?sort=created），或源标了 empty_is_conclusive: true 时，才算
-#     合法成功并停止；静态/产品/文档/聚合面（产品首页、API 介绍页、聊天入口、JS 壳）
-#     命中空必须继续下穿后续 HF/GitHub 倒序面与 websearch。cn_labs / hard_data 默认
-#     按「必须下穿」处理。详见 SKILL.md 日报步骤 1「成功」判定。
+#     窗口内 0 条目（empty_in_window）：命中层是 feed 时算合法成功并停止；命中层是
+#     static 时 empty≠无新闻，必须继续下穿后续 feed 面与 websearch。
+#     cn_labs / hard_data 判空更严，两种情形都会 finalize 阻塞：(a) static 面未下穿
+#     搜索层；(b) 停在 feed 面但链里还有没走到的抓取面（单个 feed 只覆盖该源的一部分
+#     发布口径，API changelog ≠ HF 权重发布）。判据按 attempts 里真实出现的最大
+#     layer_index 算，不看自报的 final_layer_index。详见 SKILL.md 日报步骤 1「成功」判定。
 #   - verify_before_use: true 表示该源 Layer 0 入口尚未被人工 verify 过，跑日报时
 #     首层若失败应直接落入 Layer 1+，不报警；近期需要做一次性人工巡检。
 #   - 对 OpenAI / OpenAI Codex：若 Layer 0 命中 `403`、Cloudflare、JS shell 或空骨架，
@@ -47,6 +52,7 @@ us_labs:
     fetch_chain:
       - type: webfetch
         url: https://openai.com/news/
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "OpenAI announcement site:openai.com {date}"
@@ -63,6 +69,7 @@ us_labs:
     fetch_chain:
       - type: webfetch
         url: https://www.anthropic.com/news
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "Anthropic news site:anthropic.com {date}"
@@ -77,6 +84,7 @@ us_labs:
     fetch_chain:
       - type: webfetch
         url: https://deepmind.google/discover/blog/
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Google DeepMind blog site:deepmind.google {date}"
@@ -91,6 +99,7 @@ us_labs:
     fetch_chain:
       - type: webfetch
         url: https://blog.google/technology/ai/
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Google AI blog site:blog.google {date}"
@@ -107,6 +116,7 @@ us_labs:
     fetch_chain:
       - type: webfetch
         url: https://x.ai/news
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "xAI news site:x.ai {date}"
@@ -121,6 +131,7 @@ us_labs:
     fetch_chain:
       - type: webfetch
         url: https://ai.meta.com/blog/
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "Meta AI blog site:ai.meta.com {date}"
@@ -141,10 +152,13 @@ cn_labs:
     fetch_chain:
       - type: webfetch
         url: https://api-docs.deepseek.com/updates
+        surface_kind: feed
       - type: webfetch
         url: https://huggingface.co/deepseek-ai/models?sort=created
+        surface_kind: feed
       - type: webfetch
         url: https://github.com/orgs/deepseek-ai/repositories?sort=updated
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "DeepSeek release site:deepseek.com {date}"
@@ -163,10 +177,13 @@ cn_labs:
     fetch_chain:
       - type: webfetch
         url: https://qwen.ai/research
+        surface_kind: static
       - type: webfetch
         url: https://huggingface.co/Qwen/models?sort=created
+        surface_kind: feed
       - type: webfetch
         url: https://github.com/orgs/QwenLM/repositories?sort=updated
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "Qwen release site:qwen.ai/blog {date}"
@@ -184,10 +201,13 @@ cn_labs:
     fetch_chain:
       - type: webfetch
         url: https://docs.bigmodel.cn/cn/update/new-releases
+        surface_kind: feed
       - type: webfetch
         url: https://huggingface.co/zai-org/models?sort=created
+        surface_kind: feed
       - type: webfetch
         url: https://github.com/orgs/zai-org/repositories?sort=updated
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "智谱 GLM 发布 site:zhipuai.cn {date}"
@@ -205,10 +225,13 @@ cn_labs:
     fetch_chain:
       - type: webfetch
         url: https://huggingface.co/moonshotai/models?sort=created
+        surface_kind: feed
       - type: webfetch
         url: https://www.kimi.com/blog/
+        surface_kind: feed
       - type: webfetch
         url: https://github.com/orgs/MoonshotAI/repositories?sort=updated
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "Kimi 月之暗面 发布 site:moonshot.cn {date}"
@@ -226,10 +249,13 @@ cn_labs:
     fetch_chain:
       - type: webfetch
         url: https://www.volcengine.com/docs/82379/1159178
+        surface_kind: static
       - type: webfetch
         url: https://huggingface.co/ByteDance-Seed/models?sort=created
+        surface_kind: feed
       - type: webfetch
         url: https://github.com/orgs/ByteDance-Seed/repositories?sort=updated
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "豆包 火山方舟 模型发布 site:volcengine.com"
@@ -245,10 +271,13 @@ cn_labs:
     fetch_chain:
       - type: webfetch
         url: https://hunyuan.tencent.com/research
+        surface_kind: static
       - type: webfetch
         url: https://huggingface.co/tencent/models?sort=created
+        surface_kind: feed
       - type: webfetch
         url: https://github.com/orgs/Tencent-Hunyuan/repositories?sort=updated
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "腾讯 混元 Hunyuan 发布 site:tencent.com"
@@ -264,10 +293,13 @@ cn_labs:
     fetch_chain:
       - type: webfetch
         url: https://www.minimaxi.com/news
+        surface_kind: static
       - type: webfetch
         url: https://huggingface.co/MiniMaxAI/models?sort=created
+        surface_kind: feed
       - type: webfetch
         url: https://github.com/orgs/MiniMax-AI/repositories?sort=updated
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "MiniMax 发布 site:minimaxi.com"
@@ -283,6 +315,7 @@ coding_agents_primary:
     fetch_chain:
       - type: webfetch
         url: https://openai.com/index/introducing-codex/
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "OpenAI Codex release site:openai.com {date}"
@@ -297,6 +330,7 @@ coding_agents_primary:
     fetch_chain:
       - type: webfetch
         url: https://docs.anthropic.com/en/release-notes/claude-code
+        surface_kind: static
       - type: github_releases
         repo: anthropics/claude-code
       - type: websearch_scoped
@@ -327,6 +361,7 @@ coding_agents_primary:
     fetch_chain:
       - type: webfetch
         url: https://jules.google/
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Google Jules update {date}"
@@ -342,8 +377,10 @@ coding_agents_secondary:
     fetch_chain:
       - type: webfetch
         url: https://cursor.com/blog
+        surface_kind: feed
       - type: webfetch
         url: https://www.cursor.com/changelog
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "Cursor SDK site:cursor.com/blog {date}"
@@ -361,6 +398,7 @@ coding_agents_secondary:
     fetch_chain:
       - type: webfetch
         url: https://github.blog/changelog/label/copilot/
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "GitHub Copilot changelog site:github.blog {date}"
@@ -375,6 +413,7 @@ coding_agents_secondary:
     fetch_chain:
       - type: webfetch
         url: https://codeium.com/blog
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "Windsurf Codeium release site:codeium.com"
@@ -403,6 +442,7 @@ coding_agents_secondary:
     fetch_chain:
       - type: webfetch
         url: https://aider.chat/HISTORY.html
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "aider chat release site:aider.chat"
@@ -475,6 +515,7 @@ general_agent_watchlist:
     fetch_chain:
       - type: webfetch
         url: https://openclaw.ai/
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "openclaw release site:openclaw.ai"
@@ -489,6 +530,7 @@ general_agent_watchlist:
     fetch_chain:
       - type: webfetch
         url: https://news.ycombinator.com/
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "AI agent site:news.ycombinator.com {date}"
@@ -500,6 +542,7 @@ general_agent_watchlist:
     fetch_chain:
       - type: webfetch
         url: https://github.com/trending?since=daily
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "github trending AI agent {date}"
@@ -511,6 +554,7 @@ general_agent_watchlist:
     fetch_chain:
       - type: webfetch
         url: https://zed.dev/blog
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "Zed 1.0 site:zed.dev/blog {date}"
@@ -526,6 +570,7 @@ general_agent_watchlist:
     fetch_chain:
       - type: webfetch
         url: https://news.microsoft.com/source/
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Microsoft 365 Copilot paid seats site:microsoft.com {date}"
@@ -542,6 +587,7 @@ general_agent_watchlist:
     fetch_chain:
       - type: webfetch
         url: https://workspaceupdates.googleblog.com/
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "Google Workspace Gemini update site:workspaceupdates.googleblog.com {date}"
@@ -556,6 +602,7 @@ general_agent_watchlist:
     fetch_chain:
       - type: webfetch
         url: https://www.producthunt.com/categories/artificial-intelligence
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Product Hunt AI agent {date}"
@@ -568,6 +615,7 @@ agent_ecosystem_sources:
     fetch_chain:
       - type: webfetch
         url: https://www.anthropic.com/engineering
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "site:anthropic.com/engineering {date}"
@@ -582,6 +630,7 @@ agent_ecosystem_sources:
     fetch_chain:
       - type: webfetch
         url: https://blog.langchain.dev/
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "site:blog.langchain.dev agent {date}"
@@ -593,6 +642,7 @@ agent_ecosystem_sources:
     fetch_chain:
       - type: webfetch
         url: https://www.latent.space/
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Latent Space AI engineering {date}"
@@ -605,6 +655,7 @@ english_media:
     fetch_chain:
       - type: webfetch
         url: https://simonwillison.net/
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "site:simonwillison.net {date}"
@@ -616,6 +667,7 @@ english_media:
     fetch_chain:
       - type: webfetch
         url: https://www.deeplearning.ai/the-batch/
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "The Batch deeplearning.ai {date}"
@@ -627,6 +679,7 @@ english_media:
     fetch_chain:
       - type: webfetch
         url: https://importai.substack.com/
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Import AI Jack Clark {date}"
@@ -638,6 +691,7 @@ english_media:
     fetch_chain:
       - type: webfetch
         url: https://tldr.tech/ai
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "TLDR AI newsletter {date}"
@@ -649,28 +703,21 @@ english_media:
     fetch_chain:
       - type: webfetch
         url: https://www.therundown.ai/
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "The Rundown AI {date}"
-
-  - name: Semafor Technology
-    category: english_media
-    weight: medium
-    authority_tier: 2
-    fetch_chain:
-      - type: webfetch
-        url: https://www.semafor.com/vertical/technology
-      - type: websearch_scoped
-        queries:
-          - "Semafor technology AI {date}"
 
   - name: The Register AI
     category: english_media
     weight: medium
     authority_tier: 2
     fetch_chain:
+      # 2026-07-27 复核：旧路径 /software/ai_machine_learning/ 已 404，站点把 AI 版块
+      # 规范化到 /ai_ml/（/software/ai_ml/ 会 301 到这里）。
       - type: webfetch
-        url: https://www.theregister.com/software/ai_machine_learning/
+        url: https://www.theregister.com/ai_ml/
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "site:theregister.com AI agent {date}"
@@ -683,6 +730,7 @@ english_media:
     fetch_chain:
       - type: webfetch
         url: https://www.infoq.com/ai-ml-data-eng/
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "site:infoq.com AI agent {date}"
@@ -695,11 +743,19 @@ chinese_media:
     source_family: broad_discovery_surface
     weight: high
     authority_tier: 2
+    # 匿名只读 v1 API：结构化 JSON 比首页 HTML（JS 壳）稳，且每条自带 links.original
+    # 供一跳官方补证。它是中文圈召回对照面，不是证据源——候选仍按 media 降档处理。
+    # publishedAt 可为 null，此时回退 discoveredAt 并按 published_at_confidence: inferred。
+    # 两层的分工是刻意的：selected 是高门槛策展池（实测当日只放行约 8% 条目），它空
+    # 只说明"策展没放行"，不等于中文圈无新闻 —— 所以标 static，空必须下穿 mode=all
+    # 全量池；all 才是真·全量倒序面，空即权威。
     fetch_chain:
       - type: webfetch
-        url: https://aihot.virxact.com/
+        url: https://aihot.virxact.com/api/v1/items?mode=selected&window=24h&limit=50
+        surface_kind: static
       - type: webfetch
-        url: https://aihot.virxact.com/all
+        url: https://aihot.virxact.com/api/v1/items?mode=all&window=24h&limit=50
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "AI HOT site:aihot.virxact.com {date}"
@@ -712,6 +768,7 @@ chinese_media:
     fetch_chain:
       - type: webfetch
         url: https://www.jiqizhixin.com/
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "机器之心 AI {date}"
@@ -723,6 +780,7 @@ chinese_media:
     fetch_chain:
       - type: webfetch
         url: https://www.qbitai.com/
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "量子位 AI {date}"
@@ -734,6 +792,7 @@ chinese_media:
     fetch_chain:
       - type: webfetch
         url: https://36kr.com/information/AI
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "36kr AI {date}"
@@ -745,6 +804,7 @@ chinese_media:
     fetch_chain:
       - type: webfetch
         url: https://www.infoq.cn/topic/AI
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "InfoQ AI {date}"
@@ -757,6 +817,7 @@ hard_data:
     fetch_chain:
       - type: webfetch
         url: https://lmarena.ai/leaderboard
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "LMArena leaderboard update {date}"
@@ -772,6 +833,7 @@ hard_data:
     fetch_chain:
       - type: webfetch
         url: https://artificialanalysis.ai/models
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "artificial analysis benchmark {date}"
@@ -787,6 +849,7 @@ hard_data:
     fetch_chain:
       - type: webfetch
         url: https://openrouter.ai/models
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "openrouter pricing change {date}"
@@ -802,6 +865,7 @@ hard_data:
     fetch_chain:
       - type: webfetch
         url: https://huggingface.co/models?sort=trending
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "huggingface trending models {date}"
@@ -861,6 +925,7 @@ leader_interviews:
     fetch_chain:
       - type: webfetch
         url: https://www.latent.space/podcast
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Latent Space interview Anthropic OpenAI {date}"
@@ -874,6 +939,7 @@ leader_interviews:
     fetch_chain:
       - type: webfetch
         url: https://www.dwarkesh.com/podcast
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Dwarkesh Patel interview {date}"
@@ -884,6 +950,7 @@ leader_interviews:
     fetch_chain:
       - type: webfetch
         url: https://www.no-priors.com/
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "No Priors podcast AI {date}"
@@ -894,6 +961,7 @@ leader_interviews:
     fetch_chain:
       - type: webfetch
         url: https://www.bigtechnology.com/
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Big Technology podcast Anthropic OpenAI {date}"
@@ -904,6 +972,7 @@ leader_interviews:
     fetch_chain:
       - type: webfetch
         url: https://www.youtube.com/@anthropic-ai/videos
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Anthropic interview podcast {date}"
@@ -914,6 +983,7 @@ leader_interviews:
     fetch_chain:
       - type: webfetch
         url: https://www.youtube.com/@OpenAI/videos
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "OpenAI interview podcast {date}"
@@ -943,6 +1013,7 @@ methodology_radar_sources:
     fetch_chain:
       - type: webfetch
         url: https://www.anthropic.com/engineering
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "site:anthropic.com/engineering agent workflow {date}"
@@ -953,6 +1024,7 @@ methodology_radar_sources:
     fetch_chain:
       - type: webfetch
         url: https://www.latent.space/
+        surface_kind: static
       - type: websearch_scoped
         queries:
           - "Latent Space AI engineering methodology {date}"
@@ -963,6 +1035,7 @@ methodology_radar_sources:
     fetch_chain:
       - type: webfetch
         url: https://simonwillison.net/
+        surface_kind: feed
       - type: websearch_scoped
         queries:
           - "site:simonwillison.net agentic coding {date}"

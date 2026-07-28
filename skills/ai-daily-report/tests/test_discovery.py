@@ -114,10 +114,12 @@ def test_cursor_source_checks_blog_before_changelog_and_sdk_queries(sample_white
     assert cursor["fetch_chain"][0] == {
         "type": "webfetch",
         "url": "https://cursor.com/blog",
+        "surface_kind": "feed",
     }
     assert cursor["fetch_chain"][1] == {
         "type": "webfetch",
         "url": "https://www.cursor.com/changelog",
+        "surface_kind": "feed",
     }
     scoped_queries = cursor["fetch_chain"][2]["queries"]
     broad_queries = cursor["fetch_chain"][3]["queries"]
@@ -151,11 +153,13 @@ def test_whitelist_contains_ai_hot_media_source(sample_whitelist):
     assert ai_hot["weight"] == "high"
     assert ai_hot["fetch_chain"][0] == {
         "type": "webfetch",
-        "url": "https://aihot.virxact.com/",
+        "url": "https://aihot.virxact.com/api/v1/items?mode=selected&window=24h&limit=50",
+        "surface_kind": "static",
     }
     assert ai_hot["fetch_chain"][1] == {
         "type": "webfetch",
-        "url": "https://aihot.virxact.com/all",
+        "url": "https://aihot.virxact.com/api/v1/items?mode=all&window=24h&limit=50",
+        "surface_kind": "feed",
     }
     assert "AI HOT site:aihot.virxact.com {date}" in ai_hot["fetch_chain"][2]["queries"]
 
