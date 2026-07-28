@@ -66,7 +66,7 @@ def test_malformed_slot_falls_back(tmp_path, sample_whitelist):
 def test_complete_plan_is_used(tmp_path, sample_whitelist):
     plan = _full_plan(sample_whitelist)
     cold = "Aider"
-    plan[cold] = {"cadence": "weekly", "due": False, "last_probed": "2026-07-20"}
+    plan[cold] = {"cadence": "weekly", "due": False, "last_probed": "2026-07-25"}
     _write_manifest(tmp_path, {"date": DATE, "cadence_plan": plan})
 
     due = due_discovery_names(tmp_path, DATE, whitelist=sample_whitelist)
@@ -189,7 +189,7 @@ def test_qa_diff_does_not_flag_legitimately_skipped_surface(tmp_path, finalized_
     fs["empty"] = [n for n in fs["empty"] if n != cold]
 
     plan = _full_plan(whitelist)
-    plan[cold] = {"cadence": "weekly", "due": False, "last_probed": "2026-07-20"}
+    plan[cold] = {"cadence": "weekly", "due": False, "last_probed": "2026-07-25"}
     _write_manifest(tmp_path, {"date": DATE, "cadence_plan": plan})
 
     qa = build_daily_qa_diff(
@@ -224,7 +224,7 @@ def test_awakened_surface_without_reason_is_rejected(finalized_fetch_status):
     fs = finalized_fetch_status(whitelist)
     cold = "Aider"
     plan = _full_plan(whitelist)
-    plan[cold] = {"cadence": "weekly", "due": False, "last_probed": "2026-07-20"}
+    plan[cold] = {"cadence": "weekly", "due": False, "last_probed": "2026-07-25"}
 
     errors = validate_fetch_status_integrity(
         {"fetch_status": fs}, whitelist, due_names=[n for n in plan if plan[n]["due"]], cadence_plan=plan
@@ -239,7 +239,7 @@ def test_awakened_surface_with_reason_passes(finalized_fetch_status):
     cold = "Aider"
     fs["source_details"][cold]["attempts"][0]["wakeup_reason"] = "媒体报道指向该源当日有发布"
     plan = _full_plan(whitelist)
-    plan[cold] = {"cadence": "weekly", "due": False, "last_probed": "2026-07-20"}
+    plan[cold] = {"cadence": "weekly", "due": False, "last_probed": "2026-07-25"}
 
     errors = validate_fetch_status_integrity(
         {"fetch_status": fs}, whitelist, due_names=[n for n in plan if plan[n]["due"]], cadence_plan=plan

@@ -461,6 +461,11 @@ def run_source_stats(project_root: Path, target_date: str) -> tuple[int, str]:
         if not 0 <= age <= 30:
             continue
         for name, record in (entry or {}).items():
+            # 跳过记录（attempts<=0）不是实探日，计进来会虚增 probed_days，
+            # 与 cadence 分档实际用的口径不一致
+            attempts = record.get("attempts")
+            if not isinstance(attempts, int) or attempts <= 0:
+                continue
             slot = summary.setdefault(name, {"probed_days": 0, "hit_days": 0})
             slot["probed_days"] += 1
             slot["hit_days"] += 1 if record.get("hit") else 0

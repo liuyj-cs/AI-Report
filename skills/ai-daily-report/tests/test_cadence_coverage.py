@@ -138,7 +138,7 @@ def test_finalize_accepts_report_missing_non_due_surface(
         name: {"cadence": "daily", "due": name != LONGTAIL, "last_probed": None}
         for name in stripped["fetch_status"]["source_details"]
     }
-    plan[LONGTAIL] = {"cadence": "weekly", "due": False, "last_probed": None}
+    plan[LONGTAIL] = {"cadence": "weekly", "due": False, "last_probed": "2026-04-15"}
     (cache_dir / "discovery_manifest.json").write_text(
         json.dumps({"date": DATE, "cadence_plan": plan}), encoding="utf-8"
     )

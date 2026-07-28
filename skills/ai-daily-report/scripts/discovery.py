@@ -183,15 +183,22 @@ def _exempt_daily_names(whitelist: dict[str, Any]) -> set[str]:
 
 
 def _ledger_series(stats: dict[str, Any], name: str, target: date) -> list[tuple[date, bool]]:
-    """台账里该面的 (日期, 是否命中) 序列，只取不晚于 target 的天。
+    """台账里该面的 (日期, 是否命中) 序列，只取**真实探测过**且不晚于 target 的天。
 
     未来日期是坏数据（--date 笔误、时钟偏移），必须丢弃：留着会让 last_probed 跑到
     未来，due 的日期差变负，把包括核心源在内的所有面判成"今天不用探"。
+
+    ``attempts <= 0`` 的记录是"当天记了一笔但没真去探"（面被跳过）——它是合法的审计
+    留痕，但**不是实探日**。算进来会让一串跳过被读成一串"探过、没命中"，直接架空
+    分档规则里"实探日 ≥10"这道样本量保护，把面误降成 weekly。
     """
     series: list[tuple[date, bool]] = []
     for day, entry in (stats.get("days") or {}).items():
         record = (entry or {}).get(name)
         if not isinstance(record, dict):
+            continue
+        attempts = record.get("attempts")
+        if not isinstance(attempts, int) or attempts <= 0:
             continue
         try:
             parsed = date.fromisoformat(day)
@@ -553,28 +560,39 @@ def write_discovery_manifest(cache_dir: Path, manifest: dict[str, Any]) -> Path:
     return path
 
 
-def _valid_cadence_slot(slot: Any) -> bool:
-    """slot 必须逐字段按类型校验，不能只看键在不在。
+def _valid_cadence_slot(slot: Any, target: date) -> bool:
+    """slot 必须类型合法**且语义可能**——manifest 是我们自己算出来的,直接验算一遍。
 
-    `due` 尤其危险：任何非布尔值（null / 0 / "false"）都会被 truthiness 悄悄读成
-    "今天不用探"，把一份损坏的 manifest 变成一个看起来正常的窄 due 名单。
+    只查类型不够:`{"cadence":"daily","due":false,"last_probed":null}` 每个字段都合规,
+    却与 compute_cadence 的语义直接矛盾(daily 面间隔 1 天、last_probed 最早也只能是
+    昨天,不可能不到期;从没探过的面更不可能不到期)。这种 slot 只能来自伪造或损坏,
+    放行就等于让一份"看起来正常"的窄 due 名单去做阻塞校验。
+
+    把 due 重新推导一遍再比对,一条不变量覆盖全部组合:daily 恒 due、last_probed 为空
+    恒 due、其余按间隔算——都是这个等式的特例。
     """
     if not isinstance(slot, dict):
         return False
-    if slot.get("cadence") not in CADENCE_INTERVALS:
+    cadence = slot.get("cadence")
+    if cadence not in CADENCE_INTERVALS:
         return False
-    if type(slot.get("due")) is not bool:
+    due = slot.get("due")
+    if type(due) is not bool:
         return False
+
     last_probed = slot.get("last_probed")
     if last_probed is None:
-        return True
+        return due is True
     if not isinstance(last_probed, str):
         return False
     try:
-        date.fromisoformat(last_probed)
+        probed = date.fromisoformat(last_probed)
     except ValueError:
         return False
-    return True
+    # last_probed 是"往日":compute_cadence 只取严格早于 target 的记录,当日或未来都是坏数据
+    if probed >= target:
+        return False
+    return due is ((target - probed).days >= CADENCE_INTERVALS[cadence])
 
 
 def trusted_cadence_plan(
@@ -605,7 +623,11 @@ def trusted_cadence_plan(
     plan = manifest.get("cadence_plan")
     if not isinstance(plan, dict) or not plan:
         return None
-    if not all(_valid_cadence_slot(slot) for slot in plan.values()):
+    try:
+        target = date.fromisoformat(target_date)
+    except ValueError:
+        return None
+    if not all(_valid_cadence_slot(slot, target) for slot in plan.values()):
         return None
     if whitelist is not None and not set(required_discovery_names(whitelist)) <= set(plan):
         return None

@@ -97,7 +97,7 @@ def test_healthy_due_list_is_used(tmp_path):
     cache_dir = tmp_path / "cache" / TARGET
     cache_dir.mkdir(parents=True)
     plan = {f"surface-{i}": {"cadence": "daily", "due": True, "last_probed": None} for i in range(60)}
-    plan["cold"] = {"cadence": "weekly", "due": False, "last_probed": None}
+    plan["cold"] = {"cadence": "weekly", "due": False, "last_probed": "2026-07-24"}
     (cache_dir / "discovery_manifest.json").write_text(
         json.dumps({"date": TARGET, "cadence_plan": plan}), encoding="utf-8"
     )

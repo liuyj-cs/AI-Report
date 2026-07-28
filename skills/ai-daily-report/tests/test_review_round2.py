@@ -89,7 +89,7 @@ def test_invalid_last_probed_rejects_plan(tmp_path, sample_whitelist, bad_probed
 
 
 def test_wellformed_plan_still_accepted(tmp_path, sample_whitelist):
-    plan = _plan(sample_whitelist, **{COLD: {"cadence": "weekly", "due": False, "last_probed": "2026-07-20"}})
+    plan = _plan(sample_whitelist, **{COLD: {"cadence": "weekly", "due": False, "last_probed": "2026-07-25"}})
     _manifest(tmp_path, {"date": DATE, "cadence_plan": plan})
 
     due = due_discovery_names(tmp_path, DATE, whitelist=sample_whitelist)
