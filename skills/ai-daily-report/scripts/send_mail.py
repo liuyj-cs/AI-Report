@@ -117,7 +117,7 @@ def main() -> int:
     msg = build_message(sender, recipients, args.subject, html_body)
 
     if args.dry_run:
-        print(f"DRY-RUN from={sender} to={recipients} subject={args.subject!r} bytes={len(html_body)}")
+        print(f"DRY-RUN recipients={len(recipients)} subject={args.subject!r} bytes={len(html_body)}")
         return 0
 
     try:
@@ -125,15 +125,15 @@ def main() -> int:
     except smtplib.SMTPAuthenticationError as e:
         print(f"SMTP auth failed: {e}", file=sys.stderr)
         return 2
-    except smtplib.SMTPRecipientsRefused as e:
-        print(f"SMTP recipients refused (permanent, no retry): {e.recipients}", file=sys.stderr)
+    except smtplib.SMTPRecipientsRefused:
+        print("SMTP recipients refused (permanent, no retry)", file=sys.stderr)
         return 3
     except (smtplib.SMTPException, OSError) as e:
         print(f"SMTP send failed after {len(RETRY_DELAYS) + 1} attempts: {e}", file=sys.stderr)
         return 3
 
     suffix = f" retries={retries}" if retries else ""
-    print(f"sent to={','.join(recipients)} subject={args.subject!r}{suffix}")
+    print(f"sent recipients={len(recipients)} subject={args.subject!r}{suffix}")
     return 0
 
 
