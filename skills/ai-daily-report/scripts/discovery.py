@@ -11,7 +11,6 @@ from typing import Any, Iterator
 import yaml
 
 from evidence import suggest_one_hop_targets
-from source_stats import load_source_stats
 from tracking import TRACKING_SURFACE_PREFIX
 
 
@@ -27,16 +26,6 @@ ECOSYSTEM_DISCOVERY_NAME = "Agent Ecosystem Discovery"
 LEADER_INTERVIEW_DISCOVERY_NAME = "Leader Interview Discovery"
 METHODOLOGY_DISCOVERY_NAME = "Methodology Radar Discovery"
 HACKER_NEWS_NAME = "Hacker News front page"
-# 慢信号轨道：准入窗 7/14 天，隔日探查零实质损失；固定档比按命中率浮动更可预期。
-SLOW_TRACK_SURFACES = (LEADER_INTERVIEW_DISCOVERY_NAME, METHODOLOGY_DISCOVERY_NAME)
-CADENCE_INTERVALS = {"daily": 1, "every_2_days": 2, "weekly": 7}
-CADENCE_WINDOW_DAYS = 30
-# 长尾判定的两道保护：探测样本够（实探日）与台账观察期够（首见距今）。
-CADENCE_MIN_PROBED_DAYS = 10
-# 已降频的面按稀疏节奏探测，30 天里本就只有 4-5 次；用 daily 档的样本量要求会让档位震荡。
-CADENCE_MIN_SPARSE_PROBED_DAYS = 4
-CADENCE_MIN_LEDGER_AGE_DAYS = 14
-CADENCE_DAILY_HIT_DAYS = 3
 DEFAULT_SOURCE_FAMILIES = {
     "official_release_surface": {
         "description": "官方发布页、产品公告页与一级发布入口",
@@ -154,120 +143,6 @@ def required_discovery_names(whitelist: dict[str, Any]) -> list[str]:
         if name not in deduped:
             deduped.append(name)
     return deduped
-
-
-def _exempt_daily_names(whitelist: dict[str, Any]) -> set[str]:
-    """恒每日探查的面:核心源 / tier1 官方 / hard_data / cadence pin / 聚合探针面。
-
-    聚合面(搜索、召回探针、source_family)本身就是召回兜底,降频等于自断退路;
-    慢信号轨道(访谈、方法论发现面)例外,见 SLOW_TRACK_SURFACES。
-    追踪面(TRACKING_SURFACE_PREFIX)不进 required_discovery_names,不参与调度,
-    其覆盖由 tracking 的独立校验器负责。
-    """
-    exempt = {name for name in whitelist.get("core_sources", []) if name}
-    for source in iter_named_sources(whitelist):
-        if (
-            source.get("authority_tier") == 1
-            or source.get("category") == "hard_data"
-            or source.get("cadence") == "daily"
-        ):
-            exempt.add(source["name"])
-    named = {source["name"] for source in iter_named_sources(whitelist)}
-    for name in required_discovery_names(whitelist):
-        if name not in named and name not in SLOW_TRACK_SURFACES:
-            exempt.add(name)
-    return exempt
-
-
-def _ledger_series(stats: dict[str, Any], name: str, target: date) -> list[tuple[date, bool]]:
-    """台账里该面的 (日期, 是否命中) 序列，只取**真实探测过**且**严格早于** target 的天。
-
-    严格早于是幂等的前提：finalize 会写入当天记录，若当天记录参与分档，init 算出的
-    plan 与 finalize 重算的结果就会不一致，重跑 finalize 会自我否定。语义上也只能这样
-    ——用"今天探的结果"决定"今天该不该探"是因果倒置。
-
-    未来日期同样丢弃（--date 笔误、时钟偏移）：留着会让 last_probed 跑到未来，due 的
-    日期差变负，把包括核心源在内的所有面判成"今天不用探"。
-
-    ``attempts <= 0`` 的记录是"当天记了一笔但没真去探"（面被跳过）——它是合法的审计
-    留痕，但**不是实探日**。算进来会让一串跳过被读成一串"探过、没命中"，直接架空
-    分档规则里"实探日 ≥10"这道样本量保护，把面误降成 weekly。
-    """
-    series: list[tuple[date, bool]] = []
-    for day, entry in (stats.get("days") or {}).items():
-        record = (entry or {}).get(name)
-        if not isinstance(record, dict):
-            continue
-        attempts = record.get("attempts")
-        if not isinstance(attempts, int) or attempts <= 0:
-            continue
-        try:
-            parsed = date.fromisoformat(day)
-        except ValueError:
-            continue
-        if parsed >= target:
-            continue
-        series.append((parsed, bool(record.get("hit"))))
-    return sorted(series)
-
-
-def _rank_cadence(series: list[tuple[date, bool]], target: date) -> str:
-    """按近 30 天命中率分档;统计不足一律回 daily(宁多探不漏探)。"""
-    if not series:
-        return "daily"
-    observed_days = (target - series[0][0]).days
-    if observed_days < CADENCE_MIN_LEDGER_AGE_DAYS:
-        return "daily"
-    window = [(day, hit) for day, hit in series if 0 <= (target - day).days <= CADENCE_WINDOW_DAYS]
-    hit_days = sum(1 for _, hit in window if hit)
-    if hit_days >= CADENCE_DAILY_HIT_DAYS:
-        return "daily"
-    if hit_days:
-        return "every_2_days"
-    if len(window) >= CADENCE_MIN_PROBED_DAYS:
-        return "weekly"
-    # 已降到 weekly 的面，30 天内本来就只探 4-5 次，用 daily 档的样本量要求会把它
-    # 弹回 daily、下次又降回来——档位来回震荡等于白降。但"探得稀疏"也可能是管线
-    # 停摆造成的，那种稀疏不代表这个面不值得探：额外要求最近确实还在探。
-    fresh = window and (target - window[-1][0]).days <= CADENCE_INTERVALS["weekly"]
-    if observed_days >= CADENCE_WINDOW_DAYS and len(window) >= CADENCE_MIN_SPARSE_PROBED_DAYS and fresh:
-        return "weekly"
-    return "daily"
-
-
-def compute_cadence(
-    whitelist: dict[str, Any],
-    stats: dict[str, Any],
-    target_date: str,
-) -> dict[str, dict[str, Any]]:
-    """为每个发现面算出 cadence / due / last_probed。
-
-    这是运维调度,不是编辑判断:cadence 只决定"今天探不探",不参与正文取舍与
-    排序;非 due 面仍允许 AI 因外部信号唤醒(见 SKILL.md 采集节奏一节)。
-    """
-    try:
-        target = date.fromisoformat(target_date)
-    except ValueError as exc:
-        raise ValueError(f"target_date must be a valid YYYY-MM-DD date, got {target_date!r}") from exc
-    exempt = _exempt_daily_names(whitelist)
-    plan: dict[str, dict[str, Any]] = {}
-    for name in required_discovery_names(whitelist):
-        series = _ledger_series(stats, name, target)
-        last_probed = series[-1][0] if series else None
-        if name in exempt:
-            cadence = "daily"
-        elif name in SLOW_TRACK_SURFACES:
-            cadence = "every_2_days"
-        else:
-            cadence = _rank_cadence(series, target)
-        interval = CADENCE_INTERVALS[cadence]
-        due = last_probed is None or (target - last_probed).days >= interval
-        plan[name] = {
-            "cadence": cadence,
-            "due": due,
-            "last_probed": last_probed.isoformat() if last_probed else None,
-        }
-    return plan
 
 
 def rolling_week_dates(week_end: str) -> list[str]:
@@ -488,15 +363,11 @@ def build_discovery_manifest(
     whitelist: dict[str, Any],
     active_tracking: list[dict[str, Any]] | None = None,
     reader_profile: dict[str, Any] | None = None,
-    cadence_plan: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     source_families = source_family_catalog(whitelist)
-    plan = cadence_plan or {}
-    default_slot = {"cadence": "daily", "due": True, "last_probed": None}
     sources = []
     for source in iter_named_sources(whitelist):
         source_family = infer_source_family(source)
-        slot = plan.get(source["name"], default_slot)
         sources.append(
             {
                 "name": source["name"],
@@ -505,9 +376,6 @@ def build_discovery_manifest(
                 "authority_tier": source.get("authority_tier"),
                 "verify_before_use": source.get("verify_before_use", False),
                 "fallback_policy": source.get("fallback_policy", source_families.get(source_family, {}).get("fallback_policy", "same_entity_one_hop")),
-                "cadence": slot["cadence"],
-                "due": slot["due"],
-                "last_probed": slot["last_probed"],
                 "fetch_chain": source["fetch_chain"],
                 "one_hop_fallback_targets": suggest_one_hop_targets(source["name"], source),
             }
@@ -520,11 +388,6 @@ def build_discovery_manifest(
         "window": window,
         "active_tracking": active_tracking or [],
         "reader_profile": reader_profile or {},
-        "cadence_plan": plan,
-        "cadence_summary": {
-            "due": sum(1 for slot in plan.values() if slot["due"]),
-            "skipped": sum(1 for slot in plan.values() if not slot["due"]),
-        },
         "required_sources": sources,
         "source_families": source_families,
         "general_agent_search_queries": whitelist.get("general_agent_search_queries", []),
@@ -558,76 +421,9 @@ def write_discovery_manifest(cache_dir: Path, manifest: dict[str, Any]) -> Path:
     return path
 
 
-def trusted_cadence_plan(
-    project_root: Path,
-    target_date: str,
-    whitelist: dict[str, Any],
-) -> dict[str, Any] | None:
-    """当日 manifest 的 cadence_plan;任何不可信迹象都返回 None。
-
-    **判据是重算比对,不是逐字段校验。** `cadence_plan` 是本流程自己用
-    `compute_cadence(whitelist, stats, date)` 算出来再序列化到磁盘的,所以"这份 plan
-    可不可信"等价于"它是不是那个纯函数的输出"——唯一完备的验证就是重新调一次再比。
-    逐字段规则(类型、语义自洽、策略一致…)都只是在用近似逼近这个等价判断,近似必然
-    留缝:PR #5 的四轮 review 在同一个函数上找到 5 个绕过,每个都是上一版规则没覆盖到
-    的那一小块。改判据本身,这条路才收敛。
-
-    `whitelist` 是必需参数,没有"省略它就走弱校验"的旁路——那条旁路等于把契约强度交给
-    调用点,而 review 已经证明弱判据不完备。契约必须由签名强制。
-
-    **收窄覆盖基准的方向必须 fail-closed**:比对不符只意味着"这份 plan 不是我算的"
-    (whitelist 变了、manifest 被改、台账被动过),此时回退 whitelist 全量多报几条缺失,
-    远好于用一份来路不明的短名单去放行漏采日报。
-
-    QA 与阻塞校验必须共用本函数的结果,否则合法跳过的面会被 QA 报成漏采,诱导第二天
-    补跑、抵消调度收益。
-    """
-    path = project_root / "cache" / target_date / "discovery_manifest.json"
-    if not path.exists():
-        return None
-    try:
-        manifest = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(manifest, dict):
-        return None
-    # 日期必须显式对上:缺 date 的 manifest 无从判断是不是复制来的旧文件
-    if manifest.get("date") != target_date:
-        return None
-    plan = manifest.get("cadence_plan")
-    if not isinstance(plan, dict) or not plan:
-        return None
-    try:
-        target = date.fromisoformat(target_date)
-    except ValueError:
-        return None
-
-    # 完备判据：重算一次，逐字段全等才采信。任何偏离——类型、语义、固定 cadence
-    # 策略、伪造的 last_probed、多一个面少一个面——都在这一次比较里被拒。
-    expected = compute_cadence(whitelist, load_source_stats(project_root), target_date)
-    return expected if plan == expected else None
-
-
-def due_discovery_names(
-    project_root: Path,
-    target_date: str,
-    whitelist: dict[str, Any],
-) -> list[str] | None:
-    """当日 due=true 的面名单;manifest 不可信时返回 None（调用方回退全量基准）。"""
-    plan = trusted_cadence_plan(project_root, target_date, whitelist)
-    if plan is None:
-        return None
-    return [name for name, slot in plan.items() if slot.get("due")]
-
-
-def missing_fetch_status_coverage(
-    report: dict[str, Any],
-    whitelist: dict[str, Any],
-    due_names: list[str] | None = None,
-) -> list[str]:
+def missing_fetch_status_coverage(report: dict[str, Any], whitelist: dict[str, Any]) -> list[str]:
     source_details = report.get("fetch_status", {}).get("source_details", {})
-    required = required_discovery_names(whitelist) if due_names is None else due_names
-    return [name for name in required if name not in source_details]
+    return [name for name in required_discovery_names(whitelist) if name not in source_details]
 
 
 def append_run_log(run_log: Path, line: str) -> None:

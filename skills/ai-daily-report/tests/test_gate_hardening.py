@@ -1,11 +1,7 @@
-"""复验发现的加固：守门判据必须信 attempts 实迹，不信自报字段；重跑不塌基准。"""
-import json
-from datetime import date, timedelta
-
-from discovery import compute_cadence, due_discovery_names, load_whitelist
+"""召回守门的判据必须信 attempts 实迹，不信自报的 final_layer_index。"""
+from discovery import load_whitelist
 from editorial import validate_recall_fallback_coverage
 
-TARGET = "2026-07-27"
 NAME = "DeepSeek"
 
 
@@ -50,42 +46,3 @@ def test_stale_final_index_does_not_cause_false_block():
     whitelist = load_whitelist()
 
     assert validate_recall_fallback_coverage(_report(_fetch_attempts([0, 1, 2]), 0), whitelist) == []
-
-
-def test_same_day_reinit_does_not_shrink_due_baseline(sample_whitelist):
-    """同日重跑 init-daily 后，due 不得因为"今天已探过"而塌掉。"""
-    stats = {
-        "version": "1.0",
-        "days": {TARGET: {"OpenAI": {"attempts": 1, "hit": True}, "Aider": {"attempts": 1, "hit": False}}},
-    }
-
-    plan = compute_cadence(sample_whitelist, stats, TARGET)
-
-    assert plan["OpenAI"]["due"] is True
-    assert plan["Aider"]["due"] is True
-
-
-# test_today_entry_still_counts_for_hit_ranking 已删除：它断言当天记录参与命中率
-# 统计，而那个设计会让 init 与 finalize 重算结果不一致（重跑 finalize 自我否定），
-# 语义上也是用今天探的结果决定今天该不该探。相反的断言见
-# test_cadence_plan_authority.py::test_same_day_record_does_not_affect_ranking。
-
-
-# 「比例守卫」相关的两个用例已删除：该守卫是弱判据的一部分，已随之移除。
-# 窄/健康 due 名单的判定现在由重算比对天然覆盖——不等于重算结果就回退全量，
-# 断言见 test_cadence_plan_authority.py。
-
-
-def test_sparse_rule_does_not_demote_after_pipeline_outage(sample_whitelist):
-    """管线停摆造成的探测稀疏，不能被当成"按 weekly 节奏在探"。"""
-    target = date.fromisoformat(TARGET)
-    # 40 天前起连续探了 10 天，之后停摆至今
-    days = {
-        (target - timedelta(days=offset)).isoformat(): {"Aider": {"attempts": 1, "hit": False}}
-        for offset in range(31, 41)
-    }
-
-    plan = compute_cadence(sample_whitelist, {"version": "1.0", "days": days}, TARGET)
-
-    assert plan["Aider"]["cadence"] == "daily"
-    assert plan["Aider"]["due"] is True

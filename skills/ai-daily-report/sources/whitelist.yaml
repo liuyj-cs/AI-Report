@@ -21,7 +21,6 @@
 #     搜索层；(b) 停在 feed 面但链里还有没走到的抓取面（单个 feed 只覆盖该源的一部分
 #     发布口径，API changelog ≠ HF 权重发布）。判据按 attempts 里真实出现的最大
 #     layer_index 算，不看自报的 final_layer_index。详见 SKILL.md 日报步骤 1「成功」判定。
-#   - cadence: daily（可选）把该源钉在每日探查档，不参与命中率分层降频。
 #   - verify_before_use: true 表示该源 Layer 0 入口尚未被人工 verify 过，跑日报时
 #     首层若失败应直接落入 Layer 1+，不报警；近期需要做一次性人工巡检。
 #   - 对 OpenAI / OpenAI Codex：若 Layer 0 命中 `403`、Cloudflare、JS shell 或空骨架，
@@ -528,7 +527,6 @@ general_agent_watchlist:
     category: general_agent_watchlist
     weight: high
     authority_tier: 2
-    cadence: daily
     fetch_chain:
       - type: webfetch
         url: https://news.ycombinator.com/
@@ -541,7 +539,6 @@ general_agent_watchlist:
     category: general_agent_watchlist
     weight: medium
     authority_tier: 2
-    cadence: daily
     fetch_chain:
       - type: webfetch
         url: https://github.com/trending?since=daily
@@ -602,7 +599,6 @@ general_agent_watchlist:
     category: general_agent_watchlist
     weight: low
     authority_tier: 2
-    cadence: daily
     fetch_chain:
       - type: webfetch
         url: https://www.producthunt.com/categories/artificial-intelligence
@@ -753,7 +749,6 @@ chinese_media:
     # 两层的分工是刻意的：selected 是高门槛策展池（实测当日只放行约 8% 条目），它空
     # 只说明"策展没放行"，不等于中文圈无新闻 —— 所以标 static，空必须下穿 mode=all
     # 全量池；all 才是真·全量倒序面，空即权威。
-    cadence: daily
     fetch_chain:
       - type: webfetch
         url: https://aihot.virxact.com/api/v1/items?mode=selected&window=24h&limit=50

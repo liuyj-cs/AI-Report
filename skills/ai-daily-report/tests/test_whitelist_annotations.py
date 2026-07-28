@@ -69,10 +69,9 @@ def test_aihot_uses_structured_api_layers(sample_whitelist):
     assert full == {"type": "webfetch", "url": AIHOT_ALL_URL, "surface_kind": "feed"}
 
 
-def test_aihot_keeps_search_fallback_and_daily_pin(sample_whitelist):
+def test_aihot_keeps_search_fallback(sample_whitelist):
     source = _source(sample_whitelist, "AI HOT")
 
-    assert source["cadence"] == "daily"
     assert source["authority_tier"] == 2  # 聚合面角色不变，候选仍走 media 降档
     assert any(
         layer["type"] in ("websearch_scoped", "websearch_broad") for layer in source["fetch_chain"]
@@ -87,20 +86,8 @@ def test_aihot_no_longer_scrapes_html_home(sample_whitelist):
     assert "https://aihot.virxact.com/all" not in urls
 
 
-def test_aihot_pin_makes_it_exempt_from_downgrade(sample_whitelist):
-    """pin 的行为断言：命中率再低也留在每日档。"""
-    from datetime import date, timedelta
+def test_no_source_carries_retired_cadence_pin(sample_whitelist):
+    """cadence 调度已移除，whitelist 不应再有它的残留字段。"""
+    offenders = [s["name"] for s in iter_named_sources(sample_whitelist) if "cadence" in s]
 
-    from discovery import compute_cadence
-
-    target = "2026-07-27"
-    days = {
-        (date.fromisoformat(target) - timedelta(days=offset)).isoformat(): {
-            "AI HOT": {"attempts": 1, "hit": False}
-        }
-        for offset in range(1, 31)
-    }
-    plan = compute_cadence(sample_whitelist, {"version": "1.0", "days": days}, target)
-
-    assert plan["AI HOT"]["cadence"] == "daily"
-    assert plan["AI HOT"]["due"] is True
+    assert offenders == [], f"残留 cadence 字段: {offenders}"

@@ -1,7 +1,11 @@
 # 2026-07-27-source-cadence-surface-kind plan
 
 ## 目标
-交付信源采集面的确定性调度与空判定纪律:命中统计台账 + 三档 cadence 调度 + 覆盖校验 due 基准 + fetch_chain 逐层 surface_kind 标注(守门判据层级化)+ AI HOT 结构化 API 面,目标正常日抓取尝试量下降 30-50% 且召回不劣化。
+交付信源采集面的空判定纪律:fetch_chain 逐层 surface_kind 标注(守门判据层级化)+ AI HOT 结构化 API 面。
+
+> 原目标含「命中统计台账 + 三档 cadence 调度 + 覆盖校验 due 基准,抓取量降 30-50%」(T1-T4)。
+> 2026-07-28 整体撤销:实测降幅只有 21%(74 个面里 48 个恒每日,可降频的仅 24 个),而 PR #5
+> 五轮 review 的 12 条 findings 100% 落在这部分。理由详见 design「撤销记录」。
 
 ## 关联 spec 引用
 - spec delta: `specs/source-discovery/spec.md`
@@ -16,10 +20,10 @@
 
 | id | 标题 | type | owner | status |
 |----|------|------|-------|--------|
-| T1 | source_stats 台账模块(写入/幂等/修剪/fail-open) | tdd | Liu | pending |
-| T2 | cadence 三档计算与 due 判定 | tdd | Liu | pending |
-| T3 | runner/manifest 集成:init 算 cadence、finalize 写台账、source-stats 子命令 | tdd | Liu | pending |
-| T4 | 覆盖校验 due 基准 + manifest 缺失回退 | tdd | Liu | pending |
+| ~~T1~~ | ~~source_stats 台账模块~~ **已撤销**（见 design「撤销记录」） | tdd | Liu | reverted |
+| ~~T2~~ | ~~cadence 三档计算与 due 判定~~ **已撤销** | tdd | Liu | reverted |
+| ~~T3~~ | ~~runner/manifest 集成:init 算 cadence、finalize 写台账、source-stats 子命令~~ **已撤销** | tdd | Liu | reverted |
+| ~~T4~~ | ~~覆盖校验 due 基准 + manifest 缺失回退~~ **已撤销** | tdd | Liu | reverted |
 | T5 | 召回守门判据层级化(surface_kind)+ empty_is_conclusive 退役 | tdd | Liu | pending |
 | T6 | whitelist 全量 surface_kind 标注 + AI HOT API 链替换 + 标注齐全性测试 | tdd | Liu | pending |
 | T7 | SKILL.md / AGENTS.md 口径修订 | docs | Liu | pending |

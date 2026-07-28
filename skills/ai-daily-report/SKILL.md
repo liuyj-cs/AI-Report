@@ -20,7 +20,6 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - 日报：`python skills/ai-daily-report/scripts/report_runner.py init-daily --date {YYYY-MM-DD} --now {ISO8601} --env .env`
    - 周报：`python skills/ai-daily-report/scripts/report_runner.py init-weekly --end-date {YYYY-MM-DD} --now {ISO8601} --env .env`
    - 作用：提前校验 `.env`、创建 `cache/.../run.log`。日报入口只负责生成 `discovery_manifest.json` 与窗口；周报入口会写 `input_days.json`。若邮件环境变量缺失，此步即失败并停止。
-   - 日报入口还会按 `cache/source_stats.json` 算出当日 `cadence_plan` 与 due 面（见步骤 1「采集节奏」）。想单独查看各面近 30 天探测汇总与当日 due 预览：`python skills/ai-daily-report/scripts/report_runner.py source-stats --date {YYYY-MM-DD}`（只读，不改状态）。
 0a. **昨日送达自检**：`init-daily` 输出若含 `DELIVERY_ALERT`（昨日有邮件失败或仅 dry-run），优先重跑
    `python skills/ai-daily-report/scripts/report_runner.py finalize-daily --date {昨日} --env .env`
    续发（send_state 幂等：已送达的跳过；失败点之后从未尝试的深度/访谈也会一并补发）。
@@ -46,14 +45,6 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 1. **遍历每个信源的 fetch_chain（通用降级机制）**
 
    每个白名单项都带 `fetch_chain` 有序列表。对每个源按层尝试，**首次「成功且非伪成功」立即停止**：
-
-   - **采集节奏（cadence）：今天该探哪些面**
-     - `discovery_manifest.json` 的 `cadence_plan` 给出每个面的 `cadence`（`daily` / `every_2_days` / `weekly`）与当日 `due`；`cadence_summary` 是当日 due / skipped 汇总，`init-daily` 同时在 run.log 写 `CADENCE due=N skipped=M`
-     - 分档由脚本按 `cache/source_stats.json` 近 30 天命中率确定性计算（命中日 ≥3 → daily；1-2 → every_2_days；0 且实探 ≥10 日且台账首见 ≥14 天 → weekly；统计不足一律 daily）。**核心源、tier1 官方、hard_data、标了 `cadence: daily` 的源、以及各聚合探针/搜索面恒为 daily**；访谈与方法论两个发现面固定 every_2_days
-     - **`due=true` 的面必须全部跑完**——这是当日首轮覆盖的基准，finalize 按它校验 `fetch_status` 覆盖（不是按 whitelist 全量）
-     - **非 due 面不是禁区，但唤醒要留理由**：若当日外部信号（媒体、探针、追踪事件）指向某个降频面，照常唤醒探测——**必须在该面某次 attempt 上写非空 `wakeup_reason` 说明依据，否则 `finalize-daily` 校验失败**。这不是拦你唤醒，是让"为什么越过调度计划"可审计；没有这条，唤醒就成了绕过调度的免费口子
-     - cadence 只回答"今天探不探"，**不参与**正文取舍、排序或重要性判断；不要因为某个面是 daily 就默认它的内容更重要
-     - 台账缺失/损坏 → 全部面回 daily（fail-open），日报照跑
 
    - **白名单的角色**
      - `whitelist.yaml` 是**首轮覆盖起点**，不是可用信息的天然上限
@@ -378,8 +369,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 9a. **Runner 收尾（默认入口）**
     - Run: `python skills/ai-daily-report/scripts/report_runner.py finalize-daily --date {date} --env .env`
     - dry-run: `python skills/ai-daily-report/scripts/report_runner.py finalize-daily --date {date} --env .env --dry-run`
-    - 作用：再次校验邮件环境变量，检查 `fetch_status` 覆盖（基准 = 当日 manifest 的 due 面；manifest 缺失时回退 whitelist 全量）、`candidate_ledger.json` 与正文对齐、`action_items.references[]` 只能引用 `core/watch` 正文条目；通过后再顺序执行渲染、归档、发送邮件。
-    - 校验通过后会把当日各面的 `{attempts, hit}` 写入 `cache/source_stats.json`（run.log 记 `SOURCE_STATS recorded=N`），供次日算 cadence。**dry-run 同样写入**——它统计的是采集事实，与是否投递无关（这一点与 `seen_repos` / `methodology_seen` 等"发送成功才写"的台账语义有意不同）。
+    - 作用：再次校验邮件环境变量，检查 `fetch_status` 覆盖、`candidate_ledger.json` 与正文对齐、`action_items.references[]` 只能引用 `core/watch` 正文条目；通过后再顺序执行渲染、归档、发送邮件。
     - 若发送失败：必须保留 `cache/{date}/report.json`、`cache/{date}/candidate_ledger.json`、`cache/{date}/report.html` 与 `cache/{date}/run.log`，并返回明确错误。
 
 10. **渲染 HTML（调试/单步重跑）**

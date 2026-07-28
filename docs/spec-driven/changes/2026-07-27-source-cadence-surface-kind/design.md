@@ -123,6 +123,17 @@ finalize-daily
 14. **AI HOT 分两层而不是一层**：`mode=selected` 实测只放行约 8% 条目（4 条 vs all 的 50 条），作为「召回对照面」过窄。改为 Layer-0 selected(static，空必须下穿) → Layer-1 all(feed)。另发现**静默空集陷阱**：非法参数（`limit>100`、`window=48h`、未知 `mode`）返回 HTTP 400 但 body 是 `{"items":[],"page":null}`，被 feed 层读成「空即权威」即静默漏采——判别信号是 `page` 为 null，已写入 SKILL.md 纪律。
 15. **weekly 档稳定性需要「探测新鲜度」条件**：只放宽样本量会让管线停摆期（本仓有过周报停摆 3 周的记录）的稀疏探测被误读成「按 weekly 节奏在探」。追加「窗口内最后一次探测距今 ≤7 天」才允许走稀疏判据。
 
+## 撤销记录（2026-07-28）
+
+**采集调度（cadence）整体撤销，本 change 只保留 `surface_kind` 与 AI HOT。** 决策依据是两个实测数字：
+
+1. **收益被豁免名单锁死**：74 个发现面里 48 个（65%）属恒 daily 豁免（core_sources / tier1 / hard_data / 聚合探针面），真正有资格降频的只有 24 个（32%）。实测基线 148 attempts/天 → 稳态 118，**降幅 21%**，远低于 intake 承诺的 30-50%。这个上限在 intake 定豁免名单时就已经确定，而当时没有把这笔账算出来（关键决策 3/9 只做了定性权衡）。
+2. **返工成本全部集中在这一部分**：PR #5 五轮 review 共 12 条 findings，**100% 落在 cadence 调度上**；`surface_kind` 与 AI HOT 在终审修完 feed 误标后再无 finding。即一套约 333 行、收益 21% 的机制消耗了全部 review 预算。
+
+撤销范围：`scripts/source_stats.py`（整个文件）、`discovery.py` 的 cadence 计算与 manifest 字段、`editorial.py` 的 due 基准与唤醒审计、`report_runner.py` 的台账写入与 `source-stats` 子命令、whitelist 的 `cadence` pin、schema 的 `wakeup_reason`、以及 11 个纯 cadence 测试文件。保留：`surface_kind` 全量标注与召回守门层级化、AI HOT 结构化 API 双层、死链清理、CI。
+
+如果将来重做采集调度，前置条件是**先算清楚豁免名单锁定的收益上限**，再决定值不值得做——那正是这次跳过的一步。
+
 ## 风险与权衡
 
 - **误标 feed → 静默漏采**(最高风险):static 面被误标 feed 后空结果不再下穿。缓解:①标注判据单一明确(「每条带日期的倒序列表」);②dev 任务中逐条核对并抽查实页;③验收期 7 天盯 qa_diff `missed_discovery`(intake 追问 4 口径);④AI 在编辑自检中发现外部信号指向某 feed-空面时仍可唤醒下穿(advisory 自由保留)。
