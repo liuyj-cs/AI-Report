@@ -10,6 +10,11 @@
 
 ## 计划输入摘要
 
+> **阅读提示(2026-07-28)**:本节及以下「技术方案」「接口变更」「关键决策」「风险与权衡」记录的是
+> **设计当时**的三项合一范围。其中第 ① 项(命中统计台账 + 三档 cadence 调度)已整体撤销、交付物全部
+> 删除,文中一切 `cadence` / `source_stats` / `due` 描述仅为历史记录,**不是 active 契约**。最终交付
+> 范围与撤销依据见本文「撤销记录」一节;active 需求以 `specs/source-discovery/spec.md` 为准。
+
 - **范围边界**:三项合一——①命中统计台账 + 三档 cadence 调度;②fetch_chain 逐层 `surface_kind: feed|static` 标注并精化召回守门判据;③AI HOT 源 Layer-0 换结构化 API。**不做**:不改编辑判断规则(候选取舍、降档、action 资格),不改邮件/渲染/归档链路,不动周报聚合逻辑,不扩大召回守门的阻塞范围。
 - **变更落点**:`scripts/discovery.py`(manifest 增 cadence/due;覆盖校验基准)、`scripts/report_runner.py`(finalize 写台账;init 算 cadence;新调试子命令 `source-stats`)、`scripts/editorial.py`(守门判据 surface_kind 化;覆盖校验对接 manifest)、`sources/whitelist.yaml`(65 条链逐层标注 + AI HOT 链替换 + `cadence` pin 字段)、`SKILL.md` / `AGENTS.md`(empty 判定与调度口径修订)、`tests/`(新增 + 修订)。
 - **契约锚点**:spec delta `specs/source-discovery/spec.md` 五条新增需求;AI HOT API 契约见下「接口变更」。
