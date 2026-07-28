@@ -29,13 +29,25 @@ def source_stats_path(project_root: Path) -> Path:
 
 
 def _clean_record(record: Any) -> dict[str, Any] | None:
+    """严格按类型校验一条面记录；任何字段损坏都丢弃整条，不做强制转换。
+
+    强转是这里最危险的做法：把 ``attempts: "corrupt"`` 读成 0、``hit: null`` 读成
+    False，等于把损坏数据解释成一次"探过、没命中"的真实负样本——连续几天就足以把
+    一个面误降成 weekly。fail-open 的含义是「不知道就当没探过」（回 daily），不是
+    「不知道就当探了没结果」。
+
+    ``type(x) is int`` 而非 isinstance：bool 是 int 的子类，``attempts: True``
+    必须算损坏。
+    """
     if not isinstance(record, dict):
         return None
     attempts = record.get("attempts")
-    return {
-        "attempts": attempts if isinstance(attempts, int) else 0,
-        "hit": bool(record.get("hit")),
-    }
+    hit = record.get("hit")
+    if type(attempts) is not int or attempts < 0:
+        return None
+    if type(hit) is not bool:
+        return None
+    return {"attempts": attempts, "hit": hit}
 
 
 def load_source_stats(project_root: Path) -> dict[str, Any]:

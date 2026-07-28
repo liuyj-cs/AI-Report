@@ -87,7 +87,7 @@ def test_narrow_due_list_falls_back_to_full_baseline(tmp_path):
     plan["OpenAI"] = {"cadence": "daily", "due": True, "last_probed": None}
     plan["Anthropic"] = {"cadence": "daily", "due": True, "last_probed": None}
     (cache_dir / "discovery_manifest.json").write_text(
-        json.dumps({"cadence_plan": plan}), encoding="utf-8"
+        json.dumps({"date": TARGET, "cadence_plan": plan}), encoding="utf-8"
     )
 
     assert due_discovery_names(tmp_path, TARGET) is None
@@ -99,7 +99,7 @@ def test_healthy_due_list_is_used(tmp_path):
     plan = {f"surface-{i}": {"cadence": "daily", "due": True, "last_probed": None} for i in range(60)}
     plan["cold"] = {"cadence": "weekly", "due": False, "last_probed": None}
     (cache_dir / "discovery_manifest.json").write_text(
-        json.dumps({"cadence_plan": plan}), encoding="utf-8"
+        json.dumps({"date": TARGET, "cadence_plan": plan}), encoding="utf-8"
     )
 
     due = due_discovery_names(tmp_path, TARGET)

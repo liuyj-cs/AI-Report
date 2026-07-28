@@ -29,10 +29,11 @@ def test_due_names_reads_manifest_cadence_plan(tmp_path):
     (cache_dir / "discovery_manifest.json").write_text(
         json.dumps(
             {
+                "date": "2026-04-18",
                 "cadence_plan": {
                     "OpenAI": {"cadence": "daily", "due": True, "last_probed": None},
                     LONGTAIL: {"cadence": "weekly", "due": False, "last_probed": "2026-04-17"},
-                }
+                },
             }
         ),
         encoding="utf-8",
@@ -139,7 +140,7 @@ def test_finalize_accepts_report_missing_non_due_surface(
     }
     plan[LONGTAIL] = {"cadence": "weekly", "due": False, "last_probed": None}
     (cache_dir / "discovery_manifest.json").write_text(
-        json.dumps({"cadence_plan": plan}), encoding="utf-8"
+        json.dumps({"date": DATE, "cadence_plan": plan}), encoding="utf-8"
     )
 
     code, message = run_daily_finalize(tmp_path, DATE, dry_run=True, env_path=env_path)

@@ -553,6 +553,30 @@ def write_discovery_manifest(cache_dir: Path, manifest: dict[str, Any]) -> Path:
     return path
 
 
+def _valid_cadence_slot(slot: Any) -> bool:
+    """slot 必须逐字段按类型校验，不能只看键在不在。
+
+    `due` 尤其危险：任何非布尔值（null / 0 / "false"）都会被 truthiness 悄悄读成
+    "今天不用探"，把一份损坏的 manifest 变成一个看起来正常的窄 due 名单。
+    """
+    if not isinstance(slot, dict):
+        return False
+    if slot.get("cadence") not in CADENCE_INTERVALS:
+        return False
+    if type(slot.get("due")) is not bool:
+        return False
+    last_probed = slot.get("last_probed")
+    if last_probed is None:
+        return True
+    if not isinstance(last_probed, str):
+        return False
+    try:
+        date.fromisoformat(last_probed)
+    except ValueError:
+        return False
+    return True
+
+
 def trusted_cadence_plan(
     project_root: Path,
     target_date: str,
@@ -575,19 +599,20 @@ def trusted_cadence_plan(
         return None
     if not isinstance(manifest, dict):
         return None
-    # manifest 自称的日期与被校验的日期不符 → 多半是复制来的旧文件,不可作基准
-    manifest_date = manifest.get("date")
-    if manifest_date is not None and manifest_date != target_date:
+    # 日期必须显式对上:缺 date 的 manifest 无从判断是不是复制来的旧文件
+    if manifest.get("date") != target_date:
         return None
     plan = manifest.get("cadence_plan")
     if not isinstance(plan, dict) or not plan:
         return None
-    if any(not isinstance(slot, dict) or "due" not in slot for slot in plan.values()):
+    if not all(_valid_cadence_slot(slot) for slot in plan.values()):
         return None
     if whitelist is not None and not set(required_discovery_names(whitelist)) <= set(plan):
         return None
-    due = [name for name, slot in plan.items() if slot.get("due")]
-    # due 塌到远少于面总数说明 plan 本身不可信(坏台账、坏日期、同日重跑残留)。
+    due = [name for name, slot in plan.items() if slot["due"]]
+    # 兜底:结构全合法但 due 仍塌到远少于面总数(坏台账、同日重跑残留)。这只是最后
+    # 一道网,不能替代上面的类型校验——`due: null` 会被 truthiness 读成"不用探",
+    # 精心构造的比例甚至能擦过这道阈值。
     if not due or len(due) < len(plan) * DUE_BASELINE_MIN_RATIO:
         return None
     return plan
