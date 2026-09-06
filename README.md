@@ -2,6 +2,10 @@
 
 一个给 Codex 用的本地 skill。它通过自然语言请求或 `/ai-daily`、`/ai-weekly` 这类触发词生成 AI 行业日报 / 周报，并通过 Gmail SMTP 发送到邮箱。
 
+此 skill 仅在本仓库安装：`.agents/skills/ai-daily-report` 通过相对软链接指向 `skills/ai-daily-report`，由 Codex 按仓库作用域发现；工作流和脚本仍维护在原目录。不要把它安装或链接到用户级 skill 目录。
+
+自动任务应绑定 AIReport 项目，在仓库根目录运行，并显式读取 `skills/ai-daily-report/SKILL.md`。这样日报和周报都不依赖全局 skill 安装；现有脚本、`.env`、缓存和归档路径保持有效。
+
 ## 快速开始
 
 1. 复制 `.env.example` 为 `.env`，填写收件邮箱：
@@ -25,6 +29,7 @@
 
 ## 目录
 
+- `.agents/skills/ai-daily-report`：仓库级 skill 发现入口（指向下述目录的相对软链接）
 - `skills/ai-daily-report/SKILL.md`：工作流与判断规则
 - `skills/ai-daily-report/sources/whitelist.yaml`：信源白名单
 - `skills/ai-daily-report/scripts/`：渲染、归档、发信脚本

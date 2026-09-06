@@ -2,6 +2,8 @@
 
 当用户要求生成、重跑、dry-run、渲染、归档或发送 AI 日报 / 周报时，先阅读并遵循 `skills/ai-daily-report/SKILL.md`。
 
+`ai-daily-report` 仅安装在本仓库：`.agents/skills/ai-daily-report` 是指向 `../../skills/ai-daily-report` 的相对软链接。保持 `skills/ai-daily-report/` 为唯一内容来源，不创建用户级安装。日报与周报自动任务应在本仓库根目录运行并直接读取该 `SKILL.md`，不依赖全局 skill 发现。
+
 保持判断逻辑由 AI 完成：
 - 不要把信源优先级、去重、归类、趋势判断、落地建议改写成脚本死规则。
 - `skills/ai-daily-report/scripts/` 只负责确定性工作：渲染 HTML、归档、发送邮件。
