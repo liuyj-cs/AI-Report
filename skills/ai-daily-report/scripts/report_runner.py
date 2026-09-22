@@ -14,7 +14,7 @@ from typing import Any
 from dotenv import dotenv_values
 
 from archive import TYPE_DIRS, archive as archive_html, cleanup_cache
-from deep_dive import deep_dive_path, major_event_slugs
+from deep_dive import deep_dive_path, selected_deep_dive_slugs
 from interview import iter_interview_files, interview_already_sent, record_interview_sent
 from discovery import (
     append_run_log,
@@ -249,9 +249,7 @@ def run_daily_finalize(project_root: Path, target_date: str, dry_run: bool, env_
         append_run_log(run_log, f"{report.get('generated_at', datetime.now().isoformat())} METHODOLOGY cooldown(advisory) {cooldown_warning}")
 
     deep_dive_sends: list[tuple[Path, str, str]] = []
-    for _, slug in major_event_slugs(report):
-        if not slug:
-            continue
+    for slug in selected_deep_dive_slugs(report):
         dd_json_path = deep_dive_path(project_root, target_date, slug)
         dd_html_path = render(dd_json_path)
         dd_archived = archive_html(dd_html_path, "deep_dive", f"{target_date}-{slug}", project_root)

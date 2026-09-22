@@ -672,7 +672,7 @@ def _promote_to_major_event(cache_dir, slug="agents-sdk-sandbox"):
     return slug
 
 
-def test_finalize_daily_rejects_major_event_without_deep_dive(
+def test_finalize_daily_keeps_major_event_tracking_without_deep_dive(
     tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
 ):
     cache_dir, env_path = _build_passing_finalize_setup(
@@ -682,25 +682,37 @@ def test_finalize_daily_rejects_major_event_without_deep_dive(
 
     exit_code, message = run_daily_finalize(tmp_path, "2026-04-18", True, env_path)
 
-    assert exit_code == 1
-    assert "deep dive" in message
+    assert exit_code == 0, message
+    assert (cache_dir.parent / "tracking" / "agents-sdk-sandbox.json").exists()
+    assert not (tmp_path / "reports" / "deep_dives").exists()
 
 
 def test_finalize_daily_renders_and_archives_deep_dive(
-    tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status, sample_deep_dive
+    tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status, research_deep_dive, monkeypatch
 ):
+    import report_runner
+
     cache_dir, env_path = _build_passing_finalize_setup(
         tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
     )
-    slug = _promote_to_major_event(cache_dir)
-
-    payload = deepcopy(sample_deep_dive)
+    # A mature comparison can be selected without a same-day major event.
+    payload = deepcopy(research_deep_dive)
     payload["date"] = "2026-04-18"
-    payload["event_slug"] = slug
-    payload["title"] = "Agents SDK 原生接入沙箱执行"
+    slug = payload["event_slug"]
+    payload["generated_at"] = "2026-04-18T07:30:00+08:00"
+    payload["references"][0]["observed_at"] = "2026-04-18T07:00:00+08:00"
+    report_path = cache_dir / "report.json"
+    report = json.loads(report_path.read_text())
+    report["deep_dive_refs"] = [slug]
+    report["fetch_status"]["source_details"]["Research evaluation"] = {
+        "final_layer_index": 0, "final_layer_type": "webfetch", "via_broad_search": False,
+        "attempts": [{"layer_index": 0, "layer_type": "webfetch", "target": payload["references"][0]["url"], "result": "success"}],
+    }
+    report_path.write_text(json.dumps(report, ensure_ascii=False))
     (cache_dir / f"deep_dive_{slug}.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    (cache_dir / "deep_dive_unselected-draft.json").write_text("unfinished")
 
     exit_code, message = run_daily_finalize(tmp_path, "2026-04-18", True, env_path)
 
@@ -708,6 +720,12 @@ def test_finalize_daily_renders_and_archives_deep_dive(
     assert (tmp_path / "reports" / "deep_dives" / f"2026-04-18-{slug}.html").exists()
     run_log = (cache_dir / "run.log").read_text(encoding="utf-8")
     assert "DEEPDIVE" in run_log
+    assert not (tmp_path / "reports" / "deep_dives" / "2026-04-18-unselected-draft.html").exists()
+    sent = []
+    monkeypatch.setattr(report_runner, "_send_mail", lambda root, path, subject, env: (sent.append(subject) or 0, "sent test mail"))
+    assert run_daily_finalize(tmp_path, "2026-04-18", False, env_path)[0] == 0
+    assert run_daily_finalize(tmp_path, "2026-04-18", False, env_path)[0] == 0
+    assert sent == ["AI 日报 · 2026-04-18", f"AI 深度 · {payload['title']}"]
 
 
 def test_init_daily_manifest_lists_active_tracking(tmp_path):

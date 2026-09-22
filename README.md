@@ -6,6 +6,8 @@
 
 自动任务应绑定 AIReport 项目，在仓库根目录运行，并显式读取 `skills/ai-daily-report/SKILL.md`。这样日报和周报都不依赖全局 skill 安装；现有脚本、`.env`、缓存和归档路径保持有效。
 
+每日“AI日报晨报”任务生成并校验最终正文后，保留原有邮件投递，同时将完整晨报新建为“AI信息晨报”目录下的钉钉在线文档。按日期去重、回读确认正文完整，独立记录两处投递结果。详见 [钉钉同步工作流](skills/ai-daily-report/workflows/dingtalk-daily.md)。
+
 ## 快速开始
 
 1. 复制 `.env.example` 为 `.env`，填写收件邮箱：
@@ -39,3 +41,10 @@
 - `cache/seen_repos.json`：生态板块已收录仓库台账（30 天冷却，运行时生成）
 - `cache/{date}/hard_data_snapshot.json`：硬数据当日快照（运行时生成，`hard-data-delta` 用它算跨日变化）
 - `cache/{date}/send_state.json`：发送幂等台账（运行时生成，finalize 重跑不重发）
+- `reports/dingtalk/{date}/`：在线版 Markdown、钉钉创建与回读回执、持久化发布台账
+
+## 晨报阅读质量
+
+新日报使用 1.1 格式：模型正文包含分项评测、对照模型、测试条件、成本和能力边界，开头的“今日核心判断”直接说明能力位置、性价比和适用任务。HTML 与钉钉按栏目、模型、评测逐级展示，在线发布需回读验证原生标题层级。历史 1.0 仍可读取。详见 [编辑质量契约](docs/report-editorial-quality.md)。
+
+独立专题按需生成：重大事件继续补证和追踪，有成熟的选择问题与新增判断才进入日报 `deep_dive_refs` 投递清单。新专题采用 1.1 研究格式，旧专题保留重渲染；具体标准见 [专题研究工作流](skills/ai-daily-report/workflows/deep-dive-research.md)。专题取舍不影响每天晨报的钉钉全文同步。

@@ -7,6 +7,9 @@ reports/daily/*.html
 reports/weekly/*.html
 reports/deep_dives/*.html
 reports/interviews/*.html
+reports/reviews/
+reports/dingtalk/
+output/
 
 # Python
 __pycache__/

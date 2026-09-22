@@ -51,6 +51,8 @@
   h1 { font-size: 28px; margin: 0 0 4px; }
   h2 { font-size: 22px; margin: 32px 0 12px; padding-top: 8px; }
   h3 { font-size: 18px; margin: 16px 0 8px; }
+  h4 { font-size: 17px; margin: 20px 0 8px; }
+  h5 { font-size: 15px; margin: 16px 0 6px; color: var(--muted); }
   .meta { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
   .toc { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; }
   .toc ul { margin: 0; padding-left: 20px; }
@@ -142,6 +144,18 @@
   .badge-method-framework_tool { background: #dafbe1; color: #1a7f37; }
   .badge-method-practice_pattern { background: #ddf4ff; color: #0969da; }
   .eco-meta { color: var(--muted); font-size: 14px; margin-top: 4px; }
+  .reading-guide { background: var(--accent-soft); border-radius: 8px; padding: 14px 18px; margin: 20px 0; }
+  .reading-guide ul { padding-left: 20px; margin: 8px 0; }
+  .reading-guide li { margin: 8px 0; }
+  .reading-guide h2 { margin: 0 0 8px; padding: 0; }
+  .assessment { margin: 18px 0; font-size: 15px; overflow-wrap: anywhere; }
+  .assessment .verdict { border-left: 3px solid var(--accent); padding-left: 12px; }
+  .assessment table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px; }
+  .assessment th, .assessment td { padding: 9px 6px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  .assessment th { background: var(--accent-soft); }
+  .assessment .detail { color: var(--muted); font-size: 13px; }
+  .assessment .score { font-size: 19px; font-weight: 700; }
+  .assessment ul { padding-left: 20px; }
   @media (prefers-color-scheme: dark) {
     .badge-rec-patch      { background: #21262d; color: #8b949e; }
     .badge-rec-adopt      { background: #0d3320; color: #56d364; }
@@ -172,7 +186,7 @@
 {% if item.expanded %}
 <div class="major-expanded">
   <div class="row"><span class="label">发布要点：</span>{{ item.expanded.what_shipped }}</div>
-  {% if item.expanded.benchmarks %}<div class="row"><span class="label">官方基准：</span>{{ item.expanded.benchmarks }}</div>{% endif %}
+  {% if item.expanded.benchmarks and not item.model_assessment %}<div class="row"><span class="label">评测摘要：</span>{{ item.expanded.benchmarks }}</div>{% endif %}
   {% if item.expanded.pricing_availability %}<div class="row"><span class="label">定价与可用性：</span>{{ item.expanded.pricing_availability }}</div>{% endif %}
   {% if item.expanded.comparison %}<div class="row"><span class="label">对比现役：</span>{{ item.expanded.comparison }}</div>{% endif %}
   {% if item.expanded.third_party_reaction %}<div class="row"><span class="label">第三方反应：</span>{{ item.expanded.third_party_reaction }}</div>{% endif %}
@@ -183,10 +197,40 @@
 </div>
 {% endif %}
 {%- endmacro %}
+{% macro model_assessment_block(a) -%}
+{% if a %}
+<div class="assessment">
+  <h4>能力评测与分数</h4>
+  <p class="verdict"><strong>结论：</strong>{{ a.conclusion }}</p>
+  {% for g in a.groups %}
+  <h5>{{ g.title }} · {{ {"vendor_reported": "厂商自报", "independent": "独立评测", "team_test": "团队实测"}[g.evidence_type] }}</h5>
+  <p class="detail">测试条件：{{ g.conditions }}<br>来源：<a href="{{ g.source_url }}">{{ g.source_name }}</a> · 核验于 {{ g.observed_at }}</p>
+  {% if g.supporting_sources %}<p class="detail">对照与定价来源：{% for s in g.supporting_sources %}<a href="{{ s.source_url }}">{{ s.source_name }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+  <table>
+    <thead><tr><th scope="col">评测 / 测什么</th><th scope="col">本模型</th><th scope="col">对照模型</th></tr></thead>
+    <tbody>{% for m in g.metrics %}
+      <tr><td><strong>{{ m.benchmark }}</strong><br>{{ m.what_it_tests }}<br><span class="detail">{{ {"higher_better": "越高越好", "lower_better": "越低越好", "context_only": "背景指标"}[m.direction] }}</span></td>
+      <td><span class="score">{{ m.score }}{{ m.unit }}</span><br><span class="detail">{{ m.model_variant }}</span></td>
+      <td>{% for c in m.comparators %}{{ c.model_variant }}：<strong>{{ c.score }}{{ m.unit }}</strong>{% if not loop.last %}<br>{% endif %}{% else %}未取得可比数值{% endfor %}</td></tr>
+      <tr><td colspan="3" class="detail">解读：{{ m.interpretation }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  {% endfor %}
+  {% if a.strengths %}<p><strong>优势与适用场景：</strong>{{ a.strengths | join('；') }}</p>{% endif %}
+  {% if a.limitations %}<p><strong>短板与代价：</strong>{{ a.limitations | join('；') }}</p>{% endif %}
+  {% if a.evidence_gaps %}<p><strong>证据缺口：</strong>{{ a.evidence_gaps | join('；') }}</p>{% endif %}
+</div>
+{% endif %}
+{%- endmacro %}
 {% macro ref_link(ref_str) -%}
   {%- set section = ref_str.split('[')[0] -%}
   {%- set idx = ref_str.split('[')[1].rstrip(']') -%}
-  <a href="#{{ section }}-{{ idx }}">{{ ref_str }}</a>
+  {%- set target = report.sections[section]['items'][idx | int] -%}
+  {%- if target is defined -%}
+    <a href="#{{ section }}-{{ idx }}">{{ target.headline }}</a>
+  {%- else -%}
+    <span class="unverified">引用条目不可用，需核对</span>
+  {%- endif -%}
 {%- endmacro %}
 {% macro market_signals_block(ms) -%}
 <div class="market-signals">
@@ -297,19 +341,26 @@
       采集窗口 {{ report.window.start[:16].replace('T', ' ') }} ~ {{ report.window.end[:16].replace('T', ' ') }}
     </div>
   </header>
+  {% if report.edition_note %}<p class="meta">{{ report.edition_note }}</p>{% endif %}
 
+  {% if report.reading_guide %}
+  <aside class="reading-guide" aria-label="今日核心判断">
+    <h2>今日核心判断</h2>
+    <ul>{% for point in report.reading_guide %}<li>{{ point.text }} <a class="guide-detail-link" href="#{{ point.ref.split('[')[0] }}-{{ point.ref.split('[')[1].rstrip(']') }}">查看详评</a></li>{% endfor %}</ul>
+  </aside>
+  {% endif %}
   <nav class="toc">
     <ul>
       <li><a href="#frontier">一、{{ report.sections.frontier_models.title }}</a></li>
       <li><a href="#coding">二、{{ report.sections.coding_agents.title }}</a></li>
       <li><a href="#general">三、{{ report.sections.general_agents.title }}</a></li>
-      <li><a href="#ecosystem">四、{{ report.sections.agent_ecosystem.title }}</a></li>
-      <li><a href="#methodology">五、{{ report.sections.methodology_radar.title }}</a></li>
-      <li><a href="#market">六、{{ report.sections.market_signals.title }}</a></li>
-      <li><a href="#patterns">七、{{ report.sections.pattern_observations.title }}</a></li>
+      <li><a href="#market">四、{{ report.sections.market_signals.title }}</a></li>
+      <li><a href="#patterns">五、{{ report.sections.pattern_observations.title }}</a></li>
+      <li><a href="#radar">六、{{ report.sections.decision_radar.title }}</a></li>
+      <li><a href="#action"><strong>七、{{ report.sections.action_items.title }}</strong></a></li>
       <li><a href="#experiments">八、{{ report.sections.experiments_this_week.title }}</a></li>
-      <li><a href="#radar">九、{{ report.sections.decision_radar.title }}</a></li>
-      <li><a href="#action"><strong>十、{{ report.sections.action_items.title }}</strong></a></li>
+      <li><a href="#ecosystem">九、{{ report.sections.agent_ecosystem.title }}</a></li>
+      <li><a href="#methodology">十、{{ report.sections.methodology_radar.title }}</a></li>
       <li><a href="#unverified">十一、{{ report.sections.unverified.title }}</a></li>
     </ul>
   </nav>
@@ -323,11 +374,12 @@
         <span class="badge badge-{{ item.vendor_region | lower }}">{{ item.vendor }} · {{ item.vendor_region }}</span>
         {{ item_meta(item) }}
       </div>
-      <div class="headline">{{ item.headline }}</div>
+      <h3 class="headline">{{ item.headline }}</h3>
       <div class="summary">{{ item.summary }}</div>
       <div class="impact">影响：{{ item.impact }}</div>
       {% if item.evidence_quote %}<blockquote class="evidence">“{{ item.evidence_quote }}”</blockquote>{% endif %}
       <div class="source">{{ item.source_name }} · <a href="{{ item.source_url }}">查看原文</a></div>
+      {{ model_assessment_block(item.model_assessment) }}
       {{ expanded_block(item) }}
     </article>
     {% else %}
@@ -344,7 +396,7 @@
         <span class="badge badge-tier">{{ item.product }} · {{ item.product_tier }}</span>
         {{ item_meta(item) }}
       </div>
-      <div class="headline">{{ item.headline }}</div>
+      <h3 class="headline">{{ item.headline }}</h3>
       <div class="summary">{{ item.summary }}</div>
       <div class="impact">影响：{{ item.impact }}</div>
       {% if item.evidence_quote %}<blockquote class="evidence">“{{ item.evidence_quote }}”</blockquote>{% endif %}
@@ -372,7 +424,7 @@
         <span class="badge badge-tier">{{ item.product }}{% if item.vendor %} · {{ item.vendor }}{% endif %}</span>
         {{ item_meta(item) }}
       </div>
-      <div class="headline">{{ item.headline }}</div>
+      <h3 class="headline">{{ item.headline }}</h3>
       <div class="summary">{{ item.summary }}</div>
       {% if item.heat_signal %}<div class="heat">热度：{{ item.heat_signal }}</div>{% endif %}
       {% if item.evidence_quote %}<blockquote class="evidence">“{{ item.evidence_quote }}”</blockquote>{% endif %}
@@ -384,15 +436,59 @@
     {% endfor %}
   </section>
 
+  <section id="market">
+    <h2>四、{{ report.sections.market_signals.title }}</h2>
+    {{ market_signals_block(report.sections.market_signals) }}
+  </section>
+
+  <section id="patterns">
+    <h2>五、{{ report.sections.pattern_observations.title }}</h2>
+    {{ pattern_observations_block(report.sections.pattern_observations) }}
+  </section>
+
+  <section id="radar">
+    <h2>六、{{ report.sections.decision_radar.title }}</h2>
+    {% if report.sections.decision_radar.decisions %}
+      {% for group in report.sections.decision_radar.decisions %}
+      <div class="radar-group">
+        <div class="decision-name">{{ group.decision_name }}</div>
+        {% for r in group["items"] %}
+        <div class="radar-item">{{ r.impact }} <span class="refs">{{ ref_link(r.ref) }}</span></div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="unverified">{{ report.sections.decision_radar.empty_message }}</p>
+    {% endif %}
+  </section>
+
+  <section id="action">
+    <h2>七、{{ report.sections.action_items.title }}</h2>
+    <div class="action-items">
+      {% if report.sections.action_items["items"] %}
+        {% for item in report.sections.action_items["items"] %}
+        {{ action_item_block(item) }}
+        {% endfor %}
+      {% else %}
+        <div>{{ report.sections.action_items.empty_message }}</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section id="experiments">
+    <h2>八、{{ report.sections.experiments_this_week.title }}</h2>
+    {{ experiments_block(report.sections.experiments_this_week) }}
+  </section>
+
   <section id="ecosystem">
-    <h2>四、{{ report.sections.agent_ecosystem.title }}</h2>
+    <h2>九、{{ report.sections.agent_ecosystem.title }}</h2>
     {% for item in report.sections.agent_ecosystem["items"] %}
     <article class="card" id="agent_ecosystem-{{ loop.index0 }}">
       <div>
         <span class="badge badge-eco-{{ item.item_type }}">{{ eco_type_labels[item.item_type] }}</span>
         {% if item.onboarding_cost %}<span class="badge badge-tier">{{ eco_cost_labels[item.onboarding_cost] }}</span>{% endif %}
       </div>
-      <div class="headline">{{ item.title }}</div>
+      <h3 class="headline">{{ item.title }}</h3>
       <div class="summary">{{ item.summary }}</div>
       {% if item.heat_note %}<div class="heat">{{ item.heat_note }}</div>{% endif %}
       <div class="eco-meta">适用：{{ item.relevance }}</div>
@@ -404,11 +500,11 @@
   </section>
 
   <section id="methodology">
-    <h2>五、{{ report.sections.methodology_radar.title }}</h2>
+    <h2>十、{{ report.sections.methodology_radar.title }}</h2>
     {% for item in report.sections.methodology_radar["items"] %}
     <article class="card">
       <div><span class="badge badge-method-{{ item.kind }}">{{ method_kind_labels[item.kind] }}</span></div>
-      <div class="headline">{{ item.title }}</div>
+      <h3 class="headline">{{ item.title }}</h3>
       <div class="summary">{{ item.what_it_is }}</div>
       <div class="eco-meta">为何是趋势：{{ item.why_trending }}</div>
       <div class="eco-meta">你团队怎么用：{{ item.how_team_can_use }}</div>
@@ -428,55 +524,11 @@
     {% endfor %}
   </section>
 
-  <section id="market">
-    <h2>六、{{ report.sections.market_signals.title }}</h2>
-    {{ market_signals_block(report.sections.market_signals) }}
-  </section>
-
-  <section id="patterns">
-    <h2>七、{{ report.sections.pattern_observations.title }}</h2>
-    {{ pattern_observations_block(report.sections.pattern_observations) }}
-  </section>
-
-  <section id="experiments">
-    <h2>八、{{ report.sections.experiments_this_week.title }}</h2>
-    {{ experiments_block(report.sections.experiments_this_week) }}
-  </section>
-
-  <section id="radar">
-    <h2>九、{{ report.sections.decision_radar.title }}</h2>
-    {% if report.sections.decision_radar.decisions %}
-      {% for group in report.sections.decision_radar.decisions %}
-      <div class="radar-group">
-        <div class="decision-name">{{ group.decision_name }}</div>
-        {% for r in group["items"] %}
-        <div class="radar-item">{{ r.impact }} <span class="refs">{{ ref_link(r.ref) }}</span></div>
-        {% endfor %}
-      </div>
-      {% endfor %}
-    {% else %}
-      <p class="unverified">{{ report.sections.decision_radar.empty_message }}</p>
-    {% endif %}
-  </section>
-
-  <section id="action">
-    <h2>十、{{ report.sections.action_items.title }}</h2>
-    <div class="action-items">
-      {% if report.sections.action_items["items"] %}
-        {% for item in report.sections.action_items["items"] %}
-        {{ action_item_block(item) }}
-        {% endfor %}
-      {% else %}
-        <div>{{ report.sections.action_items.empty_message }}</div>
-      {% endif %}
-    </div>
-  </section>
-
   <section id="unverified" class="unverified">
     <h2>十一、{{ report.sections.unverified.title }}</h2>
     {% for item in report.sections.unverified["items"] %}
     <article class="card">
-      <div class="headline">{{ item.headline }}</div>
+      <h3 class="headline">{{ item.headline }}</h3>
       <div class="summary">{{ item.summary }}</div>
       <div class="source">{{ item.source_name }} · <a href="{{ item.source_url }}">查看原文</a> · {{ item.reason_unverified }}</div>
     </article>
@@ -484,7 +536,6 @@
     <p>本节无内容。</p>
     {% endfor %}
   </section>
-
   <footer>
     <details>
       <summary>抓取状态（点击展开）</summary>

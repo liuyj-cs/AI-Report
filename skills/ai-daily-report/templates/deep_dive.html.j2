@@ -28,6 +28,12 @@
   ul { margin: 8px 0; padding-left: 22px; font-size: 15px; }
   .role { font-weight: 600; }
   .refs a { color: var(--accent); word-break: break-all; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; min-width: 540px; font-size: 14px; }
+  th, td { border: 1px solid var(--border); padding: 10px; text-align: left; vertical-align: top; }
+  th { background: var(--accent-soft); }
+  .scenario { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 12px 0; }
+  .scenario h3 { margin: 0 0 8px; font-size: 16px; }
   footer { margin-top: 32px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--border); padding-top: 12px; }
 </style>
 </head>
@@ -35,8 +41,36 @@
 <div class="container">
   <header>
     <h1>AI 深度 · {{ report.title }}</h1>
-    <div class="meta">{{ report.date }} · 事件追踪：{{ report.event_slug }}</div>
+    <div class="meta">{{ report.date }} · {% if report.version == '1.1' %}选型研究{% else %}事件追踪：{{ report.event_slug }}{% endif %}</div>
   </header>
+  {% if report.version == '1.1' %}
+  {% macro citations(ids) -%}
+    {% for ref in report.references if ref.id in ids %}<a href="{{ ref.url }}">{{ ref.source }}</a>{% if not loop.last %} · {% endif %}{% endfor %}
+  {%- endmacro %}
+  <section><h2>{{ report.decision_question }}</h2><p>{{ report.sections.verdict }}</p><p class="meta">{{ report.incremental_value }}</p></section>
+  <section>
+    <h2>证据与对照</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>维度</th><th>结果与对照</th><th>测试条件</th><th>如何解读</th></tr></thead>
+      <tbody>{% for row in report.sections.comparisons %}
+        <tr><td>{{ row.dimension }}</td><td>{{ row.finding }}<br>{{ citations(row.reference_ids) }}</td><td>{{ row.conditions }}</td><td>{{ row.interpretation }}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+  </section>
+  <section>
+    <h2>适用场景与边界</h2>
+    {% set recommendations = {'recommended': '优先考虑', 'conditional': '有条件适用', 'not_recommended': '暂不建议', 'insufficient_evidence': '证据不足'} %}
+    {% for row in report.sections.scenarios %}
+    <div class="scenario"><h3>{{ row.task }} · {{ recommendations[row.recommendation] }}</h3><p>{{ row.reason }}</p><p class="meta">{% if row.evidence_boundary == 'measured' %}有直接测量证据{% else %}基于现有证据的场景推断，尚非业务实测结论{% endif %} · {{ citations(row.reference_ids) }}</p></div>
+    {% endfor %}
+  </section>
+  <section><h2>成本与落地约束</h2><p>{{ report.sections.costs_and_constraints.analysis }}</p><p>{{ citations(report.sections.costs_and_constraints.reference_ids) }}</p></section>
+  {% if report.sections.remaining_unknowns %}
+  <section><h2>尚未解决的问题</h2><ul>{% for row in report.sections.remaining_unknowns %}<li><strong>{{ row.question }}</strong>（{% if row.kind == 'business_validation' %}业务验证{% else %}公开证据缺口{% endif %}）<br>已核查：{{ row.checked }}<br>对判断的影响：{{ row.decision_impact }}</li>{% endfor %}</ul></section>
+  {% endif %}
+  <section><h2>下一步</h2><p>{{ report.sections.next_action }}</p></section>
+  {% else %}
+  {# Historical 1.0 documents retain their original presentation. #}
   <section><h2>背景与时间线</h2><p>{{ report.sections.background }}</p></section>
   <section><h2>发布详述</h2><p>{{ report.sections.what_shipped_detail }}</p></section>
   <section><h2>基准与定价</h2><p>{{ report.sections.benchmarks_pricing }}</p></section>
@@ -58,11 +92,12 @@
     {% endfor %}
     </ul>
   </section>
+  {% endif %}
   <section class="refs">
     <h2>引用</h2>
     <ul>
     {% for ref in report.references %}
-      <li>{{ ref.source }} — <a href="{{ ref.url }}">{{ ref.url }}</a></li>
+      <li>{{ ref.source }} — <a href="{{ ref.url }}">{{ ref.url }}</a>{% if report.version == '1.1' %}<br>{{ {'vendor_reported': '厂商披露', 'independent': '独立来源', 'team_test': '团队实测'}[ref.evidence_type] }} · 核验于 {{ ref.observed_at }}{% endif %}</li>
     {% endfor %}
     </ul>
   </section>

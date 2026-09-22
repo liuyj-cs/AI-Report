@@ -562,6 +562,45 @@ def validate_daily_market_signal_refs(report: dict[str, Any]) -> list[str]:
     return errors
 
 
+def validate_model_assessments(report: dict[str, Any]) -> list[str]:
+    """Require traceable score sources and valid reading-guide links."""
+    errors: list[str] = []
+    schema = json.loads((SKILL_ROOT / "schemas" / "daily_report.schema.json").read_text(encoding="utf-8"))
+    assessment_validator = Draft202012Validator({"$defs": schema["$defs"], "$ref": "#/$defs/modelAssessment"})
+    counts = _daily_item_counts(report)
+    for index, item in enumerate(report.get("reading_guide", [])):
+        errors.extend(_validate_item_ref(f"reading_guide[{index}].ref", item.get("ref", ""), counts))
+    successful_targets = {
+        attempt.get("target")
+        for detail in report.get("fetch_status", {}).get("source_details", {}).values()
+        for attempt in detail.get("attempts", [])
+        if attempt.get("result") == "success"
+    }
+    for index, item in enumerate(report.get("sections", {}).get("frontier_models", {}).get("items", [])):
+        assessment = item.get("model_assessment")
+        if "model_assessment" not in item and report.get("version") == "1.0":
+            continue
+        schema_errors = list(assessment_validator.iter_errors(assessment))
+        if schema_errors:
+            errors.extend(f"frontier_models[{index}].model_assessment: {error.message}" for error in schema_errors)
+            continue
+        for group_index, group in enumerate(assessment["groups"]):
+            label = f"frontier_models[{index}].model_assessment.groups[{group_index}]"
+            if group.get("source_url") not in successful_targets:
+                errors.append(f"{label}.source_url lacks a successful exact-URL fetch attempt")
+            for source_index, source in enumerate(group.get("supporting_sources", [])):
+                if source["source_url"] not in successful_targets:
+                    errors.append(f"{label}.supporting_sources[{source_index}].source_url lacks a successful exact-URL fetch attempt")
+            try:
+                observed = datetime.fromisoformat(group.get("observed_at", "").replace("Z", "+00:00"))
+                generated = datetime.fromisoformat(report.get("generated_at", "").replace("Z", "+00:00"))
+                if observed.tzinfo is None or generated.tzinfo is None or observed > generated:
+                    errors.append(f"{label}.observed_at must have a timezone and not exceed generated_at")
+            except (TypeError, ValueError):
+                errors.append(f"{label}.observed_at / generated_at must be valid timestamps")
+    return errors
+
+
 def validate_market_signals_consistency(report: dict[str, Any], target_kind: str) -> list[str]:
     errors: list[str] = []
     for finding in market_signal_consistency_findings(report, target_kind):
@@ -863,6 +902,7 @@ def validate_daily_artifacts(
     errors.extend(validate_candidate_ledger_alignment(report, ledger))
     errors.extend(validate_source_closure(report, ledger))
     errors.extend(validate_daily_market_signal_refs(report))
+    errors.extend(validate_model_assessments(report))
     errors.extend(validate_market_signals_consistency(report, "daily"))
     errors.extend(validate_recall_probe_coverage(report, whitelist))
     errors.extend(validate_recall_fallback_coverage(report, whitelist))

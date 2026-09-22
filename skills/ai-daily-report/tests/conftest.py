@@ -77,6 +77,30 @@ def sample_deep_dive():
 
 
 @pytest.fixture
+def research_deep_dive():
+    """Synthetic research evidence; never used as a published report."""
+    return {
+        "version": "1.1", "type": "deep_dive", "date": "2026-06-13",
+        "event_slug": "task-routing", "title": "测试样例：任务路由选择",
+        "generated_at": "2026-06-13T10:00:00+08:00",
+        "decision_question": "样例中的 A 是否适合替代 B？",
+        "incremental_value": "区分工具任务与长任务的取舍，补充失败项。",
+        "sections": {
+            "verdict": "只考虑工具任务；长任务维持原方案。",
+            "comparisons": [{"dimension": "工具任务", "finding": "A 73%，B 65%；长任务 A -2，B 0。",
+                "conditions": "同一框架和预算，样本量未披露。", "interpretation": "工具任务有优势，不能外推长任务。", "reference_ids": ["eval"]}],
+            "scenarios": [{"task": "工具辅助检索", "recommendation": "conditional", "reason": "需先验证业务文档；<script>unsafe</script>",
+                "evidence_boundary": "inferred", "reference_ids": ["eval"]}],
+            "costs_and_constraints": {"analysis": "缺少完整任务费用，不据单价判断节省。", "reference_ids": ["eval"]},
+            "remaining_unknowns": [{"question": "业务召回是否保持？", "kind": "business_validation", "checked": "已查看样例评测表。", "decision_impact": "未验证前不迁移默认路由。"}],
+            "next_action": "固定业务样本对照，召回下降则维持现状。",
+        },
+        "references": [{"id": "eval", "source": "Synthetic evaluator", "url": "https://eval.example/task-routing",
+            "evidence_type": "independent", "observed_at": "2026-06-13T09:00:00+08:00"}],
+    }
+
+
+@pytest.fixture
 def finalized_fetch_status():
     from discovery import initial_fetch_status, iter_named_sources
 

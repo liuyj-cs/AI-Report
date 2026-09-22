@@ -218,7 +218,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - 当前最新版本 → 正常保留
    - **关键反例**：GPT-5.3-Codex 2 月发布，4 月当前旗舰已是 GPT-5.4 → 不得以"GPT-5.3-Codex 上线"为 headline 出现在 4 月日报中
 
-3b. **重大事件深度与事件追踪（major_event）**
+3b. **重大事件补证与事件追踪（major_event）**
 
    - **判定**：见编辑原则。`major_event: true` 只能标在 `editorial_tier: core` 的条目上。
    - **当天深度补证（2-3 跳）**：对重大事件，证据扩展从常规 1 跳放宽到 2-3 跳，目标面优先：model card / system card / 官方 benchmark 页 / pricing 页 / developer docs / 可用区与配额说明。每次尝试照常写入 `fetch_status.source_details`。
@@ -231,7 +231,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - `decision_relevance`（≤300 字，可选）：对在途选型/迁移决策的整体判断（与 decision_radar 互补：radar 按决策分组一句话，这里是事件视角）
      - `quick_start`（≤300 字，可选）：第一时间上手路径（入口 / 版本号 / 前置条件）
      - `open_questions`（1-5 条，必填）：待验证问题清单，将转入事件追踪
-   - **撰写深度专题（每个 major_event 一份）**：落盘 `cache/{date}/deep_dive_{event_slug}.json`（schema `schemas/deep_dive.schema.json`）。七个小节全部必填：`background`（背景与时间线）/ `what_shipped_detail`（发布详述）/ `benchmarks_pricing`（基准与定价）/ `ecosystem_reaction`（生态与第三方反应）/ `role_implications`（profile.yaml 四个角色各 1-2 句）/ `quick_start`（上手指引）/ `open_questions`；`references` ≥1 条且全部来自当日 fetch 已留痕的证据，禁止臆测。总篇幅 800-1500 字。素材不足以撑起全部小节 → 说明该事件不够格 major_event，只走 expanded。finalize 渲染为 `reports/deep_dives/{date}-{slug}.html` 并以「AI 深度 · {title}」**独立邮件**发送（日报正文保持紧凑）。
+   - **事件重要性与专题成熟度分别判断**：重大事件继续补证、写 expanded 和开追踪；是否具备独立研究价值按 3b-3 判定。不能因为暂时缺少评测而降低重大事件等级，也不为重大事件自动配发专题。
    - **开追踪档案**：写 `cache/tracking/{event_slug}.json`（schema `schemas/event_tracking.schema.json`）。`event_slug` 用小写连字符（如 `claude-fable-5`），`expires_on` 距 `opened_date` 不超过 5 天，`watch_items` 直接继承 `open_questions`。条目同时写 `tracking_ref: {event_slug}`；finalize 会校验 `major_event` 条目必须有 expanded + tracking_ref，且 tracking_ref 能解析到活跃档案。
    - **追踪期内的后续日报**：`discovery_manifest.json` 的 `active_tracking` 会列出活跃追踪事件。对每个活跃事件至少执行一轮定向搜索（第三方评测 / 实测反馈 / 价格与配额变化）。
      - **跟进留痕（finalize 强制）**：把当天定向搜索写入 `fetch_status.source_details["Event Tracking: {event_slug}"].attempts[]`（无增量也要记一条空结果 attempt）。开档当天豁免；追踪期内缺该 surface 会导致 finalize-daily 失败。
@@ -240,6 +240,34 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - 条目带 `tracking_ref`，并把 `{date, headline, ref}` 追加进追踪档案的 `updates[]`
      - 没有增量就不写条目，不为追踪而凑数
    - **关闭**：`expires_on` 过后档案自动失效；finalize 会清理过期超过 7 天的档案。追踪档案的 `updates[]` 是周报回顾该事件的现成素材。
+
+3b-1. **模型能力卡（正文必读，不依赖独立专题邮件）**
+
+   - 新生成日报使用 `version: "1.1"`；历史 `1.0` 仍可重渲染。每条 `frontier_models` 必填 `model_assessment`，不以 `major_event` 为前提。新模型、能力更新、评测事件应填写 `status: assessed`；查不到分数用 `insufficient_evidence` 并列明查过哪些评测面、未取得什么；纯调价/政策事件用 `not_applicable` 并说明不涉及能力更新。不能为过校验编数字。
+   - **采集目标**：打开官方发布页、model/system card、技术报告的评测表及脚注；再查至少一个独立评测面。图表在图片/PDF中时应读取图表，不能只读标题摘要。优先选能解释强项与短板的代表性项目，通常覆盖编码、推理/知识、Agent/工具、多模态或长上下文中与发布相关的维度；没有相关数据就写缺口，不强凑固定数量。
+   - **结构**：`conclusion` 先给综合判断：能力处于什么位置、相对谁有何优势、成本是否划算、适合什么任务及主要边界。不能只写“值得关注/验证、尚不能全面替代”。`groups[]` 按评测来源/条件分组，每组必填 `title / source_name / source_url / evidence_type / observed_at / conditions / metrics`。`evidence_type` 为 `vendor_reported / independent / team_test`；跨页面对照的来源写 `supporting_sources[{source_name, source_url}]`，组内核验时间覆盖这些页面。全部主来源和对照来源必须在 `fetch_status.source_details.*.attempts` 中有成功的精确 URL 抓取记录，并补到候选的 `source_attempt_refs`。
+   - **每项评测**：填 `benchmark`（含版本）、`what_it_tests`（用中文解释测什么）、`model_variant`（具体型号和推理档位）、数值 `score`、`unit`、`direction`、`comparators[{model_variant, score}]`、`interpretation`。优先带上一代和有决策价值的竞品/同系列对照；取不到对照则空数组并说明缺口。不得把综合指数写成百分制成绩，也不得把 Elo 当正确率。
+   - **可比性**：`conditions` 写清推理档位、Agent 运行框架（harness）、工具/预算、采样与统计不确定性；未披露就明确写未披露。不同框架/档位的结果分组呈现或显式限定比较，禁止合成自创总分/总排名。已公开的反例、退步项以及 Token 消耗/延迟/每次成功成本应与优势一起交代。
+   - **两个时间口径**：同一评测方公开的新旧版本对比可进入能力卡，无需本地昨日快照；同一模型的跨日榜单升降仍必须遵守 `hard-data-delta` 基线要求。百分比成绩之差用“百分点”，相对变化才用“%”；不得混用。
+   - **性价比证据**：能力与成本一起判断，主动核验相关前沿模型及同价位候选，不能因用户偏好或单一排行榜给出“优秀/落后”。标清价格提供方、货币、每百万 Token 输入/输出、缓存和长输入条件；API、订阅、加速档、自部署分别讨论。有同口径评测任务成本时，和 Token 单价同时给出；不能把评测平均成本说成生产每次成功成本。没有总成本数据就明确缺口，不能仅据单价推断实际节省。比较前先核对评测版本和档位，不混用新旧综合指数；比例须复算，不自创“得分除以价格”的总排名。
+   - `strengths / limitations / evidence_gaps` 分别回答已有优势与适用场景、已知短板和代价、还有哪些证据欠缺。支持的正面结论要明确写出，不让通用免责声明淹没优势；场景建议标明是由公开分项推断还是团队实测。对 Pro/Flash、API/开放权重不能互相借用评测结论；上下文上限也不等于有效召回能力。
+   - `expanded` 保留发布规格、价格/可用性和事件背景；有能力卡时不再重复 `expanded.benchmarks`。独立专题深化方法和场景，正文仍须能独立回答“分数多少、和谁比、强在哪里、代价是什么”。`market_signals` 保留快照/变化审计记录与简短增量，分数详表只在能力卡展示。
+
+3b-2. **晨报阅读主线与去重**
+
+   - 顶层 `reading_guide` 写 0-4 条“今日核心判断”，每条 `{text, ref}` 必须回指正文，最多 160 字；安静日允许空。模型条目优先写“型号与定位 → 关键能力对照 → 成本优势或代价 → 适用任务/关键边界”，正文已有的决定性数字不要省成模糊形容词。不得只写“值得看/有进步/仍需验证”，不得只列风险、不交代已成立的价值，也不得复述新闻标题。每个价格/分数在正文可查到同口径来源；无法判断就具体说明缺哪个证据。
+   - **读者验收**：只看开头应能回答“这款模型相对谁处于什么位置、为何值得用或不值得、适合什么任务”。HTML 的导读链接只显示“查看详评”，钉钉导读不追加重复标题。两端正文语义层级为 H1 报告 → H2 栏目 → H3 模型/事件 → H4 能力评测 → H5 评测分组；不得靠同级大字或空行模拟从属关系。钉钉发布必须回读真实块级标题验收，详见同步工作流。
+   - 展示顺序固定为：模型 → Coding Agent → 通用 Agent → 硬数据 → 跨条目模式 → 决策雷达 → 落地建议 → 建议实验 → 生态实践 → 方法论 → 待核实。目录、正文和终端简版保持一致。
+   - **各层各司其职**：正文说事实与证据；模式只写至少两条事件合起来才成立的新判断；雷达说明哪个在途决策改变、哪个门槛尚未跨过；建议写是否行动、投入与验收；实验只写执行步骤与产物。每层不能只是换句话重复“值得小范围试点”。
+   - 同一事件横跨模型与 Coding 工具时，模型节讲能力，工具节只讲接入、额度与管理增量。没有新分析时压缩观察段，空板块用一句说明，不凑趋势。把内部 ref 显示成文章标题，避免读者看到数组索引。
+   - 读者身份来自 `profile.yaml`，不要套泛化的“四角色”模板。具体型号的接入入口、评测配置与实验对象需逐一对应，不能因一款已接入某工具就假设另一款也已接入。
+
+3b-3. **按需选型研究（独立专题）**
+
+   - 晨报必须独立讲清能力、分数、强弱项、成本与适用边界。专题只在能解决一个具体选择问题、且比晨报增加实质比较或推理时生成；没有新增判断就不发，不设日更篇数。
+   - 立项与写作时阅读 [专题研究工作流](workflows/deep-dive-research.md)。围绕任务选择、替代条件、成本取舍组织内容；不套背景/生态/四角色，不按总字数凑篇幅。公开可查的信息先查清；公开未披露与必须业务实测的未知分开说明。
+   - 新专题使用 `deep_dive` 1.1 格式。AI 对照晨报复核新增价值、证据可比性、场景推断与反例，通过后才将 slug 写入日报顶层 `deep_dive_refs`；无专题写 `[]`。这份显式清单是 finalize 唯一的专题选择入口，事件标签和目录中已有文件均不触发投递。历史日报省略清单按空处理，历史专题 1.0 保留重渲染能力。
+   - 已选专题按既有路径渲染、归档并独立邮件发送，复用 `deep_dive:{slug}` 去重。专题可在后续证据成熟时生成，也可比较多个对象，不要求当日报存在同名 major_event。专题不替代、也不改变每天晨报的钉钉全文同步。
 
 3c. **生成 Agent 生态与实践（agent_ecosystem）**
 
@@ -348,7 +376,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
 9. **产出结构化 JSON**
    - 严格遵循 `schemas/daily_report.schema.json`
-   - 字段约束：`version: "1.0"`、`type: "daily"`、`date`、`window`（带时区）、`generated_at`、**十一个 `sections`**（frontier_models / coding_agents / general_agents / agent_ecosystem / methodology_radar / market_signals / pattern_observations / experiments_this_week / decision_radar / action_items / unverified）、`fetch_status`
+   - 字段约束：新日报 `version: "1.1"`、`type: "daily"`、`date`、`window`（带时区）、`generated_at`、`reading_guide`、**十一个 `sections`**（frontier_models / coding_agents / general_agents / market_signals / pattern_observations / decision_radar / action_items / experiments_this_week / agent_ecosystem / methodology_radar / unverified）、`fetch_status`。历史 `1.0` 兼容读取；不要用旧版本跳过新日报能力卡要求。
    - **章节标题契约**：`sections.*.title` 只写纯语义标题（如 `模型动态`、`方法论雷达`），不得写 `一、`、`三a、`、`6.` 等展示编号；日报/周报模板是章节编号的唯一真源，schema 会在渲染前拒绝带编号标题。
    - **每条正文章目必须填 `release_stage` / `published_at_confidence` / `authority_score` / `editorial_tier`**（schema required，缺失会被 render 阶段拒绝）
    - **`fetch_status.source_details`** 必须记录所有走过 fetch_chain 的源（含降级路径），渲染层会展示降级路径供巡检
@@ -359,10 +387,12 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - `page_updated_at` 不能单独作为 `selected_core` 或 `selected_watch` 的日期依据；Help Center / release notes / changelog / docs 页面必须优先取小节日期、release metadata 或正文明确事件日期。
      - `media_only`、`community_snapshot`、`search_only` 与 `selected_unverified` 不能驱动 action；`media_plus_official_one_hop` 只能驱动 monitor / experiment。
      - `candidate_ledger.json` 只用于审计与复盘，不参与 HTML 正文渲染
-   - **落盘前编辑自检**：至少再问自己 3 个问题
+   - **落盘前编辑自检**：至少再问自己 5 个问题
      1. 今天是否有高信号官方更新被首轮静默掩盖？
      2. 是否把榜单快照或静态排名误写成“变化”？
      3. 每条 action item 是否都能回指正文中的事实，而不是只来自感觉？
+     4. 新模型是否给出可直接阅读的评测分项、对照、测试条件和短板，而非只有参数量、排名或“值得测试”？
+     5. 每个结论层是否提供新的信息？型号、实验入口、基线、投入与验收是否前后一致？
    - 落盘：`cache/{date}/report.json`
    - 助手必须自检 JSON 结构，字段不完整时自行补齐后再写入
 
@@ -371,6 +401,11 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
     - dry-run: `python skills/ai-daily-report/scripts/report_runner.py finalize-daily --date {date} --env .env --dry-run`
     - 作用：再次校验邮件环境变量，检查 `fetch_status` 覆盖、`candidate_ledger.json` 与正文对齐、`action_items.references[]` 只能引用 `core/watch` 正文条目；通过后再顺序执行渲染、归档、发送邮件。
     - 若发送失败：必须保留 `cache/{date}/report.json`、`cache/{date}/candidate_ledger.json`、`cache/{date}/report.html` 与 `cache/{date}/run.log`，并返回明确错误。
+
+9b. **每日定时任务的钉钉同步**
+    - 已获用户授权的“AI日报晨报”定时任务，在最终内容通过校验后执行 [钉钉在线文档工作流](workflows/dingtalk-daily.md)，把同一份完整晨报新建到指定的“AI信息晨报”目录。
+    - 保留模型评分表、测试条件与来源链接；按北京时间日期去重，保存真实文档链接并回读核对全文。邮件与钉钉的结果分别报告。
+    - 普通手动运行、dry-run、历史补齐和周报不因这一规则自动发布到钉钉；是否发布以当前请求或任务明确授权为准。
 
 10. **渲染 HTML（调试/单步重跑）**
     - Run: `python skills/ai-daily-report/scripts/render_html.py cache/{date}/report.json`
@@ -395,6 +430,8 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       AI 日报 · {date}
 
+      今日核心判断：{reading_guide 全部显示}
+
       一、模型动态
         · {item 1 headline}
         · {item 2 headline}
@@ -409,28 +446,26 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
         · {item 1 headline}
         ...
 
-      四、Agent 生态与实践
-        · {item 1 title}（{item_type 中文标签}）
-        ...（最多 2 条）
+      四、硬数据信号
+        {增量与观察摘要；模型分数详表见对应正文能力卡}
 
-      五、方法论雷达
-        · {item 1 title}（{kind 中文标签}）
-        ...（最多 2 条；空显示 empty_message）
+      五、跨条目模式
+        {若有 pattern observation 显示 theme；空显示 empty_message}
 
-      六、硬数据信号
-        {若有 benchmark/pricing/gap 各取 1 条；空则显示 empty_message}
+      六、决策雷达
+        {每个有内容的决策一行；空显示 empty_message}
 
-      七、跨条目模式
-        {若有 pattern observation 显示 theme；空则显示 empty_message}
+      七、今日落地建议
+        {全部逐条打印；空显示 empty_message}
 
       八、本期建议实验
-        {若有显示 title；空则显示 empty_message}
+        {若有显示 title；空显示 empty_message}
 
-      九、决策雷达
-        {每个有内容的决策一行：decision_name: N 条影响；空则显示 empty_message}
+      九、Agent 生态与实践
+        · {item title}（{item_type 中文标签}）
 
-      十、今日落地建议
-        {全部逐条打印}（若为空则显示 empty_message）
+      十、方法论雷达
+        · {item title}（{kind 中文标签}）
 
       十一、观察区 / 待核实
         {逐条打印待核实候选；空则显示本节无内容}
@@ -473,6 +508,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - 每个 vendor_group / product_group 必须填 `weekly_changes / trend_judgment / implication / references`（三段式观察深度**二/三/四节保持一致**）
 
 3a. **聚合本周硬数据（market_signals）**
+   - 新版日报的 `model_assessment` 是模型能力证据输入：归纳时保留具体型号、来源与可比条件，不能只提取总分；不得把不同框架或指数版本合成周级排名。
    - 从 7 份日报的 `market_signals` 合并；按 `change_pct` 绝对值取 top 5-8 条
    - `capability_gaps` 改写为周级（2-4 条）
    - 任一子数组有内容即可；全空时填 `empty_message: "本周无显著硬数据变化"`
@@ -573,7 +609,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 - **finalize-weekly 校验失败**：若缺日报 JSON、`source_days` 不完整、引用无法回指或 `itemRef` 越界 → 停止流程，不归档不发信，先修正 JSON / 日报缓存
 - **send_mail.py 失败**：HTML 已归档 → 报告失败但不回滚归档。退出码 2（认证失败）→ 提示用户重新生成 Gmail 应用专用密码并更新 `.env`；退出码 3（网络/SMTP 错误）→ 建议稍后重跑 `send_mail.py` 单步重试
 - **追踪档案损坏**：`cache/tracking/` 下存在无法解析或不符合 schema 的档案 → finalize 校验失败（错误信息会点名该文件）。修复或删除该档案后重跑；过期超过 7 天的档案由 finalize 自动清理。
-- **深度专题缺失或损坏**：major_event 条目无对应 `cache/{date}/deep_dive_{slug}.json`、或该文件 schema 校验失败 → finalize-daily 失败，不归档不发信；补写/修复专题 JSON 后重跑。补发型专题（事后为历史事件单独生成）不要求当日日报存在对应 major_event 条目。
+- **已选专题缺失或损坏**：仅对 `deep_dive_refs` 中的专题检查文件、1.1 结构、日期/slug、证据引用与成功抓取记录。失败时修复，或由 AI 确认尚未成熟后从清单移出并说明延期；不得编造材料过关。未选专题不阻塞晨报，也不会自动发送；重大事件的 expanded 与追踪校验仍然执行。
 - **发送幂等（send_state.json）**：`finalize-daily` / `finalize-weekly` 通过 `cache/{date}/send_state.json`（周报为 `cache/weekly/{end}/send_state.json`）记录已发送的日报正文 / 每份 deep_dive / 周报。发送中途失败后**直接重跑 finalize 即可**：已发的封不会重发（run.log 记 `EMAIL skip already-sent ...`），只补发失败的。访谈仍由全局 `interview_seen.json` 幂等。dry-run 不写 send_state。
 - **send_mail 自动重试**：瞬时 SMTP/网络错误自动重试 2 次（5s/20s 退避）；认证错误（code=2）不重试，提示更新应用专用密码。
 - **DELIVERY_ALERT**：init-daily 检测到昨日有邮件失败（按 kind 区分日报/深度/访谈）或仅 dry-run 时输出告警并写 run.log。注意发送链首个失败即中断，失败点之后的邮件从未尝试、日志里不会出现——所以恢复必须以「重跑 finalize-daily」为主，见「运行前检查 0a」。
@@ -608,7 +644,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 | `experiments_this_week.items[].audience` | team_pilot / personal_workflow；周报尽量两种各 ≥1 |
 | `practice_digest.items[].summary` | 200-400 字（schema 兜底 120-600） |
 | `practice_digest.items[]` | 0-2 篇/周；origin 必须回指本周某日日报 agent_ecosystem 条目 |
-| 深度专题 | 每个 major_event 一份；七小节必填；总篇幅 800-1500 字；references ≥1 |
+| 深度专题 | 按研究增量选择；`deep_dive_refs` 显式选中才投递；1.1 包含选择问题、结论、证据对照、场景、成本约束与剩余未知，引用闭环 |
 | 访谈 `lede` | 300-500 字（schema 兜底 200-700） |
 | 访谈 `key_points` | 2-8 条；`role_implications` 恰好 4 条 |
 | 访谈 `mode` | `self_translated_full` 必须有 `full_translation`；`linked_zh_transcript` 必须有 `chinese_transcript.url` |
