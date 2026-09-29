@@ -105,37 +105,29 @@ def finalized_fetch_status():
     from discovery import initial_fetch_status, iter_named_sources
 
     def _build(whitelist):
+        """Completed synthetic discovery with targets from the real source chains."""
         payload = initial_fetch_status(whitelist)
-        high_recall = {
-            source["name"]
-            for source in iter_named_sources(whitelist)
-            if source.get("category") in ("cn_labs", "hard_data")
-        }
+        sources = {source["name"]: source for source in iter_named_sources(whitelist)}
         for name, detail in payload["source_details"].items():
-            attempts = []
-            for attempt in detail.get("attempts", []):
-                attempts.append(
-                    {
-                        **attempt,
-                        "result": "success_but_empty",
-                        "note": "discovery completed without candidate in fixture",
-                    }
-                )
-                attempts[-1].pop("reason", None)
-            if name in high_recall:
-                attempts.append(
-                    {
-                        "layer_index": len(attempts),
-                        "layer_type": "websearch_scoped",
-                        "target": f"{name} fallback search",
-                        "result": "success_but_empty",
-                        "note": "search fallback ran empty in fixture",
-                    }
-                )
-            detail["attempts"] = attempts
-        payload["succeeded"] = sorted(payload["source_details"].keys())
+            for attempt in detail["attempts"]:
+                attempt.update(result="success", note="synthetic discovery completed")
+                attempt.pop("reason", None)
+            if name == "AI HOT":
+                # An unavailable aggregator is a coverage gap; scoped discovery can
+                # still succeed without claiming its filtered API pool was empty.
+                detail["attempts"][0].update(result="error", reason="synthetic HTTP 503")
+                chain = sources[name]["fetch_chain"]
+                index, layer = next((i, layer) for i, layer in enumerate(chain)
+                                    if layer["type"] == "websearch_scoped")
+                detail["attempts"].append({
+                    "layer_index": index, "layer_type": layer["type"],
+                    "target": layer["queries"][0], "result": "success",
+                    "note": "synthetic scoped fallback completed; API coverage unavailable",
+                })
+                detail.update(final_layer_index=index, final_layer_type=layer["type"])
+        payload["succeeded"] = sorted(payload["source_details"])
         payload["failed"] = []
-        payload["empty"] = sorted(payload["source_details"].keys())
+        payload["empty"] = []
         return payload
 
     return _build

@@ -1,5 +1,7 @@
 # Report Section Numbering Implementation Plan
 
+> 版本沿革（2026-09-28）：本文保留当时实施与旧格式样例，属于历史附录。现行日报 1.2 / 周报 1.1 的栏目、证据与行动契约见 [通用与办公 Agent 工作流](../../../skills/ai-daily-report/workflows/general-agent-editorial.md)。新报告包含独立政策风险栏目、连续十二节；旧标题和旧字段仅用于历史兼容。纯语义标题、由模板生成编号的原则继续有效。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让日报与周报的顶层章节编号只由模板生成，schema 在发送前拒绝带编号的 JSON 标题，并修复 2026-07-13 至 2026-07-16 的本地产物。

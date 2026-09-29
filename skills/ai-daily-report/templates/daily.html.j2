@@ -1,3 +1,4 @@
+{% set new_editorial = report.version == "1.2" %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -327,6 +328,7 @@
     {{ item.recommendation }}
   </div>
   <div class="rationale">依据：{{ item.rationale }}</div>
+  {% if new_editorial %}<div class="rationale">新增行动依据：{{ item.action_delta }}</div>{% endif %}
   <div class="estimate">投入 {{ item.effort_person_days.min }}–{{ item.effort_person_days.max }} 人日 · 适用团队 {{ item.team_size_applicability | join('，') }}{% if item.success_metric %} · 目标 {{ item.success_metric }}{% endif %}</div>
   {% if item.references %}
   <div class="rationale">引用：{% for r in item.references %}<a href="{{ r.url }}">{{ r.date }} {{ r.headline }}</a>{% if not loop.last %}；{% endif %}{% endfor %}</div>
@@ -346,7 +348,7 @@
   {% if report.reading_guide %}
   <aside class="reading-guide" aria-label="今日核心判断">
     <h2>今日核心判断</h2>
-    <ul>{% for point in report.reading_guide %}<li>{{ point.text }} <a class="guide-detail-link" href="#{{ point.ref.split('[')[0] }}-{{ point.ref.split('[')[1].rstrip(']') }}">查看详评</a></li>{% endfor %}</ul>
+    <ul>{% for point in report.reading_guide %}<li>{{ point.text }} <a class="guide-detail-link" href="#{{ point.ref.split('[')[0] }}-{{ point.ref.split('[')[1].rstrip(']') }}">{{ "查看详情" if new_editorial and not point.ref.startswith("frontier_models[") else "查看详评" }}</a></li>{% endfor %}</ul>
   </aside>
   {% endif %}
   <nav class="toc">
@@ -354,14 +356,15 @@
       <li><a href="#frontier">一、{{ report.sections.frontier_models.title }}</a></li>
       <li><a href="#coding">二、{{ report.sections.coding_agents.title }}</a></li>
       <li><a href="#general">三、{{ report.sections.general_agents.title }}</a></li>
-      <li><a href="#market">四、{{ report.sections.market_signals.title }}</a></li>
-      <li><a href="#patterns">五、{{ report.sections.pattern_observations.title }}</a></li>
-      <li><a href="#radar">六、{{ report.sections.decision_radar.title }}</a></li>
-      <li><a href="#action"><strong>七、{{ report.sections.action_items.title }}</strong></a></li>
-      <li><a href="#experiments">八、{{ report.sections.experiments_this_week.title }}</a></li>
-      <li><a href="#ecosystem">九、{{ report.sections.agent_ecosystem.title }}</a></li>
-      <li><a href="#methodology">十、{{ report.sections.methodology_radar.title }}</a></li>
-      <li><a href="#unverified">十一、{{ report.sections.unverified.title }}</a></li>
+      {% if new_editorial %}<li><a href="#policy-risk">四、{{ report.sections.policy_risk.title }}</a></li>{% endif %}
+      <li><a href="#market">{{ "五" if new_editorial else "四" }}、{{ report.sections.market_signals.title }}</a></li>
+      <li><a href="#patterns">{{ "六" if new_editorial else "五" }}、{{ report.sections.pattern_observations.title }}</a></li>
+      <li><a href="#radar">{{ "七" if new_editorial else "六" }}、{{ report.sections.decision_radar.title }}</a></li>
+      <li><a href="#action"><strong>{{ "八" if new_editorial else "七" }}、{{ report.sections.action_items.title }}</strong></a></li>
+      <li><a href="#experiments">{{ "九" if new_editorial else "八" }}、{{ report.sections.experiments_this_week.title }}</a></li>
+      <li><a href="#ecosystem">{{ "十" if new_editorial else "九" }}、{{ report.sections.agent_ecosystem.title }}</a></li>
+      <li><a href="#methodology">{{ "十一" if new_editorial else "十" }}、{{ report.sections.methodology_radar.title }}</a></li>
+      <li><a href="#unverified">{{ "十二" if new_editorial else "十一" }}、{{ report.sections.unverified.title }}</a></li>
     </ul>
   </nav>
 
@@ -383,7 +386,7 @@
       {{ expanded_block(item) }}
     </article>
     {% else %}
-    <p class="unverified">本节无内容。</p>
+    <p class="unverified">{{ report.sections.frontier_models.empty_message | default("本节无内容。", true) }}</p>
     {% endfor %}
   </section>
 
@@ -404,7 +407,7 @@
       {{ expanded_block(item) }}
     </article>
     {% else %}
-    <p class="unverified">本节无内容。</p>
+    <p class="unverified">{{ report.sections.coding_agents.empty_message | default("本节无内容。", true) }}</p>
     {% endfor %}
 
     {% if report.sections.coding_agents.deep_dive %}
@@ -426,28 +429,57 @@
       </div>
       <h3 class="headline">{{ item.headline }}</h3>
       <div class="summary">{{ item.summary }}</div>
+      {% if new_editorial %}
+      <p><strong>工作任务：</strong>{{ item.use_case }}</p>
+      <p><strong>本次变化：</strong>{{ item.what_changed }}</p>
+      <p><strong>能力形态：</strong>{{ {"assistant": "辅助生成", "workflow": "固定工作流", "autonomous_agent": "自主执行"}[item.usage_mode] }}</p>
+      <p><strong>使用条件：</strong>{{ item.availability }}</p>
+      <p><strong>实际影响：</strong>{{ item.impact }}</p>
+      {% if item.evidence_limits %}<div class="evidence"><strong>证据边界：</strong><ul>{% for limit in item.evidence_limits %}<li>{{ limit }}</li>{% endfor %}</ul></div>{% endif %}
+      {% else %}
       {% if item.heat_signal %}<div class="heat">热度：{{ item.heat_signal }}</div>{% endif %}
+      {% endif %}
       {% if item.evidence_quote %}<blockquote class="evidence">“{{ item.evidence_quote }}”</blockquote>{% endif %}
       <div class="source">{{ item.source_name }} · <a href="{{ item.source_url }}">查看原文</a></div>
       {{ expanded_block(item) }}
     </article>
     {% else %}
-    <p class="unverified">本节无内容。</p>
+    <p class="unverified">{{ report.sections.general_agents.empty_message if new_editorial else "本节无内容。" }}</p>
     {% endfor %}
   </section>
 
+  {% if new_editorial %}
+  <section id="policy-risk">
+    <h2>四、{{ report.sections.policy_risk.title }}</h2>
+    {% for item in report.sections.policy_risk["items"] %}
+    <article class="card" id="policy_risk-{{ loop.index0 }}">
+      <div><span class="badge badge-tier">{{ item.subject }}</span><span class="badge">{{ item.event_status }}</span>
+        <span class="badge badge-tier">{{ "核心事件" if item.editorial_tier == "core" else "重要观察" }}</span>
+        {% if item.tracking_ref %}<span class="badge badge-tracking">事件追踪</span>{% endif %}
+      </div>
+      <h3 class="headline">{{ item.headline }}</h3>
+      <div class="summary">{{ item.summary }}</div>
+      <p><strong>适用范围：</strong>{{ item.affected_scope }}</p>
+      <p><strong>决策影响：</strong>{{ item.decision_relevance }}</p>
+      {% if item.evidence_limits %}<div class="evidence"><strong>证据边界：</strong><ul>{% for limit in item.evidence_limits %}<li>{{ limit }}</li>{% endfor %}</ul></div>{% endif %}
+      <div class="source">{{ item.source_name }} · <a href="{{ item.source_url }}">查看原文</a></div>
+    </article>
+    {% else %}<p class="unverified">{{ report.sections.policy_risk.empty_message }}</p>{% endfor %}
+  </section>
+  {% endif %}
+
   <section id="market">
-    <h2>四、{{ report.sections.market_signals.title }}</h2>
+    <h2>{{ "五" if new_editorial else "四" }}、{{ report.sections.market_signals.title }}</h2>
     {{ market_signals_block(report.sections.market_signals) }}
   </section>
 
   <section id="patterns">
-    <h2>五、{{ report.sections.pattern_observations.title }}</h2>
+    <h2>{{ "六" if new_editorial else "五" }}、{{ report.sections.pattern_observations.title }}</h2>
     {{ pattern_observations_block(report.sections.pattern_observations) }}
   </section>
 
   <section id="radar">
-    <h2>六、{{ report.sections.decision_radar.title }}</h2>
+    <h2>{{ "七" if new_editorial else "六" }}、{{ report.sections.decision_radar.title }}</h2>
     {% if report.sections.decision_radar.decisions %}
       {% for group in report.sections.decision_radar.decisions %}
       <div class="radar-group">
@@ -463,7 +495,7 @@
   </section>
 
   <section id="action">
-    <h2>七、{{ report.sections.action_items.title }}</h2>
+    <h2>{{ "八" if new_editorial else "七" }}、{{ report.sections.action_items.title }}</h2>
     <div class="action-items">
       {% if report.sections.action_items["items"] %}
         {% for item in report.sections.action_items["items"] %}
@@ -476,12 +508,12 @@
   </section>
 
   <section id="experiments">
-    <h2>八、{{ report.sections.experiments_this_week.title }}</h2>
+    <h2>{{ "九" if new_editorial else "八" }}、{{ report.sections.experiments_this_week.title }}</h2>
     {{ experiments_block(report.sections.experiments_this_week) }}
   </section>
 
   <section id="ecosystem">
-    <h2>九、{{ report.sections.agent_ecosystem.title }}</h2>
+    <h2>{{ "十" if new_editorial else "九" }}、{{ report.sections.agent_ecosystem.title }}</h2>
     {% for item in report.sections.agent_ecosystem["items"] %}
     <article class="card" id="agent_ecosystem-{{ loop.index0 }}">
       <div>
@@ -500,7 +532,7 @@
   </section>
 
   <section id="methodology">
-    <h2>十、{{ report.sections.methodology_radar.title }}</h2>
+    <h2>{{ "十一" if new_editorial else "十" }}、{{ report.sections.methodology_radar.title }}</h2>
     {% for item in report.sections.methodology_radar["items"] %}
     <article class="card">
       <div><span class="badge badge-method-{{ item.kind }}">{{ method_kind_labels[item.kind] }}</span></div>
@@ -525,7 +557,7 @@
   </section>
 
   <section id="unverified" class="unverified">
-    <h2>十一、{{ report.sections.unverified.title }}</h2>
+    <h2>{{ "十二" if new_editorial else "十一" }}、{{ report.sections.unverified.title }}</h2>
     {% for item in report.sections.unverified["items"] %}
     <article class="card">
       <h3 class="headline">{{ item.headline }}</h3>
@@ -533,9 +565,12 @@
       <div class="source">{{ item.source_name }} · <a href="{{ item.source_url }}">查看原文</a> · {{ item.reason_unverified }}</div>
     </article>
     {% else %}
-    <p>本节无内容。</p>
+    <p>{{ report.sections.unverified.empty_message | default("本节无内容。", true) }}</p>
     {% endfor %}
   </section>
+  {% if new_editorial and report.coverage_summary %}
+  <aside class="evidence" id="coverage-summary"><strong>信息覆盖说明</strong><p>{{ report.coverage_summary }}</p></aside>
+  {% endif %}
   <footer>
     <details>
       <summary>抓取状态（点击展开）</summary>

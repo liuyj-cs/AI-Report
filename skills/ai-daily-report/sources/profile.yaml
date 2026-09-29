@@ -41,3 +41,24 @@ interview_watchlist:
   - id: frontier_lab_others
     org: DeepMind 等
     note: DeepMind（Demis Hassabis 等）+ 头部 coding agent 产品负责人（Cursor / GitHub 等）
+
+# 任务矩阵用于补漏和解释相关性，不是固定入选名单或厂商排名。
+workplace_task_coverage:
+  - task: 研究、检索与资料整理
+    sources: [ChatGPT Enterprise Release Notes, Claude Release Notes, Google Workspace Updates]
+    questions: [可追溯来源, 持续任务, 导出结果]
+  - task: 文档、演示、表格与数据工作
+    sources: [Microsoft 365 Copilot Release Notes, Claude Release Notes, 飞书更新日志, 钉钉悟空更新日志]
+    questions: [支持的操作与格式, 数据权限, 协作交付物]
+  - task: 浏览器与桌面执行
+    sources: [ChatGPT Enterprise Release Notes, Claude Release Notes, 钉钉悟空更新日志]
+    questions: [读写边界, 人工接管, 失败恢复, 适用系统]
+  - task: 企业跨系统工作流
+    sources: [Microsoft 365 Copilot Release Notes, Google Workspace Updates, 飞书更新日志, 钉钉悟空更新日志]
+    questions: [执行身份, 连接器, 写入对象, 任务闭环]
+  - task: 部署与组织管理
+    sources: [ChatGPT Enterprise Release Notes, Microsoft 365 Copilot Release Notes, Claude Release Notes]
+    questions: [套餐与区域, 审计, 管理员控制, 数据边界]
+  - task: 开放发现
+    sources: [General Agent Search Queries, High-Signal Media Discovery]
+    questions: [新对象, 官方补证, 对目标任务的实际价值]

@@ -1,4 +1,4 @@
-"""Check the published native heading outline against the final daily HTML."""
+"""Check the published text and native heading outline against the final daily."""
 import argparse
 import json
 import re
@@ -31,13 +31,33 @@ def validate_heading_outline(html_path: Path, block_payload: dict) -> None:
         raise ValueError(f'DingTalk heading outline differs from HTML: expected={expected!r}, actual={actual!r}')
 
 
+def _normalize_markdown(text: str) -> str:
+    # DingTalk changes list/table spacing, drops URL angle brackets, and escapes
+    # punctuation. Keep content punctuation such as C++ and model-name hyphens.
+    text = re.sub(r'^\s*\|?[\s:|-]+\|?\s*$', '', text, flags=re.M)
+    text = re.sub(r'^\s*(?:#+\s*|-\s*)', '', text, flags=re.M)
+    return re.sub(r'[\s`*|<>\\]', '', text)
+
+
+def validate_readback_text(markdown_path: Path, read_payload: dict) -> None:
+    if read_payload.get('success') is not True or not isinstance(read_payload.get('markdown'), str):
+        raise ValueError('DingTalk full-text readback must succeed')
+    expected = _normalize_markdown(markdown_path.read_text(encoding='utf-8'))
+    actual = _normalize_markdown(read_payload['markdown'])
+    if not expected or actual != expected:
+        raise ValueError('DingTalk full text differs from final Markdown after formatting normalization')
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('html_path', type=Path)
     parser.add_argument('blocks_json', type=Path)
+    parser.add_argument('markdown_path', type=Path)
+    parser.add_argument('readback_json', type=Path)
     args = parser.parse_args()
     validate_heading_outline(args.html_path, json.loads(args.blocks_json.read_text(encoding='utf-8')))
-    print('DingTalk heading outline verified')
+    validate_readback_text(args.markdown_path, json.loads(args.readback_json.read_text(encoding='utf-8')))
+    print('DingTalk full text and heading outline verified')
 
 
 if __name__ == '__main__':

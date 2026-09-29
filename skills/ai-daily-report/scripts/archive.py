@@ -28,7 +28,7 @@ def _iter_cache_leaf_dirs(cache_dir: Path) -> list[Path]:
     for child in cache_dir.iterdir():
         if not child.is_dir():
             continue
-        if child.name == "tracking":
+        if child.name in {"tracking", "delivery_state"}:
             continue
         if child.name == "weekly":
             for weekly_dir in child.iterdir():
@@ -46,6 +46,10 @@ def cleanup_cache(project_root: Path, retention_days: int = CACHE_RETENTION_DAYS
     now_days = int(time.time()) // 86400
     removed = 0
     for child in _iter_cache_leaf_dirs(cache_dir):
+        # Receipts (including unknown outcomes and legacy sends) are permanent
+        # deduplication evidence. Their age never authorizes a repeat delivery.
+        if (child / "send_state.json").exists() or (child / "send_state.json").is_symlink():
+            continue
         mtime_days = int(child.stat().st_mtime) // 86400
         if (now_days - mtime_days) > retention_days:
             shutil.rmtree(child)

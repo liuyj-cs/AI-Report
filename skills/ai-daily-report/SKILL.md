@@ -1,6 +1,6 @@
 ---
 name: ai-daily-report
-description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通用 Agent 动态，并给出落地建议。产物为移动端优先的单文件 HTML，通过 Gmail SMTP（应用专用密码）发送到 .env 中的收件人。Trigger when 用户说"生成今天的 AI 日报"、"跑一下 /ai-daily"、"生成本周 AI 周报"、"跑一下 /ai-weekly"。
+description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通用与办公 Agent 及政策风险动态，并给出落地建议。产物为移动端优先的单文件 HTML，通过 Gmail SMTP（应用专用密码）发送到 .env 中的收件人。Trigger when 用户说"生成今天的 AI 日报"、"跑一下 /ai-daily"、"生成本周 AI 周报"、"跑一下 /ai-weekly"。
 ---
 
 # AI 日报 / 周报 Skill
@@ -20,11 +20,10 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - 日报：`python skills/ai-daily-report/scripts/report_runner.py init-daily --date {YYYY-MM-DD} --now {ISO8601} --env .env`
    - 周报：`python skills/ai-daily-report/scripts/report_runner.py init-weekly --end-date {YYYY-MM-DD} --now {ISO8601} --env .env`
    - 作用：提前校验 `.env`、创建 `cache/.../run.log`。日报入口只负责生成 `discovery_manifest.json` 与窗口；周报入口会写 `input_days.json`。若邮件环境变量缺失，此步即失败并停止。
-0a. **昨日送达自检**：`init-daily` 输出若含 `DELIVERY_ALERT`（昨日有邮件失败或仅 dry-run），优先重跑
-   `python skills/ai-daily-report/scripts/report_runner.py finalize-daily --date {昨日} --env .env`
-   续发（send_state 幂等：已送达的跳过；失败点之后从未尝试的深度/访谈也会一并补发）。
-   仅确需单发一封时才用 send_mail.py（单发不写 send_state，之后重跑 finalize 会重复投递）。
-   补发也失败则停止并提示用户检查网络/凭据。
+0a. **昨日投递自检**：`init-daily` 输出若含 `DELIVERY_ALERT`，先查看对应投递台账与回执（访谈使用跨日共用台账），区分未提交、部分接收、全部接收和结果未知。
+   - 已明确未提交或部分接收，且仍在原投递授权内：重跑 `python skills/ai-daily-report/scripts/report_runner.py finalize-daily --date {昨日} --env .env`；已接收的收件人会跳过，只续发原邮件尚未接收的收件人，以及失败点之后尚未尝试的专题/访谈。
+   - `unknown` 或台账损坏：停止发送，先核实服务端记录或收件箱；不能从失败日志推断未发送，也不能删除台账、改投递 key 或直接标成 sent 来解除阻断。
+   - 仅 dry-run 不能视为已获补发授权。单封发送也必须使用原 `--state-dir` 与 `--state-key`，详见异常处理。
 0b. **昨日 QA 复盘**：读 `cache/{昨日}/qa_diff.json`（若存在）。昨日 `missed_discovery` 点名的源，今天首轮必须完成下穿（搜索层留痕）；连续出现的同名告警视为流程缺陷，当天必须消化，不允许再顺延。
 1. **读取 sources/whitelist.yaml**：按类别枚举所有信源和搜索 query
 1b. **读取 sources/profile.yaml**：读者画像（四个角色、在途决策、实践关注点）。它是编辑判断的输入：相关性、决策雷达分组、生态板块取舍都要回答"这条信息服务哪个角色/哪个在途决策"。
@@ -35,10 +34,14 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - 周报：`cache/weekly/{end_date}/report.json` 存在 → 询问用户是否覆盖
 5. **确认 SMTP 凭据可用**：本步骤已合并到 step 2 的 .env 校验。Gmail 应用专用密码无浏览器认证流程。
 
+## 通用与办公 Agent 编辑契约
+
+新批次执行 [通用与办公 Agent 工作流](workflows/general-agent-editorial.md)：日报 1.2、候选台账 1.1、周报 1.1；manifest 锁版本。政策风险独立归类，完整留存工具响应；每次只返回一个有大小限制的证据块，检查实际输出完整后再确认回执，逐主张区分直接证据与背景，行动逐依据校验资格与增量。历史格式只读兼容。
+
 ## 日报工作流
 
 **目标日期**：运行当日（如今日为 2026-04-11，则 date = 2026-04-11）
-**采集窗口**：`昨日 07:00:00 ~ 当前运行时刻`（北京时间 Asia/Shanghai）。例如日报在 10:30 运行，则窗口为 `昨日 07:00 ~ 今日 10:30`，覆盖约 27.5 小时。`window.end` 写入实际运行时刻（ISO 8601）。
+**采集窗口**：`昨日 07:00:00 ~ 当前运行时刻`（北京时间 Asia/Shanghai）。例如日报在 10:30 运行，则窗口为 `昨日 07:00 ~ 今日 10:30`，覆盖约 27.5 小时。`init-daily` 将带时区的实际运行时刻与窗口锁入 `discovery_manifest.json`；后续采集、正文与校验沿用这一窗口，重跑 finalize 不向后移动边界。
 
 步骤：
 
@@ -64,7 +67,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
        - **`surface_kind: feed`**——官方 news/blog 列表、changelog、release notes、GitHub releases、GitHub 组织 `?sort=updated`、HuggingFace 组织 `?sort=created`、结构化 API 等"每条都带日期的倒序列表"：empty 属于**合法成功**，**不**继续下层
        - **`surface_kind: static`**——产品首页、API/使用介绍页、聊天入口、JS 壳、看板/排行榜首屏：empty **不代表"无新闻"，只代表"这个面展示不了新闻"** → **必须继续下穿** 该源 fetch_chain 里后续的 feed 面与 websearch_scoped/broad；跑完搜索层仍空，才能判为该源空
        - 未标注的 `webfetch` 层按 `static` 处理；`github_releases` 层缺省 `feed`。标注判据与齐全性由 whitelist 头部注释与 `tests/test_whitelist_annotations.py` 机器门守恒——**不要在跑日报时临时改判某个面的类型**，该改标注就改 whitelist
-     - **cn_labs 与 hard_data 是 finalize 阻塞项，且判空规则比通则更严**：这两类源除了「`static` 层空必须下穿搜索层」外，**`feed` 层空也不能立刻收工**——只要链里还有未触达的抓取面（webfetch / github_releases），就必须继续下穿；停在中途 `finalize-daily` 直接失败（不只是 qa_diff 告警）。原因是单个 feed 面只覆盖该源的一部分发布口径（API changelog ≠ 权重发布），开源权重的第一现场通常是 HF 上的新权重。**判据按 `attempts[]` 里真实出现过的最大 `layer_index` 算，不看自报的 `final_layer_index`**——留痕说了算，声明一个层号不算走过。对 `cn_labs`，走完链内全部抓取面仍空即可判空，不强制再跑 websearch；对 `hard_data`（每源只有一个 `static` 抓取面），走完它还不够，必须跑搜索层。阻塞范围仅这两类；其他类别的 `feed` 面空照旧即停，`surface_kind` 只作为你判断 empty 的输入，不阻断发送
+     - **cn_labs 与 hard_data 是 finalize 阻塞项，且判空规则比通则更严**：这两类源除了「`static` 层空必须下穿搜索层」外，**`feed` 层空也不能立刻收工**——只要链里还有未触达的抓取面（webfetch / github_releases），就必须继续下穿；停在中途 `finalize-daily` 直接失败（不只是 qa_diff 告警）。原因是单个 feed 面只覆盖该源的一部分发布口径（API changelog ≠ 权重发布），开源权重的第一现场通常是 HF 上的新权重。**判据按 `attempts[]` 里真实出现过的最大 `layer_index` 算，不看自报的 `final_layer_index`**——留痕说了算，声明一个层号不算走过。对 `cn_labs`，走完链内全部抓取面仍空即可判空，不强制再跑 websearch；对 `hard_data`（每源只有一个 `static` 抓取面），走完它还不够，必须跑搜索层。本条链内穷尽守门的范围仅这两类；其他类别按通则判空。AI HOT 另需完成下述分页覆盖校验，不能把只抓到一页当作完整 feed
      - 反例：Google AI Blog 经常返回纯 CSS 模板 → 视为 error，进入下一层
      - 反例：HTTP 200 但页面内容是「Please enable JavaScript」/「Cloudflare verification」→ 视为 error
 
@@ -97,11 +100,12 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - 高信号媒体发现面：除白名单媒体逐源首轮外，还应单独维护一组 `high_signal_media_queries`，用于把弱信号候选抬进 `candidate_ledger`，后续再由 AI 决定是进正文、进观察区/`unverified`，还是丢弃
      - **召回探针必须执行**：除逐源白名单、`general_agent_search_queries`、`high_signal_media_queries` 外，日报还必须执行 `recall_probe_queries`，并把结果写入 `fetch_status.source_details["High-Recall Product/Adoption Probes"].attempts[]`。
      - `recall_probe_queries` 不是固定正文规则，只是独立召回面。命中的候选仍由 AI 基于窗口、证据路径、产品相关性和团队可行动性决定进入正文、观察区、`unverified` 或拒绝。
-     - 对 Cursor / Zed / IDE 平台化类信号，不要只看 changelog；官方 blog、release post、SDK 公告和 Agent Client Protocol 一类入口都属于 coding/general agent 候选面。
+     - 对 Cursor / Zed / IDE 平台化类信号，不要只看 changelog；官方 blog、release post、SDK 公告和 Agent Client Protocol 一类入口都属于 coding_agents/agent_ecosystem 候选面；跨工作任务时由 AI 单独给归属理由。
      - 对 DeepSeek / Qwen / Kimi / 智谱GLM / MiniMax / 豆包 / 混元 等中文头部模型，**任何单一面空都≠无发布**。这类源的 fetch_chain 里通常有多个抓取面（API changelog、HuggingFace 组织 `sort=created`、GitHub 组织 `sort=updated`、官方 blog），**每个面只覆盖一部分发布口径**——API changelog 记的是接口变更，开源权重的发布第一现场是 HF。所以 cn_labs 的判空规则比通则更严：**即使命中层是 `feed`，只要链里还有没走到的抓取面，就必须继续下穿**（finalize 会阻塞停在中途的链）；走完全部抓取面仍空，才可以判该源空，此时不强制再跑 websearch。若还需要更宽的确认，再走 ② websearch_scoped/broad；③ 主流媒体一跳。命中后进入 `candidate_ledger`，官方一手（HF/GitHub release）可保 high，纯媒体按 `media_plus_official_one_hop` / `media_only` 降级。
-     - **AI HOT 是结构化 API 面**（`aihot.virxact.com/api/v1/items`，匿名只读、无需 Key）。**两层分工是刻意的**：Layer-0 `mode=selected` 是高门槛策展池（实测当日只放行约 8% 条目），标 `static`——它空只说明"策展没放行"，不等于中文圈无新闻，**必须下穿** Layer-1 `mode=all` 全量池（标 `feed`，空即权威）。返回 `{schemaVersion, query, items[], page}`；每条必有 `id / title / source.name / links.aihot / links.original / discoveredAt / selected`，而 `publishedAt / summary / category / score` 键恒在但**值可为 null，取用前必须判空**：`publishedAt` 为空时回退 `discoveredAt` 并按 `published_at_confidence: inferred` 处理。
-       - ⚠️ **静默空集陷阱（必须防）**：非法参数会返回 **HTTP 400 但 body 是 `{"items": [], "page": null}`**——`feed` 层读到它就等于"今天中文圈无 AI 新闻"，是静默漏采。判别信号是 **`page` 为 null**：合法响应的 `page` 一定是对象。见到 `page: null` 一律按该层 error 处理并下穿，**不得**记成 empty。已实测会触发的非法值：`window` 只接受 `24h` / `7d`（`48h` 报 400）、`limit` 上限 100（`101` 报 400）、`mode` 只接受 `selected` / `all`。别自造参数。
-       - `mode=all&limit=50` 实测 `page.hasMore=true`——这是**按需截断，不是全量**。50 条对召回对照够用；确需更多时用 `page.nextCursor` 原样回传翻页，不要把 `hasMore=true` 读成"就这些"。它是**中文圈召回对照面，不是证据源**——tier 2 聚合面，候选照常按 media 降档（`media_only` 不驱动 `action_items`），进正文前用条目自带的 `links.original` 做一跳官方补证。API 不可达时按该层 error 处理，继续下穿后续层
+     - **AI HOT 是中文圈召回对照面**（`aihot.virxact.com/api/v1/items`，匿名只读）。首层使用 `mode=all&window=7d&by=published&limit=100`，在本地按锁定的 manifest 窗口筛选；`selected` 只作为策展参考字段。`all` 仍是经过上游相关性与内容条件过滤的公开池，不能代表原始采集全集，也不能用空池证明“中文圈没有新闻”。
+       - **采集时读取 [AI HOT 分页与证据工作流](workflows/aihot-discovery.md)**：保留每页真实 HTTP 状态、响应类型、完整 JSON、请求 URL 与证据哈希，按返回的 `nextCursor` 翻页；翻过窗口起点或上游耗尽才算本窗口覆盖完成。未翻完、请求失败或证据不完整分别如实保留 `partial` / `error`，不得写成 API success 或 empty；非核心聚合面失败可继续走真实的搜索兜底。
+       - 非法参数目前返回 **HTTP 400 Problem JSON**，不是合法空页。以 HTTP 状态、类型、结构与分页链共同校验，不能只查 `items` 是否为空。`window` 只接受 `24h` / `7d`，`limit` 最大 100；本项目显式选 7d，避免日报超过 24 小时的窗口被截断。
+       - `publishedAt` 为空时接口按 `discoveredAt` 排序；使用该时间必须标 `published_at_confidence: inferred`，`confidence` 不高于 `medium`。候选仍需沿 `links.original` 一跳补证；聚合结果本身不升级来源等级，`media_only` 不驱动行动建议。
      - 对 Microsoft 365 Copilot、企业 agent 席位、ARR、weekly engagement 等商业采用率信号，优先写入 `market_signals.adoption_signals`，并通过正文 item `ref` 连接到 `general_agents` 或 `frontier_models`。引用必须指向能承载该数字的一手或电话会转录来源；普通新闻稿若不含数字，不可单独作为数字证据。
      - 媒体面不只看“新品发布”，也要覆盖工程化与组织信号，例如套餐/定价波动、agent 架构披露、企业落地案例；但这类条目若缺一跳官方补证，默认最多收口到 `watch` 或 `unverified`
      - 从这两个源提取的条目仍需通过窗口硬卡和跨日去重
@@ -127,15 +131,16 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
    - **拆分**：当一次搜索结果摘要包含多个独立事件（不同发布日期、不同版本号、不同产品动作）时，将每个事件拆分为独立候选条目
    - **时间归因**：为每个候选条目独立确定 `published_at`：
-     1. 摘要中有明确日期（如 "April 8, 2026"）→ 直接使用，`published_at_confidence: exact`
+     1. 摘要中有明确日期（如 "April 8, 2026"）→ 保留原日期精度；只有日期时不能补造午夜时间。涉及窗口边界时继续查事件时间或有证据的首次提及时间
      2. 无明确日期但提到版本号 → 用版本号反查发布日期（额外一次搜索或检查同批抓取中的 release 信息），`published_at_confidence: approximate`
      3. 无法确定 → `published_at_confidence: inferred`，标记为待窗口硬卡判断
    - **关键反例**：搜索 "OpenAI Codex April 2026" 返回的摘要同时包含 GPT-5.3-Codex（2 月发布）和 GPT-5.4（4 月当前旗舰）→ 必须拆成两条，GPT-5.3-Codex 因 `published_at` 远早于窗口而被丢弃
 
 2. **核心源阈值检查**
    - 核心源：`whitelist.yaml` 的 `core_sources`（共 8 个，含 2 家 CN 一级厂商 DeepSeek/Qwen）
-   - 失败定义改为「**fetch_chain 全层都失败**」，被 Layer 1+ 兜底成功的源**不**算失败
-   - 若 **≥4 个核心源整链失败** → 中止：打印清晰错误、写 run.log 末尾 `END daily status=aborted core_failures=N`、**不发邮件、不归档**
+   - 失败定义为「**fetch_chain 全层都失败**」，被任一层兜底成功的源不算失败，之后的补充尝试失败也不能抹掉已成立的成功。
+   - `finalize-daily` 从真实 `attempts[]` 重算核心源状态并核对 `succeeded / empty / failed`；缺失尝试、未完成降级链或自报状态矛盾不能放行。
+   - 若 **≥4 个核心源整链失败** → 校验失败，写入 run.log，**不渲染、不归档、不发邮件**；不得通过改自报数组绕过。
 
 3. **助手过滤、去重与归类**
 
@@ -155,6 +160,8 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - `published_at` 早于 `window.start` → **直接丢弃，无例外，不论内容多重要**
      - `published_at` 晚于 `window.end` → 丢弃
      - `published_at_confidence: inferred` 且落在窗口内 → 保留但 `confidence` 不得高于 `medium`
+   - **程序兜底**：`finalize-daily` 必须读取锁定的 manifest，从其日期与 `window.end` 重算北京时间窗口，并比对 manifest、正文及候选台账。产品与政策正文入选条目的时间必须与对应台账一致且在窗口内；缺 manifest、时区不明、窗口漂移或越界均阻断渲染、归档与发送。
+   - **日期精度**：仅有日期时，保留该自然日的时间范围；只有整个范围都在窗口内才能据此通过。日期范围与昨日 07:00 或运行时刻相交时，应补查精确事件时间，或采用有证据的窗口内首次提及时间并标为 inferred、降至最多 medium；不能补造午夜时间过关。
    - 记录：被窗口硬卡丢弃的条目写入 `run.log`，格式 `WINDOW_REJECT {headline} published_at={date} reason=before_window|after_window`
    - **关键反例**：GitHub Copilot 4 月 10 日的 changelog 条目不得出现在 4 月 12 日日报中（窗口起点为 4 月 11 日 07:00）
 
@@ -179,13 +186,14 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - `authority_tier = 3` 的条目必须有另一条 tier ≤ 2 的交叉确认，否则进 `unverified`
      - 来自 `via_broad_search: true` 的条目 confidence 已经被强制为 medium，仍可进正文，但要求标题至少能在两个独立来源中出现
 
-   - 归类到 5 个章节：
+   - 按对象归类到以下五类：
      - **frontier_models**：模型能力发布、基准测试、开源、API 定价调整
      - **coding_agents**：明确面向写代码的产品（如 `Codex / Claude Code / Gemini CLI / Jules / Cursor / Copilot / Cline / Aider / Windsurf` 等）；是否进入正文和排序由事件本身决定，不按产品名单预设主次
-     - **general_agents**：通用 agent、browser agent、computer use、工作流 agent（不限厂商）。凡属此类且进入正文的条目都归入这里，不因厂商体量或对象热度预设更高优先级
+     - **general_agents**：通用与办公 Agent 的产品/能力变化，回答任务、变化与使用条件。研究系统安全与一般政策程序归 policy_risk；明确具体产品版本或区域受影响的风险可留产品栏，由 AI 给栏目理由
+     - **policy_risk**：政策程序、正式规则、研究安全与行业风险，按独立事件卡呈现
      - **unverified**：观察区 / 待核实区。用于收纳“日期明确、事实链部分成立、但一级证据未闭环”或“官方痕迹存在但信息过薄”的候选，不进入正文判断与行动建议
-   - 媒体内容提升规则：高质量媒体（trust: high）的确定消息 → 前三节作为补充；不确定 → 第五节
-   - **安静日媒体分析提升**：当 frontier_models + coding_agents + general_agents 总条目 ≤ 4 时，允许将 `authority_tier ≤ 2` 的媒体**分析/观点文章**（非产品发布）提升进正文章节，标注 `release_stage: announced`，headline 前缀加"[分析]"以区分
+   - 媒体内容提升规则：高质量媒体（trust: high）的确定消息 → 按对象进入产品或政策风险正文；证据未闭环 → unverified
+   - **安静日纪律**：可以保留有事实增量且服务读者任务的媒体分析，但不放松栏目边界；没有产品变化不能填 general_agents，也不能用 release_stage: announced 表示“新闻被报道”。
    - **媒体驱动主题分层**
      - 已被官方源证实的功能更新 → 可进前三节
      - 只有媒体分析、但事实链足够清楚 → 最多作为 `watch` 级观察
@@ -195,7 +203,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - `unverified` 不等于“纯传闻堆放区”：优先保留 0-2 条最值得继续跟进的候选，并写清楚缺的证据是什么；明显窗口外、明显重复、或价值很低的弱信号仍应丢弃
    - 字段约束：`headline ≤ 30 字`、`summary ≤ 40 字`、`impact ≤ 30 字`
 
-   - **每条条目都必须填以下元数据字段**（schema 强制 required）
+   - **每条产品条目都必须填以下元数据字段；风险条目按独立 riskItem 契约**（schema 强制 required）
      - `release_stage`: 枚举 `announced` / `preview` / `beta` / `ga` / `rumor`
      - `published_at_confidence`: 枚举 `exact` / `approximate` / `inferred`
      - `authority_score`: 1-5 整数（直接由 source 的 `authority_tier` 反向映射：tier 1→5，tier 2→3-4，tier 3→2）
@@ -203,7 +211,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - 可选：`evidence_quote`（原文一句直接引用，≤120 字），`dedup_key`，`via_broad_search`
 
    - **候选编辑判定**
-     - 每条候选最终必须落到：`selected_core`、`selected_watch`、`selected_unverified`、`rejected_window`、`rejected_duplicate`、`rejected_weak_evidence`、`rejected_not_ai`
+     - 每条候选最终必须落到：`selected_core`、`selected_watch`、`selected_unverified`、`rejected_window`、`rejected_duplicate`、`rejected_weak_evidence`、`rejected_not_ai`、`rejected_low_relevance`
      - 助手必须为每条候选写一句 `decision_reason`，明确说明是保留、降级还是丢弃
 
 3a. **当前状态校验（针对 frontier_models 和 coding_agents）**
@@ -243,7 +251,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
 3b-1. **模型能力卡（正文必读，不依赖独立专题邮件）**
 
-   - 新生成日报使用 `version: "1.1"`；历史 `1.0` 仍可重渲染。每条 `frontier_models` 必填 `model_assessment`，不以 `major_event` 为前提。新模型、能力更新、评测事件应填写 `status: assessed`；查不到分数用 `insufficient_evidence` 并列明查过哪些评测面、未取得什么；纯调价/政策事件用 `not_applicable` 并说明不涉及能力更新。不能为过校验编数字。
+   - 新生成日报使用 `version: "1.2"`；历史 `1.0/1.1` 仍可重渲染。每条 `frontier_models` 必填 `model_assessment`，不以 `major_event` 为前提。新模型、能力更新、评测事件应填写 `status: assessed`；查不到分数用 `insufficient_evidence` 并列明查过哪些评测面、未取得什么；纯调价/政策事件用 `not_applicable` 并说明不涉及能力更新。不能为过校验编数字。
    - **采集目标**：打开官方发布页、model/system card、技术报告的评测表及脚注；再查至少一个独立评测面。图表在图片/PDF中时应读取图表，不能只读标题摘要。优先选能解释强项与短板的代表性项目，通常覆盖编码、推理/知识、Agent/工具、多模态或长上下文中与发布相关的维度；没有相关数据就写缺口，不强凑固定数量。
    - **结构**：`conclusion` 先给综合判断：能力处于什么位置、相对谁有何优势、成本是否划算、适合什么任务及主要边界。不能只写“值得关注/验证、尚不能全面替代”。`groups[]` 按评测来源/条件分组，每组必填 `title / source_name / source_url / evidence_type / observed_at / conditions / metrics`。`evidence_type` 为 `vendor_reported / independent / team_test`；跨页面对照的来源写 `supporting_sources[{source_name, source_url}]`，组内核验时间覆盖这些页面。全部主来源和对照来源必须在 `fetch_status.source_details.*.attempts` 中有成功的精确 URL 抓取记录，并补到候选的 `source_attempt_refs`。
    - **每项评测**：填 `benchmark`（含版本）、`what_it_tests`（用中文解释测什么）、`model_variant`（具体型号和推理档位）、数值 `score`、`unit`、`direction`、`comparators[{model_variant, score}]`、`interpretation`。优先带上一代和有决策价值的竞品/同系列对照；取不到对照则空数组并说明缺口。不得把综合指数写成百分制成绩，也不得把 Elo 当正确率。
@@ -256,8 +264,8 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 3b-2. **晨报阅读主线与去重**
 
    - 顶层 `reading_guide` 写 0-4 条“今日核心判断”，每条 `{text, ref}` 必须回指正文，最多 160 字；安静日允许空。模型条目优先写“型号与定位 → 关键能力对照 → 成本优势或代价 → 适用任务/关键边界”，正文已有的决定性数字不要省成模糊形容词。不得只写“值得看/有进步/仍需验证”，不得只列风险、不交代已成立的价值，也不得复述新闻标题。每个价格/分数在正文可查到同口径来源；无法判断就具体说明缺哪个证据。
-   - **读者验收**：只看开头应能回答“这款模型相对谁处于什么位置、为何值得用或不值得、适合什么任务”。HTML 的导读链接只显示“查看详评”，钉钉导读不追加重复标题。两端正文语义层级为 H1 报告 → H2 栏目 → H3 模型/事件 → H4 能力评测 → H5 评测分组；不得靠同级大字或空行模拟从属关系。钉钉发布必须回读真实块级标题验收，详见同步工作流。
-   - 展示顺序固定为：模型 → Coding Agent → 通用 Agent → 硬数据 → 跨条目模式 → 决策雷达 → 落地建议 → 建议实验 → 生态实践 → 方法论 → 待核实。目录、正文和终端简版保持一致。
+   - **读者验收**：只看开头应能回答“这款模型相对谁处于什么位置、为何值得用或不值得、适合什么任务”。HTML 的模型能力卡导读显示“查看详评”，普通产品和风险显示“查看详情”，钉钉导读不追加重复标题。两端正文语义层级为 H1 报告 → H2 栏目 → H3 模型/事件 → H4 能力评测 → H5 评测分组；不得靠同级大字或空行模拟从属关系。钉钉发布必须回读真实块级标题验收，详见同步工作流。
+   - 展示顺序固定为：模型 → Coding Agent → 通用与办公 Agent → 政策与风险观察 → 硬数据 → 跨条目模式 → 决策雷达 → 落地建议 → 建议实验 → 生态实践 → 方法论 → 待核实。目录、正文和终端简版保持一致。
    - **各层各司其职**：正文说事实与证据；模式只写至少两条事件合起来才成立的新判断；雷达说明哪个在途决策改变、哪个门槛尚未跨过；建议写是否行动、投入与验收；实验只写执行步骤与产物。每层不能只是换句话重复“值得小范围试点”。
    - 同一事件横跨模型与 Coding 工具时，模型节讲能力，工具节只讲接入、额度与管理增量。没有新分析时压缩观察段，空板块用一句说明，不凑趋势。把内部 ref 显示成文章标题，避免读者看到数组索引。
    - 读者身份来自 `profile.yaml`，不要套泛化的“四角色”模板。具体型号的接入入口、评测配置与实验对象需逐一对应，不能因一款已接入某工具就假设另一款也已接入。
@@ -356,7 +364,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - `unverified` 条目不得进入雷达
 
 8. **推导当日落地建议（action_items）**
-   - **严格依赖当日前四节**（frontier / coding / general / market_signals）
+   - **引用当日产品与风险正文**（frontier_models / coding_agents / general_agents / policy_risk）；硬数据通过对应产品条目提供支持，不单独作为行动引用
    - 先列出可引用的 `core/watch` 正文事实，再从这些事实倒推出建议；不要先写建议再反向找依据
    - `unverified` 或仅媒体单源传闻**不得**进入 `action_items`
    - 0-4 条；每条必须携带：
@@ -367,7 +375,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - `time_horizon`（this_week / this_month / this_quarter）
      - `team_size_applicability[]`（small_lt_10 / medium_10_50 / large_gt_50）
      - `priority`（P0 / P1 / P2）
-     - `references[]`：每条引用都必须指向 `frontier_models / coding_agents / general_agents` 中的 `core/watch` 条目
+     - `references[]`：每条引用都必须指向 `frontier_models / coding_agents / general_agents / policy_risk` 中的 `core/watch` 条目，逐条满足台账的 action_eligibility，并填写 action_delta
    - **多样性硬约束**：items ≥ 3 时 `recommendation_type` 必须出现 ≥3 种不同值；不允许全 patch / 全 monitor
    - **范围约束**：`effort_person_days.max ≤ effort_person_days.min × 3`
    - 写作语气必须回答"是否下注 / 何时下注 / 下注多少人日"，不是"怎么打补丁"
@@ -375,12 +383,13 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - 空时 `items: []` + `empty_message: "今日无明显行动项，延续近期建议。"`
 
 9. **产出结构化 JSON**
+   - 日报 1.2 必填 `coverage_summary`（1—1200 字符）：由 AI 合并与读者判断相关的来源缺口、覆盖范围和影响，不复制逐次抓取审计。覆盖充分时也写清核对范围，不宣称穷尽行业。详细原始限制保留在 evidence 与 source_details；空栏目用自己的 empty_message 说明原因。
    - 严格遵循 `schemas/daily_report.schema.json`
-   - 字段约束：新日报 `version: "1.1"`、`type: "daily"`、`date`、`window`（带时区）、`generated_at`、`reading_guide`、**十一个 `sections`**（frontier_models / coding_agents / general_agents / market_signals / pattern_observations / decision_radar / action_items / experiments_this_week / agent_ecosystem / methodology_radar / unverified）、`fetch_status`。历史 `1.0` 兼容读取；不要用旧版本跳过新日报能力卡要求。
+   - 字段约束：新日报 `version: "1.2"`、`type: "daily"`、`date`、`window`（带时区）、`generated_at`、`reading_guide`、**十二个 `sections`**（frontier_models / coding_agents / general_agents / policy_risk / market_signals / pattern_observations / decision_radar / action_items / experiments_this_week / agent_ecosystem / methodology_radar / unverified）、`fetch_status`。历史 `1.0/1.1` 兼容读取；不要用旧版本跳过新日报能力卡要求。
    - **章节标题契约**：`sections.*.title` 只写纯语义标题（如 `模型动态`、`方法论雷达`），不得写 `一、`、`三a、`、`6.` 等展示编号；日报/周报模板是章节编号的唯一真源，schema 会在渲染前拒绝带编号标题。
-   - **每条正文章目必须填 `release_stage` / `published_at_confidence` / `authority_score` / `editorial_tier`**（schema required，缺失会被 render 阶段拒绝）
+   - **每条产品正文章目必须填 `release_stage` / `published_at_confidence` / `authority_score` / `editorial_tier`**（schema required，缺失会被 render 阶段拒绝）
    - **`fetch_status.source_details`** 必须记录所有走过 fetch_chain 的源（含降级路径），渲染层会展示降级路径供巡检
-   - **来源闭环要求**：进入正文（前三节 + market_signals）的每条信息，都必须能回溯到某次具体抓取尝试；若无法在 `fetch_status.source_details` 中解释它是怎么来的，要么补记该尝试，要么降到 `unverified`，不要保留“正文比日志更聪明”的状态
+   - **来源闭环要求**：进入正文（产品前三节 + policy_risk + market_signals）的每条信息，都必须能回溯到某次具体抓取尝试；若无法在 `fetch_status.source_details` 中解释它是怎么来的，要么补记该尝试，要么降到 `unverified`，不要保留“正文比日志更聪明”的状态
    - **候选台账要求**：除 `report.json` 外，还要落一份 `cache/{date}/candidate_ledger.json`
      - 每条候选至少记录：`candidate_id` / `headline` / `proposed_section` / `published_at` / `source_attempt_refs` / `verification_state` / `editorial_tier` / `decision` / `decision_reason` / `novelty_vs_yesterday`
      - 每条候选还必须记录 `event_type`、`date_basis`、`evidence_path`、`why_today`、`action_eligibility`。
@@ -399,7 +408,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 9a. **Runner 收尾（默认入口）**
     - Run: `python skills/ai-daily-report/scripts/report_runner.py finalize-daily --date {date} --env .env`
     - dry-run: `python skills/ai-daily-report/scripts/report_runner.py finalize-daily --date {date} --env .env --dry-run`
-    - 作用：再次校验邮件环境变量，检查 `fetch_status` 覆盖、`candidate_ledger.json` 与正文对齐、`action_items.references[]` 只能引用 `core/watch` 正文条目；通过后再顺序执行渲染、归档、发送邮件。
+    - 作用：再次校验邮件环境变量与投递台账，必须读取 `discovery_manifest.json` 并重算窗口、逐项核对正文和台账时间、从实际 attempts 重算核心源状态，并核验新批次 AI HOT 的真实分页证据。连同 `fetch_status` 覆盖、候选与正文对齐、行动引用资格等校验全部通过后，再顺序执行渲染、归档、发送邮件。
     - 若发送失败：必须保留 `cache/{date}/report.json`、`cache/{date}/candidate_ledger.json`、`cache/{date}/report.html` 与 `cache/{date}/run.log`，并返回明确错误。
 
 9b. **每日定时任务的钉钉同步**
@@ -415,14 +424,14 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 11. **归档（调试/单步重跑）**
     - Run: `python skills/ai-daily-report/scripts/archive.py cache/{date}/report.html --type daily --date {date}`
     - 期望：退出码 0，stdout 是归档后的绝对路径
-    - 该步骤顺带清理 cache 中超过 14 天的子目录
+    - 该步骤顺带清理 cache 中超过 14 天的子目录；包含 `send_state.json` 的日/周目录及 `cache/delivery_state/` 保留，投递回执不随普通缓存到期删除
 
-12. **发送邮件（调试/单步重跑）**
-    - Run: `python skills/ai-daily-report/scripts/send_mail.py reports/daily/{date}.html --subject "AI 日报 · {date}"`
-    - 脚本会自动从 `./.env` 读 `GMAIL_USER` / `GMAIL_APP_PASSWORD` / `REPORT_RECIPIENTS`，通过 `smtp.gmail.com:465 (SSL)` 直接发送 HTML 正文（含 plain text fallback）
-    - 期望：退出码 0，stdout `sent to=... subject=...`
-    - 退出码 1 = 参数/配置问题，2 = SMTP 认证失败（多半是应用专用密码失效），3 = SMTP 网络/服务错误
-    - 若 dry-run 模式：**跳过此步**，在 run.log 写 `EMAIL skipped (dry-run)`
+12. **发送邮件（已通过 finalize 校验后的单步恢复）**
+    - 优先重跑 finalize；只有恢复同一份已通过校验的归档正文时使用：`python skills/ai-daily-report/scripts/send_mail.py reports/daily/{date}.html --subject "AI 日报 · {date}" --env .env --state-dir cache/{date} --state-key daily`。
+    - 脚本从 `.env` 读取凭据，通过 `smtp.gmail.com:465 (SSL)` 发送 HTML 与纯文本 fallback；实际发送强制指定台账目录与稳定 key，不存在不记账的单发路径。
+    - stdout 返回投递 outcome 与数量；退出码 0 可能是本次全部接收，也可能是跳过已有回执，需与台账及 HTML 哈希共同判断。`sent` 仅证明 SMTP 接收，不等于最终进入收件箱。
+    - 退出码：1 参数/配置问题；2 认证失败；3 明确未提交或全部拒收；4 部分接收；5 结果未知或台账阻断。恢复规则见异常处理。
+    - 若 dry-run 模式：**跳过此步**，在 run.log 写 `EMAIL skipped (dry-run)`。
 
 13. **终端输出中等详细度简版**
     - 固定格式：
@@ -442,32 +451,35 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
         · {item 2 headline}
         深度观察：{deep_dive.title}（详见 HTML）
 
-      三、通用 Agent 动态
+      三、通用与办公 Agent
         · {item 1 headline}
         ...
 
-      四、硬数据信号
+      四、政策与风险观察
+        {事件状态、适用范围与证据边界；空显示 empty_message}
+
+      五、硬数据信号
         {增量与观察摘要；模型分数详表见对应正文能力卡}
 
-      五、跨条目模式
+      六、跨条目模式
         {若有 pattern observation 显示 theme；空显示 empty_message}
 
-      六、决策雷达
+      七、决策雷达
         {每个有内容的决策一行；空显示 empty_message}
 
-      七、今日落地建议
+      八、今日落地建议
         {全部逐条打印；空显示 empty_message}
 
-      八、本期建议实验
+      九、本期建议实验
         {若有显示 title；空显示 empty_message}
 
-      九、Agent 生态与实践
+      十、Agent 生态与实践
         · {item title}（{item_type 中文标签}）
 
-      十、方法论雷达
+      十一、方法论雷达
         · {item title}（{kind 中文标签}）
 
-      十一、观察区 / 待核实
+      十二、观察区 / 待核实
         {逐条打印待核实候选；空则显示本节无内容}
 
       负责人访谈：{有/无}{若有：· {person}（{org}）· 已独立邮件发送/Dry-run 未发送}
@@ -482,7 +494,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
 14. **运行日志收尾**
     - `END daily status=ok` / `status=email_failed` 由 `finalize-daily` 写入，**AI 不要手写 END 行**。
-    - finalize 返回非零且 run.log 有 `END daily status=email_failed` 时：邮件未送达。用 `send_mail.py` 单步补发（脚本自带 3 次重试），补发成功后终端简版如实报告"邮件经补发成功"。
+    - finalize 非零或 `email_failed` 只表示本轮未完整结束，不能证明未提交；以 `send_state.json` 的逐收件人结果和 `delivery_result.json` 判断未提交、部分接收或未知，按异常处理恢复，并如实报告实际结果。
 
 ## 周报工作流
 
@@ -504,7 +516,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 3. **聚合 & 去重 & 归纳**
    - 按模型提供方聚合 frontier_models 条目 → `vendor_groups`
    - 按产品聚合 coding agent 条目 → `product_groups`
-   - 通用 agent 按现有 schema 划分 `newcomers` 和 `big_lab_moves`；这只用于周报归纳与排版，不代表对象天然更重要
+   - 新版通用与办公 Agent 使用有类型的 `items`，按任务归纳；政策风险独立 `policy_risk.items`。跨栏目归纳保留原日报引用并说明 origin_classification_note；旧双数组仅在周报 1.0 历史读取中保留
    - 每个 vendor_group / product_group 必须填 `weekly_changes / trend_judgment / implication / references`（三段式观察深度**二/三/四节保持一致**）
 
 3a. **聚合本周硬数据（market_signals）**
@@ -514,12 +526,12 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - 任一子数组有内容即可；全空时填 `empty_message: "本周无显著硬数据变化"`
 
 3b. **识别跨日模式（pattern_observations）**
-   - 在 7 份日报条目 + 本周硬数据上识别 ≥1 条主题
-   - **`pattern_observations.items` 必须 ≥1 条**（schema 强制）
+   - 在 7 份日报条目 + 本周硬数据上识别有独立事实支持的主题，允许空
+   - 新版 `pattern_observations.items` 允许空，不能用同一事件重复引用凑趋势
    - 字段同日报：`theme` / `supporting_item_refs` / `interpretation_for_tech_lead`（100-220 字）
 
 3c. **生成本周实验（experiments_this_week）**
-   - 1-3 条；**`experiments_this_week.items` 必须 ≥1 条**（schema 强制）
+   - 0-3 条；每条 related_item_refs 必须非空且仅引用 coding_agents/general_agents
    - 每条 `time_budget_hours.max ≤ 16`（周报上限），可在 1 周内完成
    - 字段：`{title, hypothesis, steps[2..5], time_budget_hours.{min,max}, expected_output, required_skills[1..4]}`
    - 每条实验必须标 `audience`（team_pilot / personal_workflow）。若本周日报素材足够，1-3 条实验应覆盖两种受众各至少一次；素材不足时不强凑，但要在 hypothesis 里说明为何只面向单一受众
@@ -543,11 +555,11 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
 5. **产出周报 JSON**
    - 严格遵循 `schemas/weekly_report.schema.json`
-   - **十一章节**：`tldr / frontier_models / coding_agents / general_agents / market_signals / pattern_observations / experiments_this_week / practice_digest / methodology_radar / action_items / next_week_signals`
-   - **章节标题契约**：`sections.*.title` 只写纯语义标题，不携带 `一、`、`1.` 等展示编号；周报模板统一负责 `一、` 至 `十一、` 的展示编号。
+   - 新周报 `version: "1.1"`，**十二章节**：`tldr / frontier_models / coding_agents / general_agents / policy_risk / market_signals / pattern_observations / experiments_this_week / practice_digest / methodology_radar / action_items / next_week_signals`
+   - **章节标题契约**：`sections.*.title` 只写纯语义标题，不携带 `一、`、`1.` 等展示编号；周报模板统一负责 `一、` 至 `十二、` 的展示编号。
    - 顶层必填 `week_end`（YYYY-MM-DD，窗口结束日）
    - TL;DR 3-5 条
-   - **落地建议**：3-5 条体系化建议，每条字段与日报 `actionItem` 完全一致：
+   - **落地建议**：只写有独立增量和足够证据的建议，允许空；每条 action_delta 对照前期新增投入理由。逐引用检查行动资格，历史证据未补审时不新增行动。每条字段与日报 `actionItem` 完全一致：
      - `recommendation` / `rationale` / `recommendation_type` / `effort_person_days{min,max}` / `time_horizon` / `team_size_applicability[]` / `success_metric` / `priority` / `references`
    - `references` 引用本周具体日期的日报条目
    - **多样性硬约束**：items ≥ 3 时 `recommendation_type` 必须出现 ≥3 种
@@ -563,21 +575,21 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
 7. **归档（调试/单步重跑）**
    - Run: `python skills/ai-daily-report/scripts/archive.py cache/weekly/{end_date}/report.html --type weekly --date {end_date}`
-   - 清理 cache 时只删除过期的叶子目录；周报会按 `cache/weekly/{end_date}` 粒度清理，不会误删 `cache/weekly/` 根目录
+   - 清理 cache 时只删除过期的叶子目录；周报按 `cache/weekly/{end_date}` 粒度处理，含投递回执的目录保留
 
-8. **发送邮件（调试/单步重跑）**
-   - Run: `python skills/ai-daily-report/scripts/send_mail.py reports/weekly/{end_date}.html --subject "AI 周报 · {start_date} ~ {end_date}"`
+8. **发送邮件（已通过 finalize 校验后的单步恢复）**
+   - Run: `python skills/ai-daily-report/scripts/send_mail.py reports/weekly/{end_date}.html --subject "AI 周报 · {start_date} ~ {end_date}" --env .env --state-dir cache/weekly/{end_date} --state-key weekly`
    - 退出码与异常处理同日报步骤 12
    - 若 dry-run 模式：**跳过此步**，在 run.log 写 `EMAIL skipped (dry-run)`
 
 9. **终端简版**
-   - 结构同日报简版，章节名改为周报十一章节（含方法论雷达），TL;DR 全部显示，落地建议全部显示
+   - 结构同日报简版，章节名改为周报十二章节（含方法论雷达），TL;DR 全部显示，落地建议全部显示
 
 10. **运行日志**：`cache/weekly/{end_date}/run.log` 追加 `END weekly status=ok`
 
 ## 时效性判断规则
 
-- 日报：仅保留 `published_at` 严格落在 `window.start`（昨日 07:00）到 `window.end`（当前运行时刻）之间的条目（由 Step 3-0 窗口硬卡强制执行）
+- 日报：产品与政策正文仅保留时间落在锁定 manifest 的 `window.start`（昨日 07:00）到 `window.end`（初始化时刻）内的条目；边界与台账由 finalize 重算检查。仅日期的证据按 Step 3-0 的完整日期范围校验，不能凭空补成某个时刻。
 - 无法确定发布时间的条目：若"首次被权威源提及"在窗口内，则保留（`published_at_confidence: inferred`，`confidence` 不得高于 `medium`）
 - 明显窗口外的内容：直接丢弃，**即使内容看起来重要或"接近"窗口也不例外**
 - 已被前一天日报覆盖的条目：由 Step 3-1 跨日去重处理，除非有实质性状态变更
@@ -588,35 +600,39 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
 - **frontier_models**：纯模型能力（新模型发布、benchmark、开源权重、API 定价等）。不含产品化的 coding agent、通用 agent。
 - **coding_agents**：明确面向写代码的产品。**不包括**只是"某 AI 助手支持写代码"的通用产品（那些进 general_agents）。
-- **general_agents**：通用 agent、browser agent、computer use、工作流 agent、企业 agent 等。不限厂商。
+- **general_agents**：通用与办公 Agent 产品变化；必填任务、变化、能力形态、可用条件、影响及证据边界。
+- **policy_risk**：政策程序、正式规则、研究安全和行业风险；与产品可用性直接相关的具体风险可留产品栏，按事件逐一说明。
 - **unverified**：观察区 / 待核实区。可包含非权威源消息、单一媒体信息、早期爆料，也可包含“官方痕迹存在但信息过薄”的信号；共同点是它们都不应直接驱动正文强结论与行动建议。
-- **落地建议**：仅从 frontier_models / coding_agents / general_agents 推导。`unverified` 里的内容**不作为**建议依据。
+- **落地建议**：从 frontier_models / coding_agents / general_agents / policy_risk 的 core/watch 事实推导，逐依据校验行动资格与新增投入。`unverified` 里的内容**不作为**建议依据。
 - **agent_ecosystem**：生态与实践信号（热门仓库、skills/插件、实践案例、工具发布）。不是新闻，准入窗口放宽到 7 天首见；不作为 action_items 依据。
 - **decision_radar**：编辑结论层，只引用当日 core/watch 正文条目，按 profile.yaml 在途决策分组。
 - **methodology_radar**：方法论/范式/工具思潮（spec-driven / harness / loop engineering 等）。日报捕获 + 周报聚合，宽准入窗口（7 天首见）+ 30 天 cooldown（advisory，不阻断投递）；不作为 action_items 依据，hook 单向连到 experiments/建议。
 - **interview（负责人访谈）**：独立邮件产物（非 section），复用 deep_dive 发送骨架；不进日报正文、不进 action_items 依据。
-- **政策与合规信号**（policy_compliance_sources）：按影响对象归类——模型/算力可用性（出口管制、备案通过/下架）→ frontier_models；企业部署合规、行业准入 → general_agents；事实链不完整 → unverified。窗口硬卡与来源闭环同标准；对在途决策有影响时必须进 decision_radar。
+- **政策与合规信号**（policy_compliance_sources）：一般政策程序、正式规则、企业部署合规及行业准入进入 policy_risk；明确改变某个具体产品版本或区域可用性的事件可以保留对应产品栏，逐事件说明理由；事实链不完整 → unverified。窗口硬卡与来源闭环同标准；对在途决策有影响时必须进 decision_radar。
 
 ## 异常处理
 
+- **同日修订与投递状态**：日报/周报主稿使用 `delivery_result.json`，附件分别使用 `delivery_results/{keyhash}.json`，区分本轮 dry_run / sent / skipped_existing / failed / partial / unknown，并比较 current_html_sha256 与 sent_html_sha256；SMTP 的逐收件人接收情况以 `send_state.json` 为准。旧 send_state 无哈希时投递版本未知，不能倒填当前哈希；历史 sent 与当前哈希不同或未知时只跳过历史发送，不补写当前正文的 seen 台账，日志记录 deferred。日志 END status=ok 仅表示流程成功。钉钉旧稿的 verified 同样只属于其 source_html_sha256，不能代表新本地稿已发布。
+
 - **单源 fetch_chain 整链失败**：所有层都失败 → 记入 `fetch_status.failed`，继续。被任一层兜底成功不算失败。
-- **核心源阈值**：`core_sources`（8 个，含 2 家 CN）整链失败数 ≥4 → 中止任务、不发邮件、不归档（仅保留 cache 里的 run.log 供排查）
+- **核心源阈值**：finalize 从实际 attempts 重算 `core_sources` 的整链失败数；≥4 或尝试不完整、状态矛盾时停止，不渲染、不归档、不发邮件，保留缓存证据与 run.log。
 - **空结果**：一般类别下，最终命中层 `surface_kind: feed` 时窗口内无条目算合法空，同时进 `succeeded` 与 `empty` 且不穿透下层；**`static` 层命中空必须继续下穿**后续 feed 面与 websearch 后才能判空。**`cn_labs` 更严**：feed 层空也只有在它是该链最后一个抓取面时才算数，否则必须继续下穿。未标注 `webfetch` 层按 `static`，`github_releases` 缺省 `feed`。详见日报步骤 1「成功」判定。
 - **伪成功（CSS only / 登录墙 / JS shell）**：视为该层 error，立即进入下一层
 - **召回守门（finalize 自动校验，会阻断发送）**：① 日报 `cn_labs` / `hard_data` 源判空时，两种情形都会让 **finalize-daily 校验失败（阻断发送）**，错误信息点名源——(a) 最终停在 `static` 层且空、未跑搜索层；(b) 停在 `feed` 层且空，但该链里还有没走到的抓取面（`webfetch` / `github_releases`）。判据按 `attempts[]` 里真实出现过的最大 `layer_index` 算，**不看自报的 `final_layer_index`**——留痕说了算。所以 `hard_data`（每源只有一个 `static` 抓取面）实际必须跑搜索层才能判空；`cn_labs` 走完链内全部抓取面即可，不强制搜索层。确属带日期的倒序发布面、空即权威的，去 whitelist 给该层标 `surface_kind: feed`（改数据，不要在当天口头放行）；② 周报若 frontier_models 在 7 天里 ≥3 天为空或日报缺失（缺失=盲天，不算通过；分母固定为窗口 7 天）、或全部 CN 一级厂商整周零产出 → finalize 校验失败、不渲染不发信。确为安静周时，在周报 `source_days.recall_ack` 留证后可放行：`true` 放行全部，或按信号分别放行 `{"frontier": true}` / `{"cn_labs": true}`（也接受列表 `["frontier"]`）——放行 frontier 不会连带掩盖真实的 CN 漏采。⚠️ `recall_ack` 只接受 **布尔 / 对象 / 列表**；裸字符串 `recall_ack: frontier`（YAML 标量）**不生效、会继续阻断**（属刻意 fail-closed；weekly schema 的 `recall_ack` 已加 `oneOf`，非法形态在渲染时即报错）。
 - **render_html.py 失败**：若退出码 1 → Claude 自检 JSON 格式（特别是新增 required 字段 `release_stage` / `published_at_confidence` / `authority_score` / `editorial_tier`，以及 `action_items.references[]` 的 `section` / `editorial_tier`）补齐后重试一次；仍失败则中止并报错
 - **archive.py 失败**：停止流程，但保留 cache HTML 供用户手动取用
 - **finalize-weekly 校验失败**：若缺日报 JSON、`source_days` 不完整、引用无法回指或 `itemRef` 越界 → 停止流程，不归档不发信，先修正 JSON / 日报缓存
-- **send_mail.py 失败**：HTML 已归档 → 报告失败但不回滚归档。退出码 2（认证失败）→ 提示用户重新生成 Gmail 应用专用密码并更新 `.env`；退出码 3（网络/SMTP 错误）→ 建议稍后重跑 `send_mail.py` 单步重试
+- **send_mail.py 失败**：保留已归档 HTML 与投递台账。退出码 2 时提示用户在本机更新凭据，不索取或输出密钥；退出码 3 为明确未提交/全部拒收，排除原因后可用同一台账重跑 finalize；退出码 4 只续发原收件人中尚未接收者；退出码 5 先核实未知结果或修复台账，不能盲重发。
 - **追踪档案损坏**：`cache/tracking/` 下存在无法解析或不符合 schema 的档案 → finalize 校验失败（错误信息会点名该文件）。修复或删除该档案后重跑；过期超过 7 天的档案由 finalize 自动清理。
 - **已选专题缺失或损坏**：仅对 `deep_dive_refs` 中的专题检查文件、1.1 结构、日期/slug、证据引用与成功抓取记录。失败时修复，或由 AI 确认尚未成熟后从清单移出并说明延期；不得编造材料过关。未选专题不阻塞晨报，也不会自动发送；重大事件的 expanded 与追踪校验仍然执行。
-- **发送幂等（send_state.json）**：`finalize-daily` / `finalize-weekly` 通过 `cache/{date}/send_state.json`（周报为 `cache/weekly/{end}/send_state.json`）记录已发送的日报正文 / 每份 deep_dive / 周报。发送中途失败后**直接重跑 finalize 即可**：已发的封不会重发（run.log 记 `EMAIL skip already-sent ...`），只补发失败的。访谈仍由全局 `interview_seen.json` 幂等。dry-run 不写 send_state。
-- **send_mail 自动重试**：瞬时 SMTP/网络错误自动重试 2 次（5s/20s 退避）；认证错误（code=2）不重试，提示更新应用专用密码。
+- **发送幂等（send_state.json）**：日报、专题使用 `cache/{date}/send_state.json`，key 为 `daily`、`deep_dive:{slug}`；周报使用 `cache/weekly/{end}/send_state.json` 的 `weekly`；访谈跨日共用 `cache/delivery_state/interviews/send_state.json`，key 为 `interview:{slug}`。发送器在文件锁内保存稳定 Message-ID、HTML 哈希与逐收件人状态，并原子写账。SMTP 提交前先持久化 `unknown`；收到明确接收结果后先记账，再关闭连接，关闭超时不触发重新提交。访谈另保留全局 `interview_seen.json` 的跨日去重，该台账损坏也阻断发送。上述投递回执不随 14 天缓存清理删除；dry-run 不写发送台账。
+- **重试边界**：只有提交前的连接失败可自动重试 2 次（5s/20s）；认证失败不自动重试。部分接收后，重跑只补尚未接收者，必须保持原内容、主题、发件人与收件人集合；不得换 key 绕过。提交后结果未知则禁止自动重发，稳定 Message-ID 也不是收件服务器的去重保证。
+- **未知结果与坏台账**：`unknown`、无法解析的 JSON、无效结构或矛盾回执均阻断发送；不当成空台账。先依据 Message-ID、内容版本与服务端/收件箱记录核实，不能未经核实自行写 sent、删除台账或另起 key。当前没有自动核实未知结果的能力，无法确认时保留阻断并报告。
 - **DELIVERY_ALERT**：init-daily 检测到昨日有邮件失败（按 kind 区分日报/深度/访谈）或仅 dry-run 时输出告警并写 run.log。注意发送链首个失败即中断，失败点之后的邮件从未尝试、日志里不会出现——所以恢复必须以「重跑 finalize-daily」为主，见「运行前检查 0a」。
 - **逐字稿取不到（访谈）**：降级 `mode=deep_summary_fallback`，`lede` 标注来源限制，不报错、不阻塞日报。
 - **访谈面整链失败**：记 `fetch_status.failed`，日报照常（`leader_interviews` 非 core_source）。
 - **访谈 JSON 损坏 / schema 不合 / mode 与字段不一致**：`validate_interviews` 报错点名文件 → finalize-daily 失败、不归档不发信；修复或删除该 `cache/{date}/interview_{slug}.json` 后重跑。
-- **单封补发（可选）**：send_state 幂等已使整体重跑安全；若只想补发单独一封，也可用 `send_mail.py reports/interviews/{date}-{slug}.html` 或 `reports/deep_dives/{date}-{slug}.html` 单步发送（注意单步发送不会写 send_state，之后重跑 finalize 会再发一次该封——优先用整体重跑）。
+- **单封恢复（可选）**：仅对已经通过 finalize 校验且内容未改的归档正文，使用同一个 `send_mail.py` 台账入口；专题必须带 `--state-dir cache/{date} --state-key deep_dive:{slug}`，访谈必须带 `--state-dir cache/delivery_state/interviews --state-key interview:{slug}`，同时提供原主题与 `--env .env`。之后重跑 finalize 读取同一回执，不再提交已接收邮件，并补齐访谈等本地后续台账。不得用单封路径绕过内容校验或未知状态阻断。
 - **方法论 cooldown 台账损坏**：`methodology_seen.json` 无法解析 → 视为空台账（不阻塞）；如需重置删除该文件即可（删除会让历史范式可能重新进入冷却计算）。
 
 ## 产出字段约束

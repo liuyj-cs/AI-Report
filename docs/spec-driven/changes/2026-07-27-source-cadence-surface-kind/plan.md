@@ -1,5 +1,7 @@
 # 2026-07-27-source-cadence-surface-kind plan
 
+> **AI HOT 契约更新（2026-09-29）**：下文 T6/T7 的 selected/24h 双层配置、旧错误体识别与对应勾选项是 2026-07 的实施记录，已被替代，不再作为当前要求或验收依据。现行契约见 [spec](specs/source-discovery/spec.md) 与 [AI HOT 工作流](../../../../skills/ai-daily-report/workflows/aihot-discovery.md)：以 all/7d/published 发现并从真实分页证据重算窗口覆盖。本更新不改动已撤销 cadence 的历史记录。
+
 ## 目标
 交付信源采集面的空判定纪律:fetch_chain 逐层 surface_kind 标注(守门判据层级化)+ AI HOT 结构化 API 面。
 
@@ -52,6 +54,8 @@
 ---
 
 ### T6:whitelist 全量标注 + AI HOT 链替换
+
+> 以下 AI HOT 配置和对应测试记录已于 2026-09-29 被现行 spec 替代；保留历史完成状态，不据此恢复旧链。
 **需求引用**:`## 新增需求 › fetch_chain 逐层 surface_kind 标注`(标注齐全性,关键决策 1 全量口径)+ `## 新增需求 › AI HOT 结构化 API 采集面`
 
 **接口块**
@@ -71,6 +75,8 @@
 ---
 
 ### T7:SKILL.md / AGENTS.md 口径修订
+
+> 以下 `page=null` 静默空集描述仅为历史错误体记录；当前按 HTTP 状态、类型、响应结构与分页链联合校验。
 **需求引用**:`## 新增需求 › fetch_chain 逐层 surface_kind 标注`(empty 判定三处统一)+ `## 新增需求 › AI HOT 结构化 API 采集面`(读取说明)
 
 **接口块**

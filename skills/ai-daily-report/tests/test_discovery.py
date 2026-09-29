@@ -36,6 +36,28 @@ def test_rolling_week_dates_rejects_iso_week_string():
         rolling_week_dates("2026-W20")
 
 
+@pytest.mark.parametrize("now", ["2026-09-29T02:00:00Z", "2026-09-28T19:00:00-07:00", "2026-09-29T10:00:00+08:00"])
+def test_daily_window_uses_shanghai_calendar_regardless_of_input_zone(now):
+    assert compute_daily_window("2026-09-29", now) == {
+        "start": "2026-09-28T07:00:00+08:00",
+        "end": "2026-09-29T10:00:00+08:00",
+        "timezone": "Asia/Shanghai",
+    }
+
+
+@pytest.mark.parametrize("target,now", [
+    ("2026-09-29", "2026-09-29T10:00:00"),
+    ("2026-09-29", "2026-09-29"),
+    ("2026-09-29", "2026-09-28T10:00:00+08:00"),
+    ("2026-09-29", "2026-09-29T23:00:00Z"),
+    ("2026-09-29", "2026-09-27T10:00:00+08:00"),
+    ("2026-W40", "2026-09-29T10:00:00+08:00"),
+])
+def test_daily_window_rejects_naive_mismatched_or_invalid_dates(target, now):
+    with pytest.raises(ValueError):
+        compute_daily_window(target, now)
+
+
 def test_initial_fetch_status_contains_all_required_sources_with_pending_skeleton(sample_whitelist):
     result = initial_fetch_status(sample_whitelist)
     required = required_discovery_names(sample_whitelist)
@@ -137,7 +159,9 @@ def test_whitelist_contains_deepseek_vision_zed_and_adoption_surfaces(sample_whi
     assert "Zed" in watchlist_names
     assert "Microsoft 365 Copilot Adoption" in watchlist_names
 
-    assert "AI-native editor agent protocol {date}" in sample_whitelist["general_agent_search_queries"]
+    assert not any("editor" in query for query in sample_whitelist["general_agent_search_queries"])
+    assert all("{yesterday}" in query and "{date}" in query for query in sample_whitelist["general_agent_search_queries"])
+    assert "AI-native coding editor agent protocol {yesterday} {date}" in sample_whitelist["high_signal_media_queries"]
     assert "Microsoft 365 Copilot paid seats earnings call {date}" in sample_whitelist["high_signal_media_queries"]
     assert "Cursor SDK @cursor/sdk public beta {date}" in sample_whitelist["recall_probe_queries"]
     assert "Zed 1.0 AI-native editor Agent Client Protocol {date}" in sample_whitelist["recall_probe_queries"]
@@ -153,15 +177,11 @@ def test_whitelist_contains_ai_hot_media_source(sample_whitelist):
     assert ai_hot["weight"] == "high"
     assert ai_hot["fetch_chain"][0] == {
         "type": "webfetch",
-        "url": "https://aihot.virxact.com/api/v1/items?mode=selected&window=24h&limit=50",
-        "surface_kind": "static",
-    }
-    assert ai_hot["fetch_chain"][1] == {
-        "type": "webfetch",
-        "url": "https://aihot.virxact.com/api/v1/items?mode=all&window=24h&limit=50",
+        "url": "https://aihot.virxact.com/api/v1/items?mode=all&window=7d&by=published&limit=100",
         "surface_kind": "feed",
     }
-    assert "AI HOT site:aihot.virxact.com {date}" in ai_hot["fetch_chain"][2]["queries"]
+    assert ai_hot["fetch_chain"][1]["type"] == "websearch_scoped"
+    assert "AI HOT site:aihot.virxact.com {date}" in ai_hot["fetch_chain"][1]["queries"]
 
 
 def test_build_discovery_manifest_includes_recall_probe_surface(sample_whitelist):
@@ -299,12 +319,11 @@ def test_initial_fetch_status_has_methodology_surface():
     assert "Methodology Radar Discovery" in __import__("discovery").required_discovery_names(load_whitelist())
 
 
-def test_compute_daily_window_accepts_naive_now():
+def test_compute_daily_window_rejects_naive_now():
     from discovery import compute_daily_window
 
-    window = compute_daily_window("2026-07-07", "2026-07-07T07:30:00")
-    assert window["start"] == "2026-07-06T07:00:00"
-    assert window["end"] == "2026-07-07T07:30:00"
+    with pytest.raises(ValueError, match="explicit timezone"):
+        compute_daily_window("2026-07-07", "2026-07-07T07:30:00")
 
 
 def test_compute_daily_window_keeps_timezone():

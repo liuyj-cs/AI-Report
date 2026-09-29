@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator
+from send_state import SendStateError, atomic_write_json, locked_ledger
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 INTERVIEW_SCHEMA_PATH = SKILL_ROOT / "schemas" / "interview_brief.schema.json"
@@ -56,14 +57,17 @@ def _interview_seen_path(project_root: Path) -> Path:
 
 def load_interview_seen(project_root: Path) -> dict[str, Any]:
     path = _interview_seen_path(project_root)
-    if not path.exists():
-        return {"version": "1.0", "interviews": {}}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except FileNotFoundError:
         return {"version": "1.0", "interviews": {}}
-    if not isinstance(payload.get("interviews"), dict):
-        return {"version": "1.0", "interviews": {}}
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise SendStateError("interview_seen cannot be read; interview delivery blocked") from exc
+    if (not isinstance(payload, dict) or payload.get("version") != "1.0"
+            or not isinstance(payload.get("interviews"), dict)
+            or not all(isinstance(entry, dict) and isinstance(entry.get("sent_date"), str)
+                       and entry["sent_date"] for entry in payload["interviews"].values())):
+        raise SendStateError("interview_seen has an invalid structure; interview delivery blocked")
     return payload
 
 
@@ -71,21 +75,23 @@ def record_interview_sent(project_root: Path, payload: dict[str, Any], sent_date
     slug = str(payload.get("slug", ""))
     if not slug:
         return
-    seen = load_interview_seen(project_root)
-    seen["interviews"][slug] = {
-        "person": payload.get("person", ""),
-        "org": payload.get("org", ""),
-        "original_url": payload.get("original_url", ""),
-        "title": payload.get("interview_title", ""),
-        "first_seen_date": payload.get("first_seen_date", ""),
-        "published_at": payload.get("published_at", ""),
-        "sent_date": sent_date,
-        "mode": payload.get("mode", ""),
-        "report_path": report_path,
-    }
     path = _interview_seen_path(project_root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(seen, ensure_ascii=False, indent=2), encoding="utf-8")
+    with locked_ledger(path):
+        seen = load_interview_seen(project_root)
+        if slug in seen["interviews"]:
+            return
+        seen["interviews"][slug] = {
+            "person": payload.get("person", ""),
+            "org": payload.get("org", ""),
+            "original_url": payload.get("original_url", ""),
+            "title": payload.get("interview_title", ""),
+            "first_seen_date": payload.get("first_seen_date", ""),
+            "published_at": payload.get("published_at", ""),
+            "sent_date": sent_date,
+            "mode": payload.get("mode", ""),
+            "report_path": report_path,
+        }
+        atomic_write_json(path, seen)
 
 
 def interview_already_sent(project_root: Path, slug: str) -> bool:

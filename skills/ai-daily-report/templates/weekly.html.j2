@@ -1,3 +1,4 @@
+{% set new_editorial = report.version == "1.1" %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -112,7 +113,13 @@
 {% macro ref_link(ref_str) -%}
   {%- set section = ref_str.split('[')[0] -%}
   {%- set idx = ref_str.split('[')[1].rstrip(']') -%}
-  <a href="#{{ section }}-{{ idx }}">{{ ref_str }}</a>
+  {%- if new_editorial -%}
+    {%- set key = {"frontier_models": "vendor_groups", "coding_agents": "product_groups"}.get(section, "items") -%}
+    {%- set item = report.sections[section][key][idx|int] -%}
+    <a href="#{{ section }}-{{ idx }}">{{ item.headline or item.product or item.vendor }}</a>
+  {%- else -%}
+    <a href="#{{ section }}-{{ idx }}">{{ ref_str }}</a>
+  {%- endif -%}
 {%- endmacro %}
 {% macro market_signals_block(ms) -%}
 <div class="market-signals">
@@ -212,6 +219,7 @@
     {{ item.recommendation }}
   </div>
   <div class="rationale">依据：{{ item.rationale }}</div>
+  {% if new_editorial %}<div class="rationale">新增行动依据：{{ item.action_delta }}</div>{% endif %}
   <div class="estimate">投入 {{ item.effort_person_days.min }}–{{ item.effort_person_days.max }} 人日 · 适用团队 {{ item.team_size_applicability | join('，') }}{% if item.success_metric %} · 目标 {{ item.success_metric }}{% endif %}</div>
   {% if item.references %}
   <div class="rationale">引用：{% for r in item.references %}<a href="{{ r.url }}">{{ r.date }} {{ r.headline }}</a>{% if not loop.last %}；{% endif %}{% endfor %}</div>
@@ -283,6 +291,17 @@
 
   <section>
     <h2>四、{{ report.sections.general_agents.title }}</h2>
+    {% if new_editorial %}
+    {% for item in report.sections.general_agents["items"] %}
+    <article class="group" id="general_agents-{{ loop.index0 }}">
+      <h3>{{ item.product }}</h3>
+      <p><strong>工作任务：</strong>{{ item.use_case }}</p>
+      <p><strong>本周变化：</strong>{{ item.weekly_changes }}</p>
+      <p><strong>实际影响：</strong>{{ item.implication }}</p>
+      <p class="source">{% for ref in item.references %}<a href="{{ ref.url }}">{{ ref.date }} {{ ref.headline }}</a>{% if ref.origin_classification_note %}（{{ ref.origin_classification_note }}）{% endif %}{% if not loop.last %}；{% endif %}{% endfor %}</p>
+    </article>
+    {% else %}<p>{{ report.sections.general_agents.empty_message }}</p>{% endfor %}
+    {% else %}
     {% set ga_ns = namespace(idx=0) %}
     {% if report.sections.general_agents.newcomers %}
     <h3>新发布 / 新爆火</h3>
@@ -302,6 +321,7 @@
       {% endfor %}
     </ul>
     {% endif %}
+    {% endif %}
     <div class="group">
       <div class="label">趋势判断</div>
       <div class="trend">{{ report.sections.general_agents.trend_judgment }}</div>
@@ -310,23 +330,40 @@
     </div>
   </section>
 
+  {% if new_editorial %}
+  <section id="policy-risk">
+    <h2>五、{{ report.sections.policy_risk.title }}</h2>
+    {% for item in report.sections.policy_risk["items"] %}
+    <article class="group" id="policy_risk-{{ loop.index0 }}">
+      <h3>{{ item.headline }}</h3>
+      <p>{{ item.subject }} · {{ item.event_status }}</p>
+      <p><strong>本周增量：</strong>{{ item.weekly_changes }}</p>
+      <p><strong>适用范围：</strong>{{ item.affected_scope }}</p>
+      <p><strong>决策影响：</strong>{{ item.decision_relevance }}</p>
+      {% if item.evidence_limits %}<div class="evidence"><strong>证据边界：</strong><ul>{% for limit in item.evidence_limits %}<li>{{ limit }}</li>{% endfor %}</ul></div>{% endif %}
+      <p class="source">{% for ref in item.references %}<a href="{{ ref.url }}">{{ ref.date }} {{ ref.headline }}</a>{% if ref.origin_classification_note %}（{{ ref.origin_classification_note }}）{% endif %}{% if not loop.last %}；{% endif %}{% endfor %}</p>
+    </article>
+    {% else %}<p>{{ report.sections.policy_risk.empty_message }}</p>{% endfor %}
+  </section>
+  {% endif %}
+
   <section>
-    <h2>五、{{ report.sections.market_signals.title }}</h2>
+    <h2>{{ "六" if new_editorial else "五" }}、{{ report.sections.market_signals.title }}</h2>
     {{ market_signals_block(report.sections.market_signals) }}
   </section>
 
   <section>
-    <h2>六、{{ report.sections.pattern_observations.title }}</h2>
+    <h2>{{ "七" if new_editorial else "六" }}、{{ report.sections.pattern_observations.title }}</h2>
     {{ pattern_observations_block(report.sections.pattern_observations) }}
   </section>
 
   <section>
-    <h2>七、{{ report.sections.experiments_this_week.title }}</h2>
+    <h2>{{ "八" if new_editorial else "七" }}、{{ report.sections.experiments_this_week.title }}</h2>
     {{ experiments_block(report.sections.experiments_this_week) }}
   </section>
 
   <section>
-    <h2>八、{{ report.sections.practice_digest.title }}</h2>
+    <h2>{{ "九" if new_editorial else "八" }}、{{ report.sections.practice_digest.title }}</h2>
     {% for d in report.sections.practice_digest["items"] %}
     <div class="digest-card">
       <div><span class="badge badge-apt-{{ d.applicability }}">{{ applicability_labels[d.applicability] }}</span></div>
@@ -341,7 +378,7 @@
   </section>
 
   <section>
-    <h2>九、{{ report.sections.methodology_radar.title }}</h2>
+    <h2>{{ "十" if new_editorial else "九" }}、{{ report.sections.methodology_radar.title }}</h2>
     {% for item in report.sections.methodology_radar["items"] %}
     <div class="group">
       <div><span class="badge badge-method-{{ item.kind }}">{{ method_kind_labels[item.kind] }}</span></div>
@@ -360,16 +397,18 @@
   </section>
 
   <section>
-    <h2>十、{{ report.sections.action_items.title }}</h2>
+    <h2>{{ "十一" if new_editorial else "十" }}、{{ report.sections.action_items.title }}</h2>
     <div class="action-items">
       {% for item in report.sections.action_items["items"] %}
       {{ action_item_block(item) }}
+      {% else %}
+      {% if new_editorial %}<p>{{ report.sections.action_items.empty_message or "本周没有需要新增投入的行动。" }}</p>{% endif %}
       {% endfor %}
     </div>
   </section>
 
   <section>
-    <h2>十一、{{ report.sections.next_week_signals.title }}</h2>
+    <h2>{{ "十二" if new_editorial else "十一" }}、{{ report.sections.next_week_signals.title }}</h2>
     {% if report.sections.next_week_signals.announced %}
     <h3>已官宣</h3>
     <ul>

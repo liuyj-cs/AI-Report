@@ -81,7 +81,7 @@ def validate_tracking_refs(
         return errors
 
     active = {event["event_slug"] for event in events if is_active_event(event, target)}
-    for section_name in ("frontier_models", "coding_agents", "general_agents"):
+    for section_name in ("frontier_models", "coding_agents", "general_agents", "policy_risk"):
         for index, item in enumerate(report.get("sections", {}).get(section_name, {}).get("items", [])):
             slug = item.get("tracking_ref")
             if slug and slug not in active:

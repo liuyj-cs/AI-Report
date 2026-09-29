@@ -42,9 +42,9 @@
 9. 执行 `dws doc info --node <返回nodeId> --format json`：必须是 `ALIDOC / adoc`，父目录必须是上述目标。再执行 `dws doc read --node <返回nodeId> --format json` 并保存回读结果。
 10. 将回读内容与本地正文比对：全部栏目顺序、正文段落、来源链接、每项分数/对照/单位以及末尾内容完整；允许 Markdown 空格和表格格式归一化，不允许内容截断。同时执行 `dws doc block list --node <nodeId> --format json`，完整保存为 `blocks_after.json`，不能只看 Markdown 中有标题文字便通过。执行：
 
-    `.venv/bin/python skills/ai-daily-report/scripts/validate_dingtalk.py <本次最终HTML路径> reports/dingtalk/{date}/blocks_after.json`
+    `.venv/bin/python skills/ai-daily-report/scripts/validate_dingtalk.py <本次最终HTML路径> reports/dingtalk/{date}/blocks_after.json reports/dingtalk/{date}/report.md reports/dingtalk/{date}/read_after.json`
 
-    它从最终 HTML 重算完整标题大纲，与钉钉原生块的标题文字、顺序和级别逐一比对；分页未读完不能通过。内容比对和大纲校验都成功，才写台账状态 `verified`，保存 nodeId、链接、标题、目录、源文件 SHA-256、回读时间和校验结果。失败保留 `created_unverified`，不得自报成功。确认是本次导入造成的标题降级或字面 Markdown 标记时，按 DWS 工作流局部修正后重新回读，不重建同日文档；已有人工改动则保留并报告差异。
+    它从最终 HTML 重算完整标题大纲，与钉钉原生块的标题文字、顺序和级别逐一比对；同时把最终 Markdown 与钉钉全文回读做格式归一化后的逐字比对，能发现 `C/C++` 被误解析等正文损失。分页未读完不能通过。内容比对和大纲校验都成功，才写台账状态 `verified`，保存 nodeId、链接、标题、目录、源文件 SHA-256、回读时间和校验结果。失败保留 `created_unverified`，不得自报成功。确认是本次导入造成的标题降级或字面 Markdown 标记时，按 DWS 工作流局部修正后重新回读，不重建同日文档；已有人工改动则保留并报告差异。
 11. 终端分别报告邮件结果、钉钉结果与可点击文档链接。钉钉失败不撤销已经成功的邮件，也不重新发送它。
 
 台账放在 `reports/dingtalk/`，不放会定期清理的 cache；不使用 email send_state 代替钉钉发布状态。本工作流不修改定时频率。

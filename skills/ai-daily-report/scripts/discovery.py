@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import re
 from typing import Any, Iterator
+from zoneinfo import ZoneInfo
 
 import yaml
 
@@ -159,13 +160,23 @@ def rolling_week_dates(week_end: str) -> list[str]:
 
 
 def compute_daily_window(target_date: str, now_iso: str) -> dict[str, str]:
+    if not isinstance(target_date, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", target_date):
+        raise ValueError("daily target_date must be YYYY-MM-DD")
+    target = date.fromisoformat(target_date)
     now = datetime.fromisoformat(now_iso)
-    start_date = datetime.fromisoformat(target_date).date() - timedelta(days=1)
-    start = datetime.combine(start_date, time(hour=7), tzinfo=now.tzinfo)
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("daily now must include an explicit timezone")
+    shanghai = ZoneInfo("Asia/Shanghai")
+    now = now.astimezone(shanghai)
+    if now.date() != target:
+        raise ValueError("daily now date in Asia/Shanghai must match target_date")
+    start = datetime.combine(target - timedelta(days=1), time(hour=7), tzinfo=shanghai)
+    if now < start:
+        raise ValueError("daily window.end must not precede window.start")
     return {
         "start": start.isoformat(),
         "end": now.isoformat(),
-        "timezone": str(now.tzinfo),
+        "timezone": "Asia/Shanghai",
     }
 
 
@@ -384,6 +395,8 @@ def build_discovery_manifest(
     return {
         "version": "1.0",
         "type": "daily_discovery_manifest",
+        "expected_report_version": "1.2",
+        "expected_ledger_version": "1.1",
         "date": target_date,
         "window": window,
         "active_tracking": active_tracking or [],

@@ -1,6 +1,9 @@
 import json
 from pathlib import Path
 
+import pytest
+from send_state import SendStateError
+
 from interview import (
     interview_already_sent,
     iter_interview_files,
@@ -78,7 +81,49 @@ def test_record_and_already_sent_roundtrip(tmp_path):
     assert interview_already_sent(tmp_path, "fiona-fung-claude-code") is True
 
 
-def test_load_interview_seen_corrupt_returns_empty(tmp_path):
+def test_load_interview_seen_corrupt_blocks_delivery(tmp_path):
     (tmp_path / "cache").mkdir()
-    (tmp_path / "cache" / "interview_seen.json").write_text("{not json", encoding="utf-8")
-    assert load_interview_seen(tmp_path) == {"version": "1.0", "interviews": {}}
+    path = tmp_path / "cache" / "interview_seen.json"
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(SendStateError):
+        load_interview_seen(tmp_path)
+    with pytest.raises(SendStateError):
+        record_interview_sent(tmp_path, SAMPLE, "2026-06-30", "reports/interviews/sample.html")
+    assert path.read_text() == "{not json"
+
+
+@pytest.mark.parametrize("payload", [None, [], {}, {"version": "1.0", "interviews": {"slug": False}},
+                                     {"version": "1.0", "interviews": {"slug": {}}}])
+def test_invalid_interview_seen_blocks(tmp_path, payload):
+    path = tmp_path / "cache" / "interview_seen.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps(payload))
+    with pytest.raises(SendStateError):
+        interview_already_sent(tmp_path, "slug")
+
+
+def test_interview_seen_concurrent_records_keep_every_slug(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(lambda n: record_interview_sent(tmp_path, {**SAMPLE, "slug": str(n)},
+                                                     "2026-06-30", "report.html"), range(12)))
+    assert set(load_interview_seen(tmp_path)["interviews"]) == {str(n) for n in range(12)}
+
+
+def test_interview_seen_write_failure_keeps_previous_receipt(tmp_path, monkeypatch):
+    import send_state
+    record_interview_sent(tmp_path, SAMPLE, "2026-06-30", "old.html")
+    path = tmp_path / "cache" / "interview_seen.json"
+    original = path.read_bytes()
+    def fail_replace(*_args):
+        raise OSError("disk full")
+    monkeypatch.setattr(send_state.os, "replace", fail_replace)
+    with pytest.raises(OSError):
+        record_interview_sent(tmp_path, {**SAMPLE, "slug": "new"}, "2026-07-01", "new.html")
+    assert path.read_bytes() == original
+
+
+def test_interview_seen_keeps_original_acceptance_metadata(tmp_path):
+    record_interview_sent(tmp_path, SAMPLE, "2026-06-30", "old.html")
+    record_interview_sent(tmp_path, SAMPLE, "2026-07-01", "new.html")
+    assert load_interview_seen(tmp_path)["interviews"][SAMPLE["slug"]]["sent_date"] == "2026-06-30"

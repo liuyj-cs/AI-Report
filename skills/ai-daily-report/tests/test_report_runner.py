@@ -2,8 +2,46 @@ import json
 from copy import deepcopy
 from pathlib import Path
 
-from discovery import load_whitelist
+import pytest
+
+from discovery import build_discovery_manifest, load_whitelist
 from report_runner import main, run_daily_finalize, run_daily_init
+
+
+def _write_daily_manifest(cache_dir, report, ledger):
+    from aihot import recompute_aihot_coverage
+    from evidence import save_response
+
+    detail = report["fetch_status"]["source_details"]["AI HOT"]
+    attempt = detail["attempts"][0]
+    raw = json.dumps({"request_url": attempt["target"], "status_code": 503,
+                      "content_type": "application/problem+json", "body": {"status": 503}})
+    attempt["evidence_artifact"] = save_response(
+        cache_dir, raw, collected_at=report["generated_at"], batch_id="fixture-aihot-failure",
+        query_ids=[attempt["target"]], limitations=["Synthetic API failure; search fallback tested separately"],
+    )
+    detail["aihot_coverage"] = recompute_aihot_coverage(detail, window=report["window"], cache_dir=cache_dir)
+    manifest = build_discovery_manifest(report["date"], report["window"], load_whitelist())
+    manifest.update(expected_report_version=report["version"], expected_ledger_version=ledger["version"])
+    (cache_dir / "discovery_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def _receipt_sender(sent):
+    """Simulate the sender's durable acceptance receipt, without using SMTP."""
+    from send_state import delivery_attempt
+
+    def _send(project_root, html_path, subject, env_path, cache_dir, state_key):
+        with delivery_attempt(cache_dir, state_key, subject, html_path.read_bytes(),
+                              "test@example.com", ["a@example.com"]) as attempt:
+            if attempt is None:
+                return 0, json.dumps({"outcome": "skipped_existing"})
+            sent.append(subject)
+            attempt.submitting()
+            attempt.record_result({address: "accepted" for address in attempt.recipients},
+                                  retries=0, error=None, smtp_codes={})
+        return 0, json.dumps({"outcome": "sent"})
+
+    return _send
 
 
 def test_run_daily_init_fails_fast_when_email_env_missing(tmp_path):
@@ -149,6 +187,7 @@ def test_finalize_daily_dry_run_writes_html_and_archive(tmp_path, sample_daily_r
     ledger["items"][0]["source_attempt_refs"] = ["OpenAI.attempts[0]"]
     ledger["items"] = ledger["items"][:1]
 
+    _write_daily_manifest(cache_dir, report, ledger)
     (cache_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     (cache_dir / "candidate_ledger.json").write_text(
         json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -196,6 +235,7 @@ def test_finalize_daily_failure_still_writes_qa_diff(tmp_path, sample_daily_repo
     report["sections"]["frontier_models"]["items"][1]["summary"] = "新 benchmark 显示其在 MATH-500 与 AIME 上继续逼近 o1。"
     ledger = deepcopy(sample_candidate_ledger)
 
+    _write_daily_manifest(cache_dir, report, ledger)
     (cache_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     (cache_dir / "candidate_ledger.json").write_text(
         json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -303,6 +343,7 @@ def test_finalize_daily_rejects_candidate_ledger_missing_audit_field(
     ledger["items"][0].pop("date_basis")
     ledger["items"] = ledger["items"][:1]
 
+    _write_daily_manifest(cache_dir, report, ledger)
     (cache_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     (cache_dir / "candidate_ledger.json").write_text(
         json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -559,6 +600,7 @@ def _build_passing_finalize_setup(tmp_path, sample_daily_report, sample_candidat
     ledger["items"][0]["source_attempt_refs"] = ["OpenAI.attempts[0]"]
     ledger["items"] = ledger["items"][:1]
 
+    _write_daily_manifest(cache_dir, report, ledger)
     (cache_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     (cache_dir / "candidate_ledger.json").write_text(
         json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -722,7 +764,7 @@ def test_finalize_daily_renders_and_archives_deep_dive(
     assert "DEEPDIVE" in run_log
     assert not (tmp_path / "reports" / "deep_dives" / "2026-04-18-unselected-draft.html").exists()
     sent = []
-    monkeypatch.setattr(report_runner, "_send_mail", lambda root, path, subject, env: (sent.append(subject) or 0, "sent test mail"))
+    monkeypatch.setattr(report_runner, "_send_mail", _receipt_sender(sent))
     assert run_daily_finalize(tmp_path, "2026-04-18", False, env_path)[0] == 0
     assert run_daily_finalize(tmp_path, "2026-04-18", False, env_path)[0] == 0
     assert sent == ["AI 日报 · 2026-04-18", f"AI 深度 · {payload['title']}"]
@@ -987,11 +1029,7 @@ def test_finalize_daily_rerun_skips_already_sent_daily(
     )
     sent: list[str] = []
 
-    def _fake_send(project_root, html_path, subject, env_path_arg):
-        sent.append(subject)
-        return 0, f"sent to=a@example.com subject={subject!r}"
-
-    monkeypatch.setattr(report_runner, "_send_mail", _fake_send)
+    monkeypatch.setattr(report_runner, "_send_mail", _receipt_sender(sent))
 
     code1, _ = run_daily_finalize(tmp_path, "2026-04-18", dry_run=False, env_path=env_path)
     code2, _ = run_daily_finalize(tmp_path, "2026-04-18", dry_run=False, env_path=env_path)
@@ -999,7 +1037,7 @@ def test_finalize_daily_rerun_skips_already_sent_daily(
     assert code1 == 0 and code2 == 0
     assert len([s for s in sent if s.startswith("AI 日报")]) == 1
     log_text = (tmp_path / "cache" / "2026-04-18" / "run.log").read_text(encoding="utf-8")
-    assert "EMAIL skip already-sent kind=daily" in log_text
+    assert "EMAIL skip already-sent code=0 kind=daily" in log_text
 
 
 def test_finalize_daily_cleans_stale_cache_dirs(
@@ -1031,10 +1069,11 @@ def test_finalize_daily_records_seen_ledgers_even_when_daily_already_sent(
     cache_dir, env_path = _build_passing_finalize_setup(
         tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
     )
-    record_sent(cache_dir, "daily", "AI 日报 · 2026-04-18")
+    rendered = report_runner.render(cache_dir / "report.json")
+    record_sent(cache_dir, "daily", "AI 日报 · 2026-04-18", artifact_path=rendered)
 
     calls: list[str] = []
-    monkeypatch.setattr(report_runner, "_send_mail", lambda *a, **k: (0, "sent to=a@example.com"))
+    monkeypatch.setattr(report_runner, "_send_mail", _receipt_sender([]))
     monkeypatch.setattr(report_runner, "record_ecosystem_repos", lambda *a: calls.append("eco") or 0)
     monkeypatch.setattr(report_runner, "record_methodology", lambda *a: calls.append("meth") or 0)
 
@@ -1068,7 +1107,8 @@ def test_init_daily_alert_names_failed_deep_dive_not_daily(tmp_path):
     assert code == 0
     assert "DELIVERY_ALERT" in message
     assert "finalize-daily --date 2026-04-17" in message
-    assert "reports/deep_dives/2026-04-17-claude-x.html" in message
+    assert "deep_dive:claude-x" in message
+    assert "同一 send_state" in message
     assert "reports/daily/2026-04-17.html" not in message
     run_log = (tmp_path / "cache" / "2026-04-18" / "run.log").read_text(encoding="utf-8")
     assert "DELIVERY_ALERT yesterday_email=failed kinds=deep_dive:claude-x" in run_log
@@ -1112,7 +1152,7 @@ def test_finalize_daily_rerun_does_not_rerecord_ledgers(
         tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
     )
     calls: list[str] = []
-    monkeypatch.setattr(report_runner, "_send_mail", lambda *a, **k: (0, "sent to=a@example.com"))
+    monkeypatch.setattr(report_runner, "_send_mail", _receipt_sender([]))
     monkeypatch.setattr(report_runner, "record_ecosystem_repos", lambda *a: calls.append("eco") or 0)
     monkeypatch.setattr(report_runner, "record_methodology", lambda *a: calls.append("meth") or 0)
 
@@ -1186,3 +1226,176 @@ def test_init_daily_failed_then_dry_run_still_reports_failed(tmp_path):
     run_log = (tmp_path / "cache" / "2026-04-18" / "run.log").read_text(encoding="utf-8")
     assert "DELIVERY_ALERT yesterday_email=failed" in run_log
     assert "yesterday_email=dry_run" not in run_log
+
+
+def _stage_next_day_with_same_interview(cache_dir, slug):
+    """Advance synthetic fixture dates while preserving the interview's identity."""
+    next_cache = cache_dir.parent / "2026-04-19"
+    next_cache.mkdir()
+    report = json.loads((cache_dir / "report.json").read_text().replace(
+        "2026-04-18", "2026-04-19").replace("2026-04-17", "2026-04-18"))
+    ledger = json.loads((cache_dir / "candidate_ledger.json").read_text().replace(
+        "2026-04-18", "2026-04-19"))
+    report["sections"]["agent_ecosystem"]["items"] = []
+    _write_daily_manifest(next_cache, report, ledger)
+    for name, payload in (("report.json", report), ("candidate_ledger.json", ledger)):
+        (next_cache / name).write_text(json.dumps(payload, ensure_ascii=False))
+    interview = json.loads((cache_dir / f"interview_{slug}.json").read_text())
+    interview["date"] = "2026-04-19"
+    (next_cache / f"interview_{slug}.json").write_text(json.dumps(interview, ensure_ascii=False))
+    return next_cache
+
+
+def test_interview_unknown_receipt_blocks_next_day_submission(
+    tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status, monkeypatch
+):
+    from send_state import delivery_attempt, load_send_state
+
+    cache_dir, env_path = _build_passing_finalize_setup(
+        tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+    )
+    slug = _write_interview_file(cache_dir)
+    submissions = []
+    daily_sender = _receipt_sender([])
+
+    def unknown_interview(project_root, html_path, subject, env, state_dir, state_key):
+        if not state_key.startswith("interview:"):
+            return daily_sender(project_root, html_path, subject, env, state_dir, state_key)
+        with delivery_attempt(state_dir, state_key, subject, html_path.read_bytes(),
+                              "test@example.com", ["a@example.com"]) as attempt:
+            assert attempt is not None
+            submissions.append(state_key)
+            attempt.submitting()  # Simulated interruption after DATA may have started.
+        return 5, "synthetic unknown SMTP result"
+
+    monkeypatch.setattr("report_runner._send_mail", unknown_interview)
+    assert run_daily_finalize(tmp_path, "2026-04-18", False, env_path)[0] == 5
+    state_dir = tmp_path / "cache" / "delivery_state" / "interviews"
+    first_receipt = load_send_state(state_dir)
+    assert first_receipt["deliveries"][f"interview:{slug}"]["status"] == "unknown"
+    _stage_next_day_with_same_interview(cache_dir, slug)
+
+    code, message = run_daily_finalize(tmp_path, "2026-04-19", False, env_path)
+
+    assert code == 5 and "unknown" in message, message
+    assert submissions == [f"interview:{slug}"]
+    assert load_send_state(state_dir) == first_receipt
+    assert not (tmp_path / "cache" / "interview_seen.json").exists()
+
+
+def test_interview_accepted_receipt_repairs_seen_next_day_without_resubmission(
+    tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status, monkeypatch
+):
+    import report_runner
+    from interview import interview_already_sent
+    from send_state import load_send_state
+
+    cache_dir, env_path = _build_passing_finalize_setup(
+        tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+    )
+    slug = _write_interview_file(cache_dir)
+    submissions = []
+    monkeypatch.setattr(report_runner, "_send_mail", _receipt_sender(submissions))
+    real_record_seen = report_runner.record_interview_sent
+    monkeypatch.setattr(report_runner, "record_interview_sent", lambda *args: None)
+    assert run_daily_finalize(tmp_path, "2026-04-18", False, env_path)[0] == 0
+    assert not interview_already_sent(tmp_path, slug)
+    state_dir = tmp_path / "cache" / "delivery_state" / "interviews"
+    first_receipt = load_send_state(state_dir)
+    assert first_receipt["deliveries"][f"interview:{slug}"]["status"] == "sent"
+    _stage_next_day_with_same_interview(cache_dir, slug)
+    monkeypatch.setattr(report_runner, "record_interview_sent", real_record_seen)
+
+    code, message = run_daily_finalize(tmp_path, "2026-04-19", False, env_path)
+
+    assert code == 0, message
+    assert len([subject for subject in submissions if subject.startswith("AI 访谈")]) == 1
+    assert interview_already_sent(tmp_path, slug)
+    assert load_send_state(state_dir) == first_receipt
+
+
+@pytest.mark.parametrize("ledger_location", ["daily", "interview_seen", "interview_delivery"])
+def test_corrupt_delivery_ledger_blocks_before_render_archive_or_send(
+    tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status, monkeypatch,
+    ledger_location,
+):
+    cache_dir, env_path = _build_passing_finalize_setup(
+        tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+    )
+    _write_interview_file(cache_dir)
+    paths = {
+        "daily": cache_dir / "send_state.json",
+        "interview_seen": tmp_path / "cache" / "interview_seen.json",
+        "interview_delivery": tmp_path / "cache" / "delivery_state" / "interviews" / "send_state.json",
+    }
+    path = paths[ledger_location]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('{"broken"', encoding="utf-8")
+    original = path.read_bytes()
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("corrupt receipt must stop before publication work")
+
+    for name in ("render", "archive_html", "_send_mail"):
+        monkeypatch.setattr(f"report_runner.{name}", forbidden)
+    code, message = run_daily_finalize(tmp_path, "2026-04-18", False, env_path)
+
+    assert code == 5, message
+    assert "blocked" in message
+    assert path.read_bytes() == original
+    assert not (tmp_path / "reports").exists()
+
+
+def test_sender_success_without_durable_receipt_blocks_followup_ledgers(
+    tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status, monkeypatch
+):
+    cache_dir, env_path = _build_passing_finalize_setup(
+        tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+    )
+    monkeypatch.setattr("report_runner._send_mail", lambda *args: (0, '{"outcome":"sent"}'))
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("sender exit code cannot justify publication bookkeeping")
+
+    monkeypatch.setattr("report_runner.record_ecosystem_repos", forbidden)
+    monkeypatch.setattr("report_runner.record_methodology", forbidden)
+    code, message = run_daily_finalize(tmp_path, "2026-04-18", False, env_path)
+
+    assert code == 5 and "durable acceptance receipt" in message
+    result = json.loads((cache_dir / "delivery_result.json").read_text())
+    assert result["outcome"] == "unknown"
+    assert not (cache_dir / "send_state.json").exists()
+
+
+@pytest.mark.parametrize("receipt_revision", ["legacy_without_hash", "different_html"])
+def test_existing_daily_receipt_cannot_mark_unproven_current_revision_seen(
+    tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status, monkeypatch,
+    receipt_revision,
+):
+    from send_state import load_send_state, record_sent
+
+    cache_dir, env_path = _build_passing_finalize_setup(
+        tmp_path, sample_daily_report, sample_candidate_ledger, finalized_fetch_status
+    )
+    previous_html = cache_dir / "previously_sent.html"
+    previous_html.write_text("<html>Synthetic earlier edition already accepted</html>")
+    record_sent(cache_dir, "daily", "AI 日报 · 2026-04-18",
+                artifact_path=None if receipt_revision == "legacy_without_hash" else previous_html)
+    prior_state = load_send_state(cache_dir)
+    submissions = []
+    monkeypatch.setattr("report_runner._send_mail", _receipt_sender(submissions))
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("unproven current content must not consume editorial cooldowns")
+
+    monkeypatch.setattr("report_runner.record_ecosystem_repos", forbidden)
+    monkeypatch.setattr("report_runner.record_methodology", forbidden)
+    code, message = run_daily_finalize(tmp_path, "2026-04-18", False, env_path)
+
+    assert code == 0, message
+    assert submissions == []
+    assert load_send_state(cache_dir) == prior_state
+    assert "ledger" not in load_send_state(cache_dir)["sent"]
+    result = json.loads((cache_dir / "delivery_result.json").read_text())
+    assert result["outcome"] == "skipped_existing"
+    assert result["current_revision_delivered"] is not True

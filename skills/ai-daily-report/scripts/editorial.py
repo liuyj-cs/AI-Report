@@ -24,9 +24,11 @@ from methodology import load_seen_methodology, validate_methodology_repeats
 from tracking import load_tracking_events, validate_tracking_followup, validate_tracking_refs
 from deep_dive import validate_deep_dives
 from interview import validate_interviews
+from agent_editorial import decision_sections, validate_agent_daily, validate_agent_weekly
+from daily_time import validate_daily_time_window
 
 DAILY_REFERENCE_SECTIONS = ("frontier_models", "coding_agents", "general_agents")
-ITEM_REF_PATTERN = re.compile(r"^(?P<section>frontier_models|coding_agents|general_agents)\[(?P<index>\d+)\]$")
+ITEM_REF_PATTERN = re.compile(r"^(?P<section>frontier_models|coding_agents|general_agents|policy_risk)\[(?P<index>\d+)\]$")
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 
 LEDGER_TO_REPORT_SECTION = {
@@ -34,8 +36,10 @@ LEDGER_TO_REPORT_SECTION = {
     "coding_agents": "coding_agents",
     "general_agents": "general_agents",
     "unverified": "unverified",
+    "policy_risk": "policy_risk",
 }
 QA_CATEGORIES = (
+    "classification_gap", "claim_support_gap", "action_eligibility_gap", "discovery_review_gap",
     "missed_discovery",
     "downgraded_evidence",
     "duplicate_rejected",
@@ -116,7 +120,7 @@ def validate_action_item_references(report: dict[str, Any]) -> list[str]:
             continue
         for ref in refs:
             section_name = ref.get("section")
-            if section_name not in {"frontier_models", "coding_agents", "general_agents"}:
+            if section_name not in decision_sections(report):
                 errors.append(f"action_items[{index}] reference has invalid section {section_name!r}")
                 continue
             if ref.get("editorial_tier") not in {"core", "watch"}:
@@ -137,7 +141,7 @@ def validate_candidate_ledger_alignment(report: dict[str, Any], ledger: dict[str
         if item.get("decision") in {"selected_core", "selected_watch", "selected_unverified"}
     }
 
-    for section_name in ("frontier_models", "coding_agents", "general_agents"):
+    for section_name in decision_sections(report):
         for item in report.get("sections", {}).get(section_name, {}).get("items", []):
             key = (section_name, item.get("headline"))
             if key not in expected:
@@ -157,7 +161,7 @@ def validate_source_closure(report: dict[str, Any], ledger: dict[str, Any]) -> l
         for item in ledger.get("items", [])
     }
 
-    for section_name in ("frontier_models", "coding_agents", "general_agents"):
+    for section_name in decision_sections(report):
         for item in report.get("sections", {}).get(section_name, {}).get("items", []):
             key = (section_name, item.get("headline"))
             record = indexed.get(key)
@@ -192,6 +196,98 @@ def validate_fetch_status_integrity(report: dict[str, Any], whitelist: dict[str,
             for field in ("layer_index", "layer_type", "target", "result"):
                 if field not in attempt:
                     errors.append(f"fetch_status.source_details[{name}].attempts[{index}] missing {field}")
+    return errors
+
+
+def validate_core_source_failures(report: dict[str, Any], whitelist: dict[str, Any]) -> list[str]:
+    """Count exhausted core chains from attempts, never from summary arrays.
+
+    Later failed supplementary requests do not undo an earlier success. Empty
+    static pages require a usable fallback; a partly attempted failed chain is
+    incomplete and cannot be declared either successfully empty or exhausted.
+    """
+    errors: list[str] = []
+    status = report.get("fetch_status", {})
+    names: dict[str, set[str]] = {}
+    for field in ("succeeded", "failed", "empty"):
+        entries = status.get(field)
+        if not isinstance(entries, list):
+            errors.append(f"fetch_status.{field} must be an array")
+            entries = []
+        parsed = [entry.get("name") if isinstance(entry, dict) else entry for entry in entries]
+        if any(not isinstance(name, str) or not name for name in parsed):
+            errors.append(f"fetch_status.{field} contains an invalid source name")
+        valid = [name for name in parsed if isinstance(name, str) and name]
+        names[field] = set(valid)
+        if len(valid) != len(names[field]):
+            errors.append(f"fetch_status.{field} contains duplicate source names")
+    if names["succeeded"] & names["failed"]:
+        errors.append("fetch_status succeeded and failed contradict each other")
+    if not names["empty"] <= names["succeeded"]:
+        errors.append("fetch_status.empty must be a subset of succeeded")
+
+    sources = {source["name"]: source for source in iter_named_sources(whitelist)}
+    details = status.get("source_details", {})
+    failed: list[str] = []
+    for name in whitelist.get("core_sources", []):
+        source = sources.get(name)
+        if source is None:
+            errors.append(f"core source {name} has no configured fetch_chain")
+            continue
+        chain = source["fetch_chain"]
+        attempts = details.get(name, {}).get("attempts", [])
+        if not isinstance(attempts, list):
+            attempts = []
+        completed = [
+            attempt for attempt in attempts
+            if isinstance(attempt, dict) and attempt.get("reason") != "pending discovery"
+            and attempt.get("result") in {"success", "success_but_empty", "empty", "error"}
+            and isinstance(attempt.get("layer_index"), int)
+            and not isinstance(attempt.get("layer_index"), bool)
+            and attempt["layer_index"] >= 0
+            and attempt.get("layer_type") in {"webfetch", "github_releases", *SEARCH_LAYER_TYPES}
+            and attempt.get("target")
+        ]
+        # Successful one-hop evidence is a valid fallback too. Layer/type
+        # identity matters when claiming an entire configured chain was tried.
+        has_content = any(attempt["result"] == "success" for attempt in completed)
+        by_layer = {
+            index: [attempt for attempt in completed
+                    if attempt["layer_index"] == index and attempt["layer_type"] == layer["type"]]
+            for index, layer in enumerate(chain)
+        }
+        has_empty = False
+        for index, layer in enumerate(chain):
+            if not any(attempt["result"] in {"success_but_empty", "empty"} for attempt in by_layer[index]):
+                continue
+            if layer["type"] in SEARCH_LAYER_TYPES:
+                has_empty = True
+                break
+            kind = layer.get("surface_kind", "feed" if layer["type"] == "github_releases" else "static")
+            if kind != "feed":
+                continue
+            if source.get("category") == "hard_data":
+                continue
+            if source.get("category") == "cn_labs" and any(
+                not by_layer[i] for i, candidate in enumerate(chain)
+                if candidate["type"] in {"webfetch", "github_releases"}
+            ):
+                continue
+            has_empty = True
+            break
+        if has_content or has_empty:
+            if name not in names["succeeded"] or name in names["failed"]:
+                errors.append(f"core source {name} succeeded in attempts but status arrays disagree")
+            if (name in names["empty"]) != (has_empty and not has_content):
+                errors.append(f"core source {name} empty status disagrees with attempts")
+        elif chain and all(by_layer.values()):
+            failed.append(name)
+            if name not in names["failed"] or name in names["succeeded"] or name in names["empty"]:
+                errors.append(f"core source {name} exhausted without success but status arrays disagree")
+        else:
+            errors.append(f"core source {name} has incomplete fetch_chain attempts; cannot declare completion")
+    if len(failed) >= 4:
+        errors.append(f"core_sources complete-chain failures={len(failed)} >=4: {', '.join(failed)}")
     return errors
 
 
@@ -288,9 +384,11 @@ def validate_major_event_consistency(report: dict[str, Any]) -> list[str]:
     return errors
 
 
-def validate_decision_radar(report: dict[str, Any], profile: dict[str, Any] | None = None) -> list[str]:
+def validate_decision_radar(report: dict[str, Any], profile: dict[str, Any] | None) -> list[str]:
     errors: list[str] = []
     counts = _daily_item_counts(report)
+    if "policy_risk" in decision_sections(report):
+        counts["policy_risk"] = len(report.get("sections", {}).get("policy_risk", {}).get("items", []))
     known_decisions = {
         str(decision.get("name", ""))
         for decision in (profile or {}).get("decisions_in_flight", [])
@@ -395,7 +493,7 @@ def _daily_hard_data_candidates(report: dict[str, Any]) -> list[dict[str, Any]]:
     field_map = {
         "frontier_models": ("headline", "summary", "impact", "evidence_quote"),
         "coding_agents": ("headline", "summary", "impact", "evidence_quote"),
-        "general_agents": ("headline", "summary", "heat_signal", "evidence_quote"),
+        "general_agents": ("headline", "summary", "what_changed", "impact", "availability", "evidence_quote") if report.get("version") == "1.2" else ("headline", "summary", "heat_signal", "evidence_quote"),
     }
     identity_map = {
         "frontier_models": ("vendor", "headline", "summary"),
@@ -455,9 +553,9 @@ def _weekly_hard_data_candidates(report: dict[str, Any]) -> list[dict[str, Any]]
             )
     general_index = 0
     general = report.get("sections", {}).get("general_agents", {})
-    for bucket_name in ("newcomers", "big_lab_moves"):
+    for bucket_name in (("items",) if report.get("version") == "1.1" else ("newcomers", "big_lab_moves")):
         for item in general.get(bucket_name, []):
-            if _has_hard_data_signal(item, ("headline",)):
+            if _has_hard_data_signal(item, ("headline", "weekly_changes", "implication")):
                 candidates.append(
                     {
                         "section": "general_agents",
@@ -529,7 +627,7 @@ def _validate_item_ref(label: str, ref: str, counts: dict[str, int]) -> list[str
         return [f"{label} has invalid itemRef {ref!r}"]
     section_name = match.group("section")
     item_index = int(match.group("index"))
-    if item_index >= counts[section_name]:
+    if item_index >= counts.get(section_name, 0):
         return [f"{label} points past {section_name}[{item_index}]"]
     return []
 
@@ -568,6 +666,8 @@ def validate_model_assessments(report: dict[str, Any]) -> list[str]:
     schema = json.loads((SKILL_ROOT / "schemas" / "daily_report.schema.json").read_text(encoding="utf-8"))
     assessment_validator = Draft202012Validator({"$defs": schema["$defs"], "$ref": "#/$defs/modelAssessment"})
     counts = _daily_item_counts(report)
+    if "policy_risk" in decision_sections(report):
+        counts["policy_risk"] = len(report.get("sections", {}).get("policy_risk", {}).get("items", []))
     for index, item in enumerate(report.get("reading_guide", [])):
         errors.extend(_validate_item_ref(f"reading_guide[{index}].ref", item.get("ref", ""), counts))
     successful_targets = {
@@ -654,7 +754,8 @@ def _weekly_item_counts(report: dict[str, Any]) -> dict[str, int]:
     return {
         "frontier_models": len(sections.get("frontier_models", {}).get("vendor_groups", [])),
         "coding_agents": len(sections.get("coding_agents", {}).get("product_groups", [])),
-        "general_agents": len(general.get("newcomers", [])) + len(general.get("big_lab_moves", [])),
+        "general_agents": len(general.get("items", [])) if report.get("version") == "1.1" else len(general.get("newcomers", [])) + len(general.get("big_lab_moves", [])),
+        "policy_risk": len(sections.get("policy_risk", {}).get("items", [])) if report.get("version") == "1.1" else 0,
     }
 
 
@@ -732,13 +833,16 @@ def validate_weekly_item_refs(report: dict[str, Any]) -> list[str]:
     counts = _weekly_item_counts(report)
 
     for label, ref in _iter_weekly_item_refs(report):
+        if "market_signals" in label and ref.startswith("policy_risk["):
+            errors.append(f"{label} requires a product reference")
+            continue
         match = ITEM_REF_PATTERN.match(ref or "")
         if not match:
             errors.append(f"{label} has invalid itemRef {ref!r}")
             continue
         section_name = match.group("section")
         item_index = int(match.group("index"))
-        if item_index >= counts[section_name]:
+        if item_index >= counts.get(section_name, 0):
             errors.append(f"{label} points past {section_name}[{item_index}]")
     return errors
 
@@ -774,7 +878,7 @@ def _load_weekly_daily_index(
             continue
 
         sections = daily_report.get("sections", {})
-        for section_name in DAILY_REFERENCE_SECTIONS:
+        for section_name in decision_sections(daily_report):
             for item in sections.get(section_name, {}).get("items", []):
                 headline = item.get("headline")
                 if headline:
@@ -795,6 +899,10 @@ def _iter_weekly_reference_lists(report: dict[str, Any]) -> list[tuple[str, list
         refs.append((f"sections.coding_agents.product_groups[{index}]", group.get("references", [])))
     for index, group in enumerate(actions):
         refs.append((f"sections.action_items.items[{index}]", group.get("references", [])))
+    if report.get("version") == "1.1":
+        for section in ("general_agents", "policy_risk"):
+            for index, item in enumerate(report.get("sections", {}).get(section, {}).get("items", [])):
+                refs.append((f"sections.{section}.items[{index}]", item.get("references", [])))
     return refs
 
 
@@ -875,6 +983,7 @@ def validate_practice_digest(report: dict[str, Any], project_root: Path) -> list
 
 def validate_weekly_artifacts(report: dict[str, Any], project_root: Path) -> list[str]:
     errors: list[str] = []
+    errors.extend(validate_agent_weekly(report, project_root))
     errors.extend(validate_weekly_source_days(report))
     errors.extend(validate_weekly_item_refs(report))
     errors.extend(validate_weekly_references(report, project_root))
@@ -889,10 +998,14 @@ def validate_daily_artifacts(
     report: dict[str, Any],
     ledger: dict[str, Any],
     whitelist: dict[str, Any],
-    project_root: Path | None = None,
-    profile: dict[str, Any] | None = None,
+    project_root: Path | None,
+    profile: dict[str, Any] | None,
+    manifest: dict[str, Any] | None,
 ) -> list[str]:
     errors: list[str] = []
+    errors.extend(validate_daily_time_window(report, ledger, manifest))
+    errors.extend(validate_core_source_failures(report, whitelist))
+    errors.extend(validate_agent_daily(report, ledger, project_root))
     errors.extend(validate_candidate_ledger_schema(ledger))
     errors.extend(validate_fetch_status_integrity(report, whitelist))
     errors.extend(validate_source_attempt_refs(report, ledger))
@@ -1170,7 +1283,7 @@ def build_daily_qa_diff(
     report: dict[str, Any],
     ledger: dict[str, Any],
     whitelist: dict[str, Any],
-    project_root: Path | None = None,
+    project_root: Path | None,
 ) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     source_details = report.get("fetch_status", {}).get("source_details", {})
@@ -1226,6 +1339,11 @@ def build_daily_qa_diff(
                 suggested_fix="若判断有误，优先调整证据闭环与 decision_reason，而不是直接改正文排序。",
             )
         )
+
+    for error in validate_agent_daily(report, ledger, project_root):
+        prefix = error.split(":", 1)[0]
+        category = {"classification": "classification_gap", "claim_support": "claim_support_gap", "action_eligibility": "action_eligibility_gap", "discovery_review": "discovery_review_gap"}.get(prefix, "reference_integrity_gap")
+        findings.append(_make_finding(category, "high", error, suggested_fix="依据原始证据修复栏目、审查或行动约束。"))
 
     reference_errors = []
     reference_errors.extend(validate_candidate_ledger_schema(ledger))
@@ -1383,6 +1501,11 @@ def validate_weekly_recall(report: dict[str, Any], project_root: Path) -> list[s
 
 def build_weekly_qa_diff(report: dict[str, Any], project_root: Path) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
+    for error in validate_agent_weekly(report, project_root):
+        prefix = error.split(":", 1)[0]
+        category = {"classification": "classification_gap", "claim_support": "claim_support_gap", "action_eligibility": "action_eligibility_gap", "discovery_review": "discovery_review_gap"}.get(prefix, "reference_integrity_gap")
+        findings.append(_make_finding(category, "high", error, suggested_fix="依据原始证据修复栏目、审查或行动约束。"))
+
     reference_errors = []
     reference_errors.extend(validate_weekly_source_days(report))
     reference_errors.extend(validate_weekly_item_refs(report))

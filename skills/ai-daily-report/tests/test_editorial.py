@@ -2,7 +2,7 @@ from copy import deepcopy
 import json
 from pathlib import Path
 
-from discovery import initial_fetch_status, load_whitelist
+from discovery import compute_daily_window, initial_fetch_status, load_whitelist
 from editorial import (
     build_daily_qa_diff,
     build_weekly_qa_diff,
@@ -18,6 +18,10 @@ from editorial import (
     validate_weekly_source_days,
     weekly_recall_findings,
 )
+
+
+def _daily_manifest(report):
+    return {"date": report["date"], "window": deepcopy(report["window"])}
 
 
 def _minimal_report_with_fetch_status(sample_daily_report, finalized_fetch_status, whitelist):
@@ -123,7 +127,7 @@ def test_validate_daily_artifacts_passes_with_complete_coverage(sample_daily_rep
     ledger["items"][0]["source_attempt_refs"] = ["OpenAI.attempts[0]"]
     ledger["items"] = ledger["items"][:1]
 
-    errors = validate_daily_artifacts(report, ledger, whitelist)
+    errors = validate_daily_artifacts(report, ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert errors == []
 
@@ -134,7 +138,7 @@ def test_validate_daily_artifacts_rejects_missing_action_item_references(sample_
     report["fetch_status"] = finalized_fetch_status(whitelist)
     report["sections"]["action_items"]["items"][0]["references"] = []
 
-    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist)
+    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert any("missing references" in error for error in errors)
 
@@ -143,7 +147,7 @@ def test_validate_daily_artifacts_rejects_pending_discovery_attempts(sample_dail
     whitelist = load_whitelist()
     report = deepcopy(sample_daily_report)
     report["fetch_status"] = initial_fetch_status(whitelist)
-    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist)
+    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
     assert any("pending discovery" in error for error in errors)
 
 
@@ -202,7 +206,7 @@ def test_validate_daily_artifacts_rejects_invalid_source_attempt_refs(sample_dai
     ledger["items"][0]["source_attempt_refs"] = ["OpenAI.attempts[9]"]
     ledger["items"] = ledger["items"][:1]
 
-    errors = validate_daily_artifacts(report, ledger, whitelist)
+    errors = validate_daily_artifacts(report, ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert any("source_attempt_ref" in error for error in errors)
 
@@ -218,7 +222,7 @@ def test_validate_daily_artifacts_rejects_missing_market_signal_coverage(sample_
     report["sections"]["frontier_models"]["items"][1]["headline"] = "DeepSeek V4 榜单评分逼近 o1"
     report["sections"]["frontier_models"]["items"][1]["summary"] = "新 benchmark 显示其在 MATH-500 与 AIME 上继续逼近 o1。"
 
-    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist)
+    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert any("hard-data signal without market_signals coverage" in error for error in errors)
 
@@ -235,8 +239,8 @@ def test_build_daily_qa_diff_marks_downgraded_hard_data_when_note_present(sample
     report["sections"]["frontier_models"]["items"][1]["summary"] = "新 benchmark 显示其在 MATH-500 与 AIME 上继续逼近 o1。"
     report["sections"]["frontier_models"]["items"][1]["hard_data_note"] = "本条先留在正文观察，等稳定前一日基线后再写入 benchmark_watch。"
 
-    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist)
-    qa_diff = build_daily_qa_diff(report, sample_candidate_ledger, whitelist)
+    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
+    qa_diff = build_daily_qa_diff(report, sample_candidate_ledger, whitelist, project_root=None)
 
     assert not any("hard-data signal without market_signals coverage" in error for error in errors)
     assert any(finding["category"] == "downgraded_evidence" for finding in qa_diff["findings"])
@@ -255,7 +259,7 @@ def test_build_daily_qa_diff_reports_missing_recall_probe_surface(
     report["fetch_status"] = finalized_fetch_status(whitelist)
     report["fetch_status"]["source_details"].pop(RECALL_PROBE_SURFACE_NAME)
 
-    qa_diff = build_daily_qa_diff(report, sample_candidate_ledger, whitelist)
+    qa_diff = build_daily_qa_diff(report, sample_candidate_ledger, whitelist, project_root=None)
 
     assert qa_diff["summary"]["categories"]["missed_discovery"] >= 1
     recall_missing_findings = [
@@ -290,7 +294,7 @@ def test_build_daily_qa_diff_accepts_rendered_recall_probe_target(
         }
     ]
 
-    qa_diff = build_daily_qa_diff(report, sample_candidate_ledger, whitelist)
+    qa_diff = build_daily_qa_diff(report, sample_candidate_ledger, whitelist, project_root=None)
 
     assert not any("未指向 recall_probe_queries" in finding["reason"] for finding in qa_diff["findings"])
 
@@ -315,7 +319,7 @@ def test_build_daily_qa_diff_rejects_recall_probe_attempt_without_probe_target(
         }
     ]
 
-    qa_diff = build_daily_qa_diff(report, sample_candidate_ledger, whitelist)
+    qa_diff = build_daily_qa_diff(report, sample_candidate_ledger, whitelist, project_root=None)
 
     assert qa_diff["summary"]["categories"]["missed_discovery"] >= 1
     assert any("未指向 recall_probe_queries" in finding["reason"] for finding in qa_diff["findings"])
@@ -341,7 +345,7 @@ def test_validate_daily_artifacts_rejects_recall_probe_attempt_without_probe_tar
         }
     ]
 
-    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist)
+    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert any("未指向 recall_probe_queries" in error for error in errors)
 
@@ -380,7 +384,7 @@ def test_build_daily_qa_diff_classifies_duplicate_and_weak_evidence(sample_daily
         }
     )
 
-    qa_diff = build_daily_qa_diff(report, ledger, whitelist)
+    qa_diff = build_daily_qa_diff(report, ledger, whitelist, project_root=None)
 
     assert qa_diff["summary"]["categories"]["duplicate_rejected"] == 1
     assert qa_diff["summary"]["categories"]["weak_evidence_rejected"] == 1
@@ -399,7 +403,7 @@ def test_validate_daily_artifacts_rejects_page_updated_at_for_selected_candidate
     ledger["items"][0]["date_basis"] = "page_updated_at"
     ledger["items"][0]["why_today"] = "页面 updated_at 落在窗口内，但条目小节日期没有落在窗口内。"
 
-    errors = validate_daily_artifacts(report, ledger, whitelist)
+    errors = validate_daily_artifacts(report, ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert any("page_updated_at cannot support selected_watch" in error for error in errors)
 
@@ -416,7 +420,7 @@ def test_validate_daily_artifacts_rejects_unverified_action_eligibility(
     ledger["items"][1]["decision"] = "selected_unverified"
     ledger["items"][1]["action_eligibility"] = "monitor"
 
-    errors = validate_daily_artifacts(report, ledger, whitelist)
+    errors = validate_daily_artifacts(report, ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert any("selected_unverified must have action_eligibility='none'" in error for error in errors)
 
@@ -435,7 +439,7 @@ def test_validate_daily_artifacts_rejects_media_only_action_eligibility(
     ledger["items"][0]["evidence_path"] = "media_only"
     ledger["items"][0]["action_eligibility"] = "monitor"
 
-    errors = validate_daily_artifacts(report, ledger, whitelist)
+    errors = validate_daily_artifacts(report, ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert any("evidence_path='media_only' cannot have action_eligibility='monitor'" in error for error in errors)
 
@@ -454,7 +458,7 @@ def test_validate_daily_artifacts_rejects_one_hop_full_action(
     ledger["items"][0]["evidence_path"] = "media_plus_official_one_hop"
     ledger["items"][0]["action_eligibility"] = "full_action"
 
-    errors = validate_daily_artifacts(report, ledger, whitelist)
+    errors = validate_daily_artifacts(report, ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert any(
         "evidence_path='media_plus_official_one_hop' cannot have action_eligibility='full_action'" in error
@@ -474,7 +478,7 @@ def test_build_daily_qa_diff_reports_ledger_semantic_errors(
     ledger["items"][0]["decision"] = "selected_core"
     ledger["items"][0]["evidence_path"] = "media_only"
 
-    qa_diff = build_daily_qa_diff(report, ledger, whitelist)
+    qa_diff = build_daily_qa_diff(report, ledger, whitelist, project_root=None)
 
     assert qa_diff["summary"]["categories"]["reference_integrity_gap"] >= 1
     assert any("selected_core requires evidence_path='primary'" in finding["reason"] for finding in qa_diff["findings"])
@@ -493,7 +497,7 @@ def test_validate_daily_artifacts_allows_rejected_candidate_raw_action_metadata(
     ledger["items"][0]["evidence_path"] = "media_only"
     ledger["items"][0]["action_eligibility"] = "full_action"
 
-    errors = validate_daily_artifacts(report, ledger, whitelist)
+    errors = validate_daily_artifacts(report, ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert not any("cannot have action_eligibility='full_action'" in error for error in errors)
 
@@ -516,7 +520,7 @@ def test_validate_daily_artifacts_rejects_capability_gap_without_ref(
         }
     ]
 
-    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist)
+    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert any("capability_gaps[0] has hard-data language but no ref" in error for error in errors)
 
@@ -548,7 +552,7 @@ def test_validate_daily_artifacts_rejects_capability_gap_without_ref_when_other_
         }
     ]
 
-    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist)
+    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert any("capability_gaps[0] has hard-data language but no ref" in error for error in errors)
 
@@ -563,7 +567,7 @@ def test_validate_daily_artifacts_rejects_market_signal_ref_out_of_range(
     report["fetch_status"] = finalized_fetch_status(whitelist)
     report["sections"]["market_signals"]["benchmark_watch"][0]["ref"] = "frontier_models[99]"
 
-    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist)
+    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert any("benchmark_watch[0].ref points past frontier_models[99]" in error for error in errors)
 
@@ -578,7 +582,7 @@ def test_validate_daily_artifacts_rejects_benchmark_watch_missing_ref(
     report["fetch_status"] = finalized_fetch_status(whitelist)
     report["sections"]["market_signals"]["benchmark_watch"][0].pop("ref", None)
 
-    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist)
+    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert any("benchmark_watch[0].ref missing" in error for error in errors)
 
@@ -588,6 +592,7 @@ def test_2026_04_27_openai_microsoft_partnership_can_be_selected(
     finalized_fetch_status,
     sample_candidate_ledger,
 ):
+    # Synthetic precise time isolates this editorial regression; it is not source evidence.
     whitelist = load_whitelist()
     report = _minimal_report_with_fetch_status(sample_daily_report, finalized_fetch_status, whitelist)
     report["sections"]["frontier_models"]["items"] = [
@@ -599,7 +604,7 @@ def test_2026_04_27_openai_microsoft_partnership_can_be_selected(
             "impact": "多云采购与模型分发格局松动。",
             "source_name": "OpenAI Blog",
             "source_url": "https://openai.com/index/next-phase-of-microsoft-partnership/",
-            "published_at": "2026-04-27",
+            "published_at": "2026-04-27T12:00:00+08:00",
             "confidence": "high",
             "release_stage": "announced",
             "published_at_confidence": "exact",
@@ -608,12 +613,13 @@ def test_2026_04_27_openai_microsoft_partnership_can_be_selected(
         }
     ]
     ledger = deepcopy(sample_candidate_ledger)
+    ledger["date"] = report["date"]
     ledger["items"] = [
         {
             "candidate_id": "openai-microsoft-next-phase-2026-04-27",
             "headline": "微软-OpenAI 合作进入下一阶段",
             "proposed_section": "frontier_models",
-            "published_at": "2026-04-27",
+            "published_at": "2026-04-27T12:00:00+08:00",
             "source_attempt_refs": ["OpenAI.attempts[0]"],
             "verification_state": "official_confirmed",
             "editorial_tier": "core",
@@ -628,7 +634,7 @@ def test_2026_04_27_openai_microsoft_partnership_can_be_selected(
         }
     ]
 
-    errors = validate_daily_artifacts(report, ledger, whitelist)
+    errors = validate_daily_artifacts(report, ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert errors == []
 
@@ -661,7 +667,7 @@ def test_2026_04_27_help_center_page_update_cannot_select_window_out_item(
         }
     ]
 
-    errors = validate_daily_artifacts(report, ledger, whitelist)
+    errors = validate_daily_artifacts(report, ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert any("page_updated_at cannot support selected_watch" in error for error in errors)
 
@@ -671,6 +677,7 @@ def test_2026_04_27_dirac_benchmark_without_delta_needs_watch_ref(
     finalized_fetch_status,
     sample_candidate_ledger,
 ):
+    # Synthetic precise time isolates this editorial regression; it is not source evidence.
     whitelist = load_whitelist()
     report = _minimal_report_with_fetch_status(sample_daily_report, finalized_fetch_status, whitelist)
     report["sections"]["coding_agents"]["items"] = [
@@ -682,7 +689,7 @@ def test_2026_04_27_dirac_benchmark_without_delta_needs_watch_ref(
             "impact": "小模型与成本优化路径值得复测。",
             "source_name": "GitHub / Hugging Face",
             "source_url": "https://github.com/dirac-run/dirac",
-            "published_at": "2026-04-27",
+            "published_at": "2026-04-27T12:00:00+08:00",
             "confidence": "medium",
             "release_stage": "announced",
             "published_at_confidence": "approximate",
@@ -691,12 +698,13 @@ def test_2026_04_27_dirac_benchmark_without_delta_needs_watch_ref(
         }
     ]
     ledger = deepcopy(sample_candidate_ledger)
+    ledger["date"] = report["date"]
     ledger["items"] = [
         {
             "candidate_id": "dirac-terminal-bench-2-2026-04-27",
             "headline": "Dirac Terminal-Bench-2 观察",
             "proposed_section": "coding_agents",
-            "published_at": "2026-04-27",
+            "published_at": "2026-04-27T12:00:00+08:00",
             "source_attempt_refs": ["Hacker News front page.attempts[0]"],
             "verification_state": "community_snapshot_with_repo",
             "editorial_tier": "watch",
@@ -711,7 +719,7 @@ def test_2026_04_27_dirac_benchmark_without_delta_needs_watch_ref(
         }
     ]
 
-    errors = validate_daily_artifacts(report, ledger, whitelist)
+    errors = validate_daily_artifacts(report, ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert any("hard-data signal without market_signals coverage" in error for error in errors)
 
@@ -726,7 +734,7 @@ def test_2026_04_27_dirac_benchmark_without_delta_needs_watch_ref(
         }
     ]
 
-    errors = validate_daily_artifacts(report, ledger, whitelist)
+    errors = validate_daily_artifacts(report, ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert errors == []
 
@@ -738,6 +746,9 @@ def test_validate_daily_artifacts_accepts_adoption_signal_with_ref(
 ):
     whitelist = load_whitelist()
     report = _minimal_report_with_fetch_status(sample_daily_report, finalized_fetch_status, whitelist)
+    report["date"] = "2026-04-29"
+    report["window"] = compute_daily_window(report["date"], "2026-04-29T22:28:30+08:00")
+    report["generated_at"] = report["window"]["end"]
     report["sections"]["general_agents"]["items"] = [
         {
             "product": "Microsoft 365 Copilot",
@@ -768,6 +779,7 @@ def test_validate_daily_artifacts_accepts_adoption_signal_with_ref(
         }
     ]
     ledger = deepcopy(sample_candidate_ledger)
+    ledger["date"] = report["date"]
     ledger["items"] = [
         {
             "candidate_id": "m365-copilot-20m-paid-seats-2026-04-29",
@@ -797,7 +809,7 @@ def test_validate_daily_artifacts_accepts_adoption_signal_with_ref(
         }
     )
 
-    errors = validate_daily_artifacts(report, ledger, whitelist)
+    errors = validate_daily_artifacts(report, ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert errors == []
 
@@ -809,6 +821,9 @@ def test_validate_daily_artifacts_rejects_adoption_language_without_market_signa
 ):
     whitelist = load_whitelist()
     report = _minimal_report_with_fetch_status(sample_daily_report, finalized_fetch_status, whitelist)
+    report["date"] = "2026-04-29"
+    report["window"] = compute_daily_window(report["date"], "2026-04-29T22:28:30+08:00")
+    report["generated_at"] = report["window"]["end"]
     report["sections"]["general_agents"]["items"] = [
         {
             "product": "Microsoft 365 Copilot",
@@ -828,6 +843,7 @@ def test_validate_daily_artifacts_rejects_adoption_language_without_market_signa
     ]
     report["sections"]["market_signals"]["adoption_signals"] = []
     ledger = deepcopy(sample_candidate_ledger)
+    ledger["date"] = report["date"]
     ledger["items"] = [
         {
             "candidate_id": "m365-copilot-20m-paid-seats-2026-04-29",
@@ -857,7 +873,7 @@ def test_validate_daily_artifacts_rejects_adoption_language_without_market_signa
         }
     )
 
-    errors = validate_daily_artifacts(report, ledger, whitelist)
+    errors = validate_daily_artifacts(report, ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert any("hard-data signal without market_signals coverage" in error for error in errors)
     assert not any("source_attempt_ref" in error for error in errors)
@@ -871,6 +887,9 @@ def test_validate_daily_artifacts_allows_usage_command_without_market_signal(
 ):
     whitelist = load_whitelist()
     report = _minimal_report_with_fetch_status(sample_daily_report, finalized_fetch_status, whitelist)
+    report["date"] = "2026-04-29"
+    report["window"] = compute_daily_window(report["date"], "2026-04-29T22:28:30+08:00")
+    report["generated_at"] = report["window"]["end"]
     report["sections"]["coding_agents"]["items"] = [
         {
             "product": "GitHub Copilot CLI",
@@ -889,6 +908,7 @@ def test_validate_daily_artifacts_allows_usage_command_without_market_signal(
         }
     ]
     ledger = deepcopy(sample_candidate_ledger)
+    ledger["date"] = report["date"]
     ledger["items"] = [
         {
             "candidate_id": "github-copilot-cli-usage-command-2026-04-29",
@@ -909,7 +929,7 @@ def test_validate_daily_artifacts_allows_usage_command_without_market_signal(
         }
     ]
 
-    errors = validate_daily_artifacts(report, ledger, whitelist)
+    errors = validate_daily_artifacts(report, ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert errors == []
 
@@ -921,6 +941,9 @@ def test_validate_daily_artifacts_allows_openai_arrives_without_market_signal(
 ):
     whitelist = load_whitelist()
     report = _minimal_report_with_fetch_status(sample_daily_report, finalized_fetch_status, whitelist)
+    report["date"] = "2026-04-29"
+    report["window"] = compute_daily_window(report["date"], "2026-04-29T22:28:30+08:00")
+    report["generated_at"] = report["window"]["end"]
     report["sections"]["general_agents"]["items"] = [
         {
             "product": "OpenAI enterprise workflow",
@@ -939,6 +962,7 @@ def test_validate_daily_artifacts_allows_openai_arrives_without_market_signal(
         }
     ]
     ledger = deepcopy(sample_candidate_ledger)
+    ledger["date"] = report["date"]
     ledger["items"] = [
         {
             "candidate_id": "openai-workflow-console-2026-04-29",
@@ -959,7 +983,7 @@ def test_validate_daily_artifacts_allows_openai_arrives_without_market_signal(
         }
     ]
 
-    errors = validate_daily_artifacts(report, ledger, whitelist)
+    errors = validate_daily_artifacts(report, ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert errors == []
 
@@ -971,6 +995,9 @@ def test_validate_daily_artifacts_allows_commercialization_path_without_market_s
 ):
     whitelist = load_whitelist()
     report = _minimal_report_with_fetch_status(sample_daily_report, finalized_fetch_status, whitelist)
+    report["date"] = "2026-04-29"
+    report["window"] = compute_daily_window(report["date"], "2026-04-29T22:28:30+08:00")
+    report["generated_at"] = report["window"]["end"]
     report["sections"]["general_agents"]["items"] = [
         {
             "product": "OpenAI enterprise workflow",
@@ -989,6 +1016,7 @@ def test_validate_daily_artifacts_allows_commercialization_path_without_market_s
         }
     ]
     ledger = deepcopy(sample_candidate_ledger)
+    ledger["date"] = report["date"]
     ledger["items"] = [
         {
             "candidate_id": "openai-enterprise-workflow-commercialization-2026-04-29",
@@ -1009,7 +1037,7 @@ def test_validate_daily_artifacts_allows_commercialization_path_without_market_s
         }
     ]
 
-    errors = validate_daily_artifacts(report, ledger, whitelist)
+    errors = validate_daily_artifacts(report, ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert errors == []
 
@@ -1024,7 +1052,7 @@ def test_validate_daily_artifacts_rejects_adoption_signal_ref_out_of_range(
     report["fetch_status"] = finalized_fetch_status(whitelist)
     report["sections"]["market_signals"]["adoption_signals"][0]["ref"] = "general_agents[99]"
 
-    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist)
+    errors = validate_daily_artifacts(report, sample_candidate_ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
 
     assert any("adoption_signals[0].ref points past general_agents[99]" in error for error in errors)
 
@@ -1304,6 +1332,7 @@ def test_2026_04_30_recall_regression_accepts_cursor_zed_deepseek_and_m365(
     ]
 
     ledger = deepcopy(sample_candidate_ledger)
+    ledger["date"] = report["date"]
     ledger["items"] = [
         {
             "candidate_id": "deepseek-vision-beta-2026-04-29",
@@ -1430,8 +1459,8 @@ def test_2026_04_30_recall_regression_accepts_cursor_zed_deepseek_and_m365(
         }
     ]
 
-    errors = validate_daily_artifacts(report, ledger, whitelist)
-    qa_diff = build_daily_qa_diff(report, ledger, whitelist)
+    errors = validate_daily_artifacts(report, ledger, whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
+    qa_diff = build_daily_qa_diff(report, ledger, whitelist, project_root=None)
 
     assert errors == []
     assert qa_diff["summary"]["blocking_findings"] == 0
@@ -1481,7 +1510,7 @@ def test_validate_daily_artifacts_flags_major_event_gap(
 ):
     report = json.loads(json.dumps(sample_daily_report, ensure_ascii=False))
     report["sections"]["frontier_models"]["items"][0]["major_event"] = True
-    errors = validate_daily_artifacts(report, sample_candidate_ledger, sample_whitelist)
+    errors = validate_daily_artifacts(report, sample_candidate_ledger, sample_whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
     assert any("major_event=true requires expanded block" in error for error in errors)
 
 
@@ -1492,7 +1521,7 @@ def test_validate_daily_artifacts_checks_tracking_refs_when_root_given(
     report["sections"]["frontier_models"]["items"][0]["tracking_ref"] = "missing-event"
     errors = validate_daily_artifacts(
         report, sample_candidate_ledger, sample_whitelist, project_root=tmp_path
-    )
+    , profile=None, manifest=_daily_manifest(report))
     assert any("missing-event" in error for error in errors)
 
 
@@ -1552,7 +1581,7 @@ def test_validate_daily_artifacts_includes_decision_radar(
     sample_daily_report, sample_candidate_ledger, sample_whitelist
 ):
     report = _radar_report(sample_daily_report, ref="frontier_models[99]")
-    errors = validate_daily_artifacts(report, sample_candidate_ledger, sample_whitelist)
+    errors = validate_daily_artifacts(report, sample_candidate_ledger, sample_whitelist, project_root=None, profile=None, manifest=_daily_manifest(report))
     assert any("frontier_models[99]" in error for error in errors)
 
 
@@ -1568,7 +1597,7 @@ def test_validate_daily_artifacts_flags_ecosystem_repeat(
     )
     errors = validate_daily_artifacts(
         report, sample_candidate_ledger, sample_whitelist, project_root=tmp_path
-    )
+    , profile=None, manifest=_daily_manifest(report))
     assert any("example/claude-flow" in error for error in errors)
 
 
@@ -1877,11 +1906,12 @@ def test_build_daily_qa_diff_surfaces_recall_fallback(sample_daily_report, sampl
     # 用 Qwen（Layer-0 是 qwen.ai/research 静态面）而非 DeepSeek——后者 Layer-0 是
     # 带日期的 changelog feed，空即权威、本就不该触发守门。
     report["fetch_status"]["source_details"]["阿里 Qwen"]["attempts"] = [
-        attempt
+        {**attempt, "result": "success_but_empty"}
         for attempt in report["fetch_status"]["source_details"]["阿里 Qwen"]["attempts"]
         if attempt.get("layer_type") not in ("websearch_scoped", "websearch_broad")
     ]
-    qa_diff = build_daily_qa_diff(report, sample_candidate_ledger, whitelist)
+    report["fetch_status"]["empty"].append("阿里 Qwen")
+    qa_diff = build_daily_qa_diff(report, sample_candidate_ledger, whitelist, project_root=None)
     assert qa_diff["summary"]["categories"]["missed_discovery"] >= 1
 
 
@@ -1966,7 +1996,7 @@ def test_daily_methodology_cooldown_is_not_a_blocking_artifact_error(
     record_methodology({"date": "2026-06-29", "sections": report["sections"]}, tmp_path, "2026-06-29")
     assert (tmp_path / "cache" / "methodology_seen.json").exists()
 
-    errors = validate_daily_artifacts(report, ledger, whitelist, tmp_path)
+    errors = validate_daily_artifacts(report, ledger, whitelist, tmp_path, profile=None, manifest=_daily_manifest(report))
     assert not any("cooldown" in e for e in errors), f"cooldown must not block finalize, got: {errors}"
 
 

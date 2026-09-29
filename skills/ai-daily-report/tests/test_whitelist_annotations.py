@@ -5,8 +5,7 @@
 """
 from discovery import iter_named_sources
 
-AIHOT_SELECTED_URL = "https://aihot.virxact.com/api/v1/items?mode=selected&window=24h&limit=50"
-AIHOT_ALL_URL = "https://aihot.virxact.com/api/v1/items?mode=all&window=24h&limit=50"
+AIHOT_ALL_URL = "https://aihot.virxact.com/api/v1/items?mode=all&window=7d&by=published&limit=100"
 
 
 def _source(whitelist, name):
@@ -60,13 +59,13 @@ def test_high_recall_sources_have_search_fallback(sample_whitelist):
     assert offenders == []
 
 
-def test_aihot_uses_structured_api_layers(sample_whitelist):
-    """selected 是策展池（空≠无新闻→static，必须下穿）；all 才是全量倒序面（feed）。"""
+def test_aihot_discovers_from_all_on_explicit_published_axis(sample_whitelist):
+    """上游精选只作参考；公开池须足够宽，再按 manifest 窗口核验。"""
     source = _source(sample_whitelist, "AI HOT")
-    selected, full = source["fetch_chain"][0], source["fetch_chain"][1]
+    full = source["fetch_chain"][0]
 
-    assert selected == {"type": "webfetch", "url": AIHOT_SELECTED_URL, "surface_kind": "static"}
     assert full == {"type": "webfetch", "url": AIHOT_ALL_URL, "surface_kind": "feed"}
+    assert sum(layer["type"] == "webfetch" for layer in source["fetch_chain"]) == 1
 
 
 def test_aihot_keeps_search_fallback(sample_whitelist):

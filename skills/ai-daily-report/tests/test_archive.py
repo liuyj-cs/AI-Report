@@ -162,3 +162,27 @@ def test_archive_interview_goes_to_interviews_dir(tmp_path):
     dst = archive(src, "interview", "2026-06-30-fiona-fung-claude-code", tmp_path)
     assert dst == tmp_path / "reports" / "interviews" / "2026-06-30-fiona-fung-claude-code.html"
     assert dst.read_text(encoding="utf-8") == "<html>x</html>"
+
+
+def test_cleanup_keeps_durable_daily_weekly_and_global_receipts(tmp_path):
+    import json
+    cache = tmp_path / "cache"
+    kept = []
+    for name, state in [("2026-01-01", "unknown"), ("2026-01-02", "sent"),
+                        ("weekly/2026-01-04", "unknown"), ("weekly/2026-01-11", "sent")]:
+        directory = cache / name
+        directory.mkdir(parents=True)
+        # Cleanup deliberately does not parse receipts: even damaged ones must survive.
+        (directory / "send_state.json").write_text(json.dumps({"status": state}))
+        kept.append(directory)
+    durable = cache / "delivery_state"
+    (durable / "interviews").mkdir(parents=True)
+    kept.append(durable)
+    old = cache / "2026-01-03"
+    old.mkdir()
+    old_time = time.time() - 90 * 86400
+    for directory in kept + [old]:
+        os.utime(directory, (old_time, old_time))
+    assert cleanup_cache(tmp_path) == 1
+    assert not old.exists()
+    assert all(directory.exists() for directory in kept)

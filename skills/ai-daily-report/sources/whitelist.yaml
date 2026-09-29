@@ -450,23 +450,24 @@ coding_agents_secondary:
         queries:
           - "aider AI coding agent update {date}"
 
+# 工作任务发现：查询覆盖昨日到今日，实际窗口仍按 manifest 精确核对。
 general_agent_search_queries:
-  - "trending AI agent this week site:news.ycombinator.com"
-  - "new AI agent launch today"
-  - "viral AI agent"
-  - "open source AI agent release"
-  - "AI Mode site:blog.google/products/search {date}"
-  - "Chrome AI Mode {date}"
-  - "AI-native editor agent protocol {date}"
-  - "AI coding editor 1.0 launch {date}"
-  - "enterprise AI agent paid seats earnings call {date}"
-  - "ChatGPT Enterprise Teams update {date}"
-  - "Claude for Work enterprise update {date}"
-  - "飞书 智能伙伴 AI 更新 {date}"
-  - "钉钉 AI 助理 更新 {date}"
-  - "Salesforce Agentforce update {date}"
+  - "AI research agent release sources export {yesterday} {date}"
+  - "AI office documents slides spreadsheet agent update {yesterday} {date}"
+  - "browser desktop agent permissions availability update {yesterday} {date}"
+  - "enterprise agent connectors workflow admin release notes {yesterday} {date}"
+  - "ChatGPT Enterprise release notes {yesterday} {date}"
+  - "Claude work research files release notes {yesterday} {date}"
+  - "Microsoft 365 Copilot release notes {yesterday} {date}"
+  - "Google Workspace Gemini update {yesterday} {date}"
+  - "飞书 AI 更新 权限 文档 表格 {yesterday} {date}"
+  - "钉钉 AI 悟空 更新 日志 {yesterday} {date}"
+  - "new AI agent product launch site:news.ycombinator.com {yesterday} {date}"
+  - "open source workplace agent release {yesterday} {date}"
 
 high_signal_media_queries:
+  - "AI-native coding editor agent protocol {yesterday} {date}"
+  - "AI coding editor launch {yesterday} {date}"
   - "TestingCatalog AI {date}"
   - "DeepSeek V4 Reuters {date}"
   - "Semafor technology AI {date}"
@@ -562,6 +563,67 @@ general_agent_watchlist:
       - type: websearch_broad
         queries:
           - "Zed AI-native editor agent protocol {date}"
+
+# 2026-09-28 官方入口复核；飞书空壳、钉钉日志未稳定取得日期，按 static 下穿搜索。
+  - name: Microsoft 365 Copilot Release Notes
+    category: general_agent_watchlist
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://learn.microsoft.com/en-us/microsoft-365/copilot/release-notes
+        surface_kind: feed
+      - type: websearch_scoped
+        queries:
+          - "site:learn.microsoft.com/en-us/microsoft-365/copilot/release-notes {yesterday} {date}"
+
+  - name: ChatGPT Enterprise Release Notes
+    category: general_agent_watchlist
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://help.openai.com/en/articles/10128477-chatgpt-enterprise-and-edu-release-notes
+        surface_kind: feed
+      - type: websearch_scoped
+        queries:
+          - "site:help.openai.com ChatGPT Enterprise release notes {yesterday} {date}"
+
+  - name: Claude Release Notes
+    category: general_agent_watchlist
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://support.claude.com/en/articles/12138966-release-notes
+        surface_kind: feed
+      - type: websearch_scoped
+        queries:
+          - "site:support.claude.com release notes {yesterday} {date}"
+
+  - name: 飞书更新日志
+    category: general_agent_watchlist
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://www.feishu.cn/hc/zh-CN/category/7225931699035701276-%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97
+        surface_kind: static
+      - type: websearch_scoped
+        queries:
+          - "site:feishu.cn/hc 更新日志 AI {yesterday} {date}"
+
+  - name: 钉钉悟空更新日志
+    category: general_agent_watchlist
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://wukong.dingtalk.com/docs/changelog/
+        surface_kind: static
+      - type: websearch_scoped
+        queries:
+          - "site:wukong.dingtalk.com/docs/changelog 更新 {yesterday} {date}"
 
   - name: Microsoft 365 Copilot Adoption
     category: general_agent_watchlist
@@ -745,16 +807,14 @@ chinese_media:
     authority_tier: 2
     # 匿名只读 v1 API：结构化 JSON 比首页 HTML（JS 壳）稳，且每条自带 links.original
     # 供一跳官方补证。它是中文圈召回对照面，不是证据源——候选仍按 media 降档处理。
-    # publishedAt 可为 null，此时回退 discoveredAt 并按 published_at_confidence: inferred。
-    # 两层的分工是刻意的：selected 是高门槛策展池（实测当日只放行约 8% 条目），它空
-    # 只说明"策展没放行"，不等于中文圈无新闻 —— 所以标 static，空必须下穿 mode=all
-    # 全量池；all 才是真·全量倒序面，空即权威。
+    # all 是仍经上游资格过滤的公开池；selected 只参考返回字段，不先替本地编辑筛候选。
+    # by=published 按 publishedAt 排序（null 时回退 discoveredAt，必须标 inferred）。
+    # 7d 只提供足够宽的召回面，再按 manifest 精确窗口筛选；逐页保存原始响应并重算
+    # 游标连续性/覆盖范围。partial、HTTP 错误、无效响应均不得记 empty。
+    # 完整合法空响应仅指此公开面未返回窗口内条目，不代表行业空或上游已处理完。
     fetch_chain:
       - type: webfetch
-        url: https://aihot.virxact.com/api/v1/items?mode=selected&window=24h&limit=50
-        surface_kind: static
-      - type: webfetch
-        url: https://aihot.virxact.com/api/v1/items?mode=all&window=24h&limit=50
+        url: https://aihot.virxact.com/api/v1/items?mode=all&window=7d&by=published&limit=100
         surface_kind: feed
       - type: websearch_scoped
         queries:
