@@ -4,7 +4,12 @@
   "type": "object",
   "required": ["version", "type", "date", "window", "generated_at", "sections", "fetch_status"],
   "properties": {
-    "version": {"enum": ["1.0", "1.1", "1.2"]},
+    "version": {"enum": [
+      "1.0",
+      "1.1",
+      "1.2",
+      "1.3"
+    ]},
     "type": {"const": "daily"},
     "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
     "window": {
@@ -22,7 +27,6 @@
       "type": "object",
       "required": [
         "frontier_models",
-        "coding_agents",
         "general_agents",
         "agent_ecosystem",
         "market_signals",
@@ -144,7 +148,11 @@
             },
             "empty_message": {"type": "string"}
           }
+        },
+        "vertical_agents": {
+          "$ref": "#/$defs/agentSection"
         }
+
       }
     },
     "fetch_status": {
@@ -411,7 +419,7 @@
     },
     "itemRef": {
       "type": "string",
-      "pattern": "^(frontier_models|coding_agents|general_agents)\\[(0|[1-9][0-9]*)\\]$"
+      "pattern": "^(frontier_models|coding_agents|vertical_agents|general_agents)\\[(0|[1-9][0-9]*)\\]$"
     },
     "benchmarkChange": {
       "type": "object",
@@ -601,7 +609,13 @@
         "date": {"type": "string"},
         "headline": {"type": "string"},
         "url": {"type": "string"},
-        "section": {"enum": ["frontier_models", "coding_agents", "general_agents", "policy_risk"]},
+        "section": {"enum": [
+          "frontier_models",
+          "coding_agents",
+          "general_agents",
+          "policy_risk",
+          "vertical_agents"
+        ]},
         "editorial_tier": {"enum": ["core", "watch"]},
         "release_stage": {"enum": ["announced", "preview", "beta", "ga", "rumor"]},
         "published_at_confidence": {"enum": ["exact", "approximate", "inferred"]},
@@ -861,7 +875,7 @@
         }
       ]
     },
-    "decisionRef": {"type": "string", "pattern": "^(frontier_models|coding_agents|general_agents|policy_risk)\\[(0|[1-9][0-9]*)\\]$"},
+    "decisionRef": {"type": "string", "pattern": "^(frontier_models|coding_agents|vertical_agents|general_agents|policy_risk)\\[(0|[1-9][0-9]*)\\]$"},
     "riskItem": {
       "type": "object",
       "required": ["headline", "summary", "source_name", "source_url", "published_at", "confidence", "published_at_confidence", "authority_score", "editorial_tier", "subject", "event_status", "affected_scope", "decision_relevance", "risk_kind", "evidence_limits"],
@@ -944,18 +958,96 @@
         "coverage": {"$ref": "#/$defs/evidenceCoverage"},
         "reason": {"type": "string"}
       }
+    },
+    "agentItem": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/generalItem"
+        }
+      ],
+      "required": [
+        "task_domain",
+        "capability_layer",
+        "published_at",
+        "use_case",
+        "what_changed",
+        "availability",
+        "impact",
+        "usage_mode",
+        "evidence_limits"
+      ],
+      "properties": {
+        "task_domain": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "capability_layer": {
+          "enum": [
+            "execution",
+            "platform"
+          ]
+        }
+      },
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "heat_signal"
+            ]
+          },
+          {
+            "required": [
+              "product_tier"
+            ]
+          }
+        ]
+      }
+    },
+    "agentSection": {
+      "type": "object",
+      "required": [
+        "title",
+        "items",
+        "empty_message"
+      ],
+      "properties": {
+        "title": {
+          "$ref": "#/$defs/sectionTitle"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/agentItem"
+          }
+        },
+        "empty_message": {
+          "type": "string"
+        }
+      }
     }
+
   },
   "allOf": [
     {
       "if": {
         "properties": {
-          "version": {"enum": ["1.1", "1.2"]}
+          "version": {
+            "enum": [
+              "1.1",
+              "1.2",
+              "1.3"
+            ]
+          }
         },
-        "required": ["version"]
+        "required": [
+          "version"
+        ]
       },
       "then": {
-        "required": ["reading_guide"],
+        "required": [
+          "reading_guide"
+        ],
         "properties": {
           "sections": {
             "properties": {
@@ -963,7 +1055,9 @@
                 "properties": {
                   "items": {
                     "items": {
-                      "required": ["model_assessment"]
+                      "required": [
+                        "model_assessment"
+                      ]
                     }
                   }
                 }
@@ -976,24 +1070,46 @@
     {
       "if": {
         "properties": {
-          "version": {"const": "1.2"}
+          "version": {
+            "enum": [
+              "1.2",
+              "1.3"
+            ]
+          }
         },
-        "required": ["version"]
+        "required": [
+          "version"
+        ]
       },
       "then": {
-        "required": ["coverage_summary"],
+        "required": [
+          "coverage_summary"
+        ],
         "properties": {
           "sections": {
-            "required": ["policy_risk"],
+            "required": [
+              "policy_risk"
+            ],
             "properties": {
               "general_agents": {
-                "required": ["empty_message"],
+                "required": [
+                  "empty_message"
+                ],
                 "properties": {
                   "items": {
                     "items": {
-                      "required": ["use_case", "what_changed", "availability", "impact", "usage_mode", "evidence_limits"],
+                      "required": [
+                        "use_case",
+                        "what_changed",
+                        "availability",
+                        "impact",
+                        "usage_mode",
+                        "evidence_limits"
+                      ],
                       "not": {
-                        "required": ["heat_signal"]
+                        "required": [
+                          "heat_signal"
+                        ]
                       }
                     }
                   }
@@ -1003,9 +1119,14 @@
                 "properties": {
                   "items": {
                     "items": {
-                      "required": ["action_delta", "references"],
+                      "required": [
+                        "action_delta",
+                        "references"
+                      ],
                       "properties": {
-                        "references": {"minItems": 1}
+                        "references": {
+                          "minItems": 1
+                        }
                       }
                     }
                   }
@@ -1015,12 +1136,17 @@
                 "properties": {
                   "items": {
                     "items": {
-                      "required": ["related_item_refs"],
+                      "required": [
+                        "related_item_refs"
+                      ],
                       "properties": {
                         "related_item_refs": {
                           "minItems": 1,
                           "uniqueItems": true,
-                          "items": {"type": "string", "pattern": "^(coding_agents|general_agents)\\[(0|[1-9][0-9]*)\\]$"}
+                          "items": {
+                            "type": "string",
+                            "pattern": "^(coding_agents|vertical_agents|general_agents)\\[(0|[1-9][0-9]*)\\]$"
+                          }
                         }
                       }
                     }
@@ -1033,19 +1159,88 @@
             "properties": {
               "source_details": {
                 "additionalProperties": {
-                  "required": ["attempts"],
+                  "required": [
+                    "attempts"
+                  ],
                   "properties": {
                     "attempts": {
                       "items": {
                         "properties": {
-                          "evidence_artifact": {"$ref": "#/$defs/evidenceArtifact"},
-                          "review": {"$ref": "#/$defs/evidenceReview"}
+                          "evidence_artifact": {
+                            "$ref": "#/$defs/evidenceArtifact"
+                          },
+                          "review": {
+                            "$ref": "#/$defs/evidenceReview"
+                          }
                         }
                       }
                     }
                   }
                 }
               }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "version": {
+            "const": "1.3"
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sections": {
+            "required": [
+              "vertical_agents"
+            ],
+            "not": {
+              "required": [
+                "coding_agents"
+              ]
+            },
+            "properties": {
+              "general_agents": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/agentSection"
+                  },
+                  {
+                    "properties": {
+                      "title": {
+                        "const": "通用 Agent"
+                      }
+                    }
+                  }
+                ]
+              },
+              "vertical_agents": {
+                "properties": {
+                  "title": {
+                    "const": "垂直领域 Agent"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "sections": {
+            "required": [
+              "coding_agents"
+            ],
+            "not": {
+              "required": [
+                "vertical_agents"
+              ]
             }
           }
         }

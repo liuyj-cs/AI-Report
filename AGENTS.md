@@ -5,6 +5,7 @@
 `ai-daily-report` 仅安装在本仓库：`.agents/skills/ai-daily-report` 是指向 `../../skills/ai-daily-report` 的相对软链接。保持 `skills/ai-daily-report/` 为唯一内容来源，不创建用户级安装。日报与周报自动任务应在本仓库根目录运行并直接读取该 `SKILL.md`，不依赖全局 skill 发现。
 
 保持判断逻辑由 AI 完成：
+- 新日报 1.3 / 候选台账 1.2 / 周报 1.2 按通用 Agent（general_agents）与垂直领域 Agent（vertical_agents）组织；按本次事件的工作与交付结果分类，领域、平台层级和自主程度分别判断，不按是否写代码或品牌永久划界。发现时覆盖 profile 的 agent_task_coverage 和两类开放查询，保留研发覆盖；历史报告及其引用按原版本读取。
 - 不要把信源优先级、去重、归类、趋势判断、落地建议改写成脚本死规则。
 - `skills/ai-daily-report/scripts/` 只负责确定性工作：渲染 HTML、归档、发送邮件。
 - 跑日报时，`whitelist.yaml` 是首轮覆盖起点，不是信息上限；若首轮明显偏稀薄，AI 应沿高信号实体追一跳相邻官方面补齐，但正文信息仍必须能回溯到 `fetch_status.source_details`。

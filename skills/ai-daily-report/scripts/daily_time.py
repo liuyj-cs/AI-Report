@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from discovery import compute_daily_window
 
 
-NEWS_SECTIONS = ("frontier_models", "coding_agents", "general_agents", "policy_risk")
+NEWS_SECTIONS = ("frontier_models", "coding_agents", "general_agents", "vertical_agents", "policy_risk")
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 DATE_ONLY = re.compile(r"\d{4}-\d{2}-\d{2}")
 

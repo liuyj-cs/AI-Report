@@ -2,6 +2,8 @@
 """Deterministic helpers for major-event tracking files under cache/tracking/."""
 from __future__ import annotations
 
+from report_contract import decision_sections
+
 from datetime import date, timedelta
 import json
 from pathlib import Path
@@ -81,7 +83,7 @@ def validate_tracking_refs(
         return errors
 
     active = {event["event_slug"] for event in events if is_active_event(event, target)}
-    for section_name in ("frontier_models", "coding_agents", "general_agents", "policy_risk"):
+    for section_name in decision_sections(report):
         for index, item in enumerate(report.get("sections", {}).get(section_name, {}).get("items", [])):
             slug = item.get("tracking_ref")
             if slug and slug not in active:
@@ -102,7 +104,7 @@ def validate_tracking_followup(
     except ValueError:
         return errors  # 日期非法由 validate_tracking_refs 负责报错
     if manifest is None or "active_tracking" not in manifest:
-        if report.get("version") == "1.2":
+        if report.get("version") in {"1.2", "1.3"}:
             return ["daily 1.2 manifest missing locked active_tracking"]
         return []  # 历史日报没有本批次追踪锁，不追溯要求后来出现的档案
     events, _ = preloaded

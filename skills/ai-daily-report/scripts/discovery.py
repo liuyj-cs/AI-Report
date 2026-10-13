@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
+from report_contract import DAILY_VERSION, LEDGER_VERSION
 from evidence import suggest_one_hop_targets
 from tracking import TRACKING_SURFACE_PREFIX
 
@@ -395,8 +396,8 @@ def build_discovery_manifest(
     return {
         "version": "1.0",
         "type": "daily_discovery_manifest",
-        "expected_report_version": "1.2",
-        "expected_ledger_version": "1.1",
+        "expected_report_version": DAILY_VERSION,
+        "expected_ledger_version": LEDGER_VERSION,
         "date": target_date,
         "window": window,
         "active_tracking": active_tracking or [],

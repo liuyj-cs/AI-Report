@@ -4,7 +4,11 @@
   "type": "object",
   "required": ["version", "type", "week_end", "window", "generated_at", "sections", "source_days"],
   "properties": {
-    "version": {"enum": ["1.0", "1.1"]},
+    "version": {"enum": [
+      "1.0",
+      "1.1",
+      "1.2"
+    ]},
     "type": {"const": "weekly"},
     "week_end": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
     "window": {
@@ -22,7 +26,6 @@
       "required": [
         "tldr",
         "frontier_models",
-        "coding_agents",
         "general_agents",
         "market_signals",
         "pattern_observations",
@@ -182,7 +185,11 @@
             },
             "empty_message": {"type": "string"}
           }
+        },
+        "vertical_agents": {
+          "$ref": "#/$defs/agentSection"
         }
+
       }
     },
     "source_days": {
@@ -244,7 +251,7 @@
     },
     "itemRef": {
       "type": "string",
-      "pattern": "^(frontier_models|coding_agents|general_agents)\\[(0|[1-9][0-9]*)\\]$"
+      "pattern": "^(frontier_models|coding_agents|vertical_agents|general_agents)\\[(0|[1-9][0-9]*)\\]$"
     },
     "benchmarkChange": {
       "type": "object",
@@ -454,7 +461,13 @@
         "date": {"type": "string"},
         "headline": {"type": "string"},
         "url": {"type": "string"},
-        "section": {"enum": ["frontier_models", "coding_agents", "general_agents", "policy_risk"]},
+        "section": {"enum": [
+          "frontier_models",
+          "coding_agents",
+          "general_agents",
+          "policy_risk",
+          "vertical_agents"
+        ]},
         "editorial_tier": {"enum": ["core", "watch"]},
         "release_stage": {"enum": ["announced", "preview", "beta", "ga", "rumor"]},
         "published_at_confidence": {"enum": ["exact", "approximate", "inferred"]},
@@ -492,7 +505,7 @@
         "empty_message": {"type": "string"}
       }
     },
-    "decisionRef": {"type": "string", "pattern": "^(frontier_models|coding_agents|general_agents|policy_risk)\\[(0|[1-9][0-9]*)\\]$"},
+    "decisionRef": {"type": "string", "pattern": "^(frontier_models|coding_agents|vertical_agents|general_agents|policy_risk)\\[(0|[1-9][0-9]*)\\]$"},
     "weeklyGeneralItem": {
       "type": "object",
       "required": ["product", "use_case", "weekly_changes", "implication", "references"],
@@ -506,34 +519,112 @@
           "minItems": 1,
           "items": {"$ref": "#/$defs/reference"}
         },
-        "hard_data_note": {"type": "string"}
+        "hard_data_note": {"type": "string"},
+        "task_domain": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "capability_layer": {
+          "enum": [
+            "execution",
+            "platform"
+          ]
+        }
+
       },
       "additionalProperties": false
+    },
+    "agentItem": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/weeklyGeneralItem"
+        }
+      ],
+      "required": [
+        "task_domain",
+        "capability_layer"
+      ],
+      "properties": {
+        "task_domain": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "capability_layer": {
+          "enum": [
+            "execution",
+            "platform"
+          ]
+        }
+      }
+    },
+    "agentSection": {
+      "type": "object",
+      "required": [
+        "title",
+        "items",
+        "empty_message",
+        "trend_judgment",
+        "implication"
+      ],
+      "properties": {
+        "title": {
+          "$ref": "#/$defs/sectionTitle"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/agentItem"
+          }
+        },
+        "empty_message": {
+          "type": "string"
+        },
+        "trend_judgment": {
+          "type": "string"
+        },
+        "implication": {
+          "type": "string"
+        }
+      }
     }
+
   },
   "allOf": [
     {
       "if": {
         "properties": {
-          "version": {"const": "1.0"}
+          "version": {
+            "const": "1.0"
+          }
         },
-        "required": ["version"]
+        "required": [
+          "version"
+        ]
       },
       "then": {
         "properties": {
           "sections": {
             "properties": {
               "general_agents": {
-                "required": ["newcomers", "big_lab_moves"]
+                "required": [
+                  "newcomers",
+                  "big_lab_moves"
+                ]
               },
               "experiments_this_week": {
                 "properties": {
-                  "items": {"minItems": 1}
+                  "items": {
+                    "minItems": 1
+                  }
                 }
               },
               "pattern_observations": {
                 "properties": {
-                  "items": {"minItems": 1}
+                  "items": {
+                    "minItems": 1
+                  }
                 }
               }
             }
@@ -544,24 +635,40 @@
     {
       "if": {
         "properties": {
-          "version": {"const": "1.1"}
+          "version": {
+            "enum": [
+              "1.1",
+              "1.2"
+            ]
+          }
         },
-        "required": ["version"]
+        "required": [
+          "version"
+        ]
       },
       "then": {
         "properties": {
           "sections": {
-            "required": ["policy_risk"],
+            "required": [
+              "policy_risk"
+            ],
             "properties": {
               "general_agents": {
-                "required": ["items", "empty_message"],
+                "required": [
+                  "items",
+                  "empty_message"
+                ],
                 "not": {
                   "anyOf": [
                     {
-                      "required": ["newcomers"]
+                      "required": [
+                        "newcomers"
+                      ]
                     },
                     {
-                      "required": ["big_lab_moves"]
+                      "required": [
+                        "big_lab_moves"
+                      ]
                     }
                   ]
                 }
@@ -570,9 +677,14 @@
                 "properties": {
                   "items": {
                     "items": {
-                      "required": ["action_delta", "references"],
+                      "required": [
+                        "action_delta",
+                        "references"
+                      ],
                       "properties": {
-                        "references": {"minItems": 1}
+                        "references": {
+                          "minItems": 1
+                        }
                       }
                     }
                   }
@@ -582,18 +694,86 @@
                 "properties": {
                   "items": {
                     "items": {
-                      "required": ["related_item_refs"],
+                      "required": [
+                        "related_item_refs"
+                      ],
                       "properties": {
                         "related_item_refs": {
                           "minItems": 1,
                           "uniqueItems": true,
-                          "items": {"type": "string", "pattern": "^(coding_agents|general_agents)\\[(0|[1-9][0-9]*)\\]$"}
+                          "items": {
+                            "type": "string",
+                            "pattern": "^(coding_agents|vertical_agents|general_agents)\\[(0|[1-9][0-9]*)\\]$"
+                          }
                         }
                       }
                     }
                   }
                 }
               }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "version": {
+            "const": "1.2"
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sections": {
+            "required": [
+              "vertical_agents"
+            ],
+            "not": {
+              "required": [
+                "coding_agents"
+              ]
+            },
+            "properties": {
+              "general_agents": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/agentSection"
+                  },
+                  {
+                    "properties": {
+                      "title": {
+                        "const": "通用 Agent"
+                      }
+                    }
+                  }
+                ]
+              },
+              "vertical_agents": {
+                "properties": {
+                  "title": {
+                    "const": "垂直领域 Agent"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "sections": {
+            "required": [
+              "coding_agents"
+            ],
+            "not": {
+              "required": [
+                "vertical_agents"
+              ]
             }
           }
         }

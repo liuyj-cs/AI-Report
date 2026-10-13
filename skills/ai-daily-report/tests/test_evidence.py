@@ -22,7 +22,7 @@ def test_openai_403_with_external_signal_triggers_one_hop_fallback():
 
 
 def test_suggest_one_hop_targets_uses_fetch_chain_and_openai_special_cases(sample_whitelist):
-    source = next(item for item in sample_whitelist["coding_agents_primary"] if item["name"] == "OpenAI Codex")
+    source = next(item for item in sample_whitelist["agent_development_sources"] if item["name"] == "OpenAI Codex")
     targets = suggest_one_hop_targets("OpenAI Codex", source)
 
     assert "https://openai.com/index/" in targets

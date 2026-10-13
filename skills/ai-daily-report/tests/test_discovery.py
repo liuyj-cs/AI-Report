@@ -129,7 +129,7 @@ def test_append_run_log_appends_lines(tmp_path):
 def test_cursor_source_checks_blog_before_changelog_and_sdk_queries(sample_whitelist):
     cursor = next(
         item
-        for item in sample_whitelist["coding_agents_secondary"]
+        for item in sample_whitelist["agent_development_sources"]
         if item["name"] == "Cursor"
     )
 
@@ -155,7 +155,7 @@ def test_whitelist_contains_deepseek_vision_zed_and_adoption_surfaces(sample_whi
     assert "DeepSeek vision multimodal {date}" in broad["queries"]
     assert "DeepSeek image recognition beta {date}" in broad["queries"]
 
-    watchlist_names = {item["name"] for item in sample_whitelist["general_agent_watchlist"]}
+    watchlist_names = {item["name"] for item in sample_whitelist["agent_product_discovery"]}
     assert "Zed" in watchlist_names
     assert "Microsoft 365 Copilot Adoption" in watchlist_names
 
@@ -260,7 +260,7 @@ def test_whitelist_contains_practice_and_workplace_sources(sample_whitelist):
     assert "Anthropic Engineering" in eco_names
     assert "LangChain Blog" in eco_names
     assert "Latent Space" in eco_names
-    watch_names = [item["name"] for item in sample_whitelist["general_agent_watchlist"]]
+    watch_names = [item["name"] for item in sample_whitelist["agent_product_discovery"]]
     assert "Google Workspace Updates" in watch_names
     assert any("钉钉" in q or "飞书" in q for q in sample_whitelist["general_agent_search_queries"])
     assert sample_whitelist["ecosystem_search_queries"]

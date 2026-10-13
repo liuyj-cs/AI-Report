@@ -9,7 +9,15 @@ from agent_editorial import (
     validate_agent_daily, validate_agent_weekly, validate_batch_version,
     validate_candidate_contract, validate_decision_refs, validate_report_schema,
 )
-from discovery import build_discovery_manifest, load_whitelist
+from discovery import build_discovery_manifest as current_manifest, load_whitelist
+
+
+def build_discovery_manifest(day, window, whitelist):
+    """This module exercises historical daily 1.2 / ledger 1.1 batches."""
+    manifest = current_manifest(day, window, whitelist)
+    manifest.update(expected_report_version="1.2", expected_ledger_version="1.1")
+    return manifest
+
 from editorial import (
     validate_daily_artifacts, validate_weekly_item_refs, validate_weekly_references,
     validate_model_assessments, validate_sparse_day_restraint,
@@ -454,7 +462,7 @@ def test_runner_rejects_downgrade_before_render_or_send(bundle, monkeypatch):
 def test_workplace_matrix_resolves_shared_sources(sample_whitelist):
     from discovery import load_profile, required_discovery_names
     names = set(required_discovery_names(sample_whitelist))
-    for entry in load_profile()["workplace_task_coverage"]:
+    for entry in load_profile()["agent_task_coverage"]:
         assert set(entry["sources"]) <= names
 
 

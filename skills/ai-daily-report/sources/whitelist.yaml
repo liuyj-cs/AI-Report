@@ -307,9 +307,10 @@ cn_labs:
         queries:
           - "MiniMax 新模型 {date}"
 
-coding_agents_primary:
+# 采集分组只表示来源入口，不决定正文归属；研发源保持完整覆盖。
+agent_development_sources:
   - name: OpenAI Codex
-    category: coding_agents_primary
+    category: agent_development_sources
     weight: high
     authority_tier: 1
     fetch_chain:
@@ -324,7 +325,7 @@ coding_agents_primary:
           - "OpenAI Codex update {date}"
 
   - name: Anthropic Claude Code
-    category: coding_agents_primary
+    category: agent_development_sources
     weight: high
     authority_tier: 1
     fetch_chain:
@@ -341,7 +342,7 @@ coding_agents_primary:
           - "Anthropic Claude Code update {date}"
 
   - name: Google Gemini CLI
-    category: coding_agents_primary
+    category: agent_development_sources
     weight: high
     authority_tier: 1
     fetch_chain:
@@ -355,7 +356,7 @@ coding_agents_primary:
           - "Google Gemini CLI update {date}"
 
   - name: Google Jules
-    category: coding_agents_primary
+    category: agent_development_sources
     weight: high
     authority_tier: 1
     fetch_chain:
@@ -369,9 +370,8 @@ coding_agents_primary:
         queries:
           - "Google Jules coding agent {date}"
 
-coding_agents_secondary:
   - name: Cursor
-    category: coding_agents_secondary
+    category: agent_development_sources
     weight: medium
     authority_tier: 1
     fetch_chain:
@@ -392,7 +392,7 @@ coding_agents_secondary:
           - "Cursor IDE update {date}"
 
   - name: GitHub Copilot
-    category: coding_agents_secondary
+    category: agent_development_sources
     weight: medium
     authority_tier: 1
     fetch_chain:
@@ -407,7 +407,7 @@ coding_agents_secondary:
           - "GitHub Copilot update {date}"
 
   - name: Windsurf (Codeium)
-    category: coding_agents_secondary
+    category: agent_development_sources
     weight: low
     authority_tier: 2
     fetch_chain:
@@ -422,7 +422,7 @@ coding_agents_secondary:
           - "Windsurf Codeium update {date}"
 
   - name: Cline
-    category: coding_agents_secondary
+    category: agent_development_sources
     weight: low
     authority_tier: 2
     fetch_chain:
@@ -436,7 +436,7 @@ coding_agents_secondary:
           - "Cline coding agent update {date}"
 
   - name: Aider
-    category: coding_agents_secondary
+    category: agent_development_sources
     weight: low
     authority_tier: 2
     fetch_chain:
@@ -452,6 +452,8 @@ coding_agents_secondary:
 
 # 工作任务发现：查询覆盖昨日到今日，实际窗口仍按 manifest 精确核对。
 general_agent_search_queries:
+  - "general purpose AI agent persistent tasks cross-domain release {yesterday} {date}"
+  - "ChatGPT Claude app Kortix autonomous work update {yesterday} {date}"
   - "AI research agent release sources export {yesterday} {date}"
   - "AI office documents slides spreadsheet agent update {yesterday} {date}"
   - "browser desktop agent permissions availability update {yesterday} {date}"
@@ -501,6 +503,8 @@ recall_probe_queries:
   - "MiniMax new model release {date}"
 
 ecosystem_search_queries:
+  - "agent orchestration task queue team permissions runtime release {yesterday} {date}"
+  - "AI agent customer service product management workflow case study {yesterday} {date}"
   - "github trending claude code skill {date}"
   - "github trending MCP server {date}"
   - "awesome-claude-code new entries {date}"
@@ -508,9 +512,9 @@ ecosystem_search_queries:
   - "\"how we use\" coding agent site:news.ycombinator.com {date}"
   - "AI coding agent team workflow case study {date}"
 
-general_agent_watchlist:
+agent_product_discovery:
   - name: openclaw
-    category: general_agent_watchlist
+    category: agent_product_discovery
     weight: high
     authority_tier: 2
     fetch_chain:
@@ -525,7 +529,7 @@ general_agent_watchlist:
           - "openclaw AI agent update {date}"
 
   - name: Hacker News front page
-    category: general_agent_watchlist
+    category: agent_product_discovery
     weight: high
     authority_tier: 2
     fetch_chain:
@@ -537,7 +541,7 @@ general_agent_watchlist:
           - "AI agent site:news.ycombinator.com {date}"
 
   - name: GitHub Trending (daily)
-    category: general_agent_watchlist
+    category: agent_product_discovery
     weight: medium
     authority_tier: 2
     fetch_chain:
@@ -549,7 +553,7 @@ general_agent_watchlist:
           - "github trending AI agent {date}"
 
   - name: Zed
-    category: general_agent_watchlist
+    category: agent_product_discovery
     weight: medium
     authority_tier: 1
     fetch_chain:
@@ -566,7 +570,7 @@ general_agent_watchlist:
 
 # 2026-09-28 官方入口复核；飞书空壳、钉钉日志未稳定取得日期，按 static 下穿搜索。
   - name: Microsoft 365 Copilot Release Notes
-    category: general_agent_watchlist
+    category: agent_product_discovery
     weight: medium
     authority_tier: 1
     fetch_chain:
@@ -577,8 +581,20 @@ general_agent_watchlist:
         queries:
           - "site:learn.microsoft.com/en-us/microsoft-365/copilot/release-notes {yesterday} {date}"
 
+  - name: ChatGPT Release Notes
+    category: agent_product_discovery
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://help.openai.com/en/articles/6825453-chatgpt-release-notes
+        surface_kind: feed
+      - type: websearch_scoped
+        queries:
+          - "site:help.openai.com/en/articles/6825453 ChatGPT {yesterday} {date}"
+
   - name: ChatGPT Enterprise Release Notes
-    category: general_agent_watchlist
+    category: agent_product_discovery
     weight: medium
     authority_tier: 1
     fetch_chain:
@@ -590,7 +606,7 @@ general_agent_watchlist:
           - "site:help.openai.com ChatGPT Enterprise release notes {yesterday} {date}"
 
   - name: Claude Release Notes
-    category: general_agent_watchlist
+    category: agent_product_discovery
     weight: medium
     authority_tier: 1
     fetch_chain:
@@ -602,7 +618,7 @@ general_agent_watchlist:
           - "site:support.claude.com release notes {yesterday} {date}"
 
   - name: 飞书更新日志
-    category: general_agent_watchlist
+    category: agent_product_discovery
     weight: medium
     authority_tier: 1
     fetch_chain:
@@ -614,7 +630,7 @@ general_agent_watchlist:
           - "site:feishu.cn/hc 更新日志 AI {yesterday} {date}"
 
   - name: 钉钉悟空更新日志
-    category: general_agent_watchlist
+    category: agent_product_discovery
     weight: medium
     authority_tier: 1
     fetch_chain:
@@ -626,7 +642,7 @@ general_agent_watchlist:
           - "site:wukong.dingtalk.com/docs/changelog 更新 {yesterday} {date}"
 
   - name: Microsoft 365 Copilot Adoption
-    category: general_agent_watchlist
+    category: agent_product_discovery
     weight: medium
     authority_tier: 1
     fetch_chain:
@@ -643,7 +659,7 @@ general_agent_watchlist:
           - "Microsoft AI ARR Copilot seats weekly engagement {date}"
 
   - name: Google Workspace Updates
-    category: general_agent_watchlist
+    category: agent_product_discovery
     weight: medium
     authority_tier: 1
     fetch_chain:
@@ -658,7 +674,7 @@ general_agent_watchlist:
           - "Google Workspace Gemini AI update {date}"
 
   - name: Product Hunt AI
-    category: general_agent_watchlist
+    category: agent_product_discovery
     weight: low
     authority_tier: 2
     fetch_chain:
@@ -668,6 +684,89 @@ general_agent_watchlist:
       - type: websearch_scoped
         queries:
           - "Product Hunt AI agent {date}"
+
+# 垂直领域覆盖不设行业配额；查询结果仍由 AI 回到官方面核实、按事件归类。
+vertical_agent_sources:
+  - name: Devin Release Notes
+    category: vertical_agent_sources
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://docs.devin.ai/release-notes/overview
+        surface_kind: feed
+      - type: websearch_scoped
+        queries:
+          - "site:docs.devin.ai/release-notes Devin {yesterday} {date}"
+          - "site:cognition.ai/blog Devin {yesterday} {date}"
+  - name: ChatPRD Product Releases
+    category: vertical_agent_sources
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://www.chatprd.ai/blog-category/product-releases
+        surface_kind: feed
+      - type: websearch_scoped
+        queries:
+          - "site:chatprd.ai product release update {yesterday} {date}"
+  - name: Fin Product Updates
+    category: vertical_agent_sources
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://www.intercom.com/changes/en
+        surface_kind: feed
+      - type: websearch_scoped
+        queries:
+          - "site:intercom.com/changes Fin agent {yesterday} {date}"
+          - "site:fin.ai product update agent {yesterday} {date}"
+  - name: Vertical Agent Search Queries
+    category: vertical_agent_sources
+    source_family: broad_discovery_surface
+    weight: medium
+    authority_tier: 3
+    fetch_chain:
+      - type: websearch_broad
+        queries:
+          - "AI software engineering agent release Devin code review testing {yesterday} {date}"
+          - "AI product management agent PRD requirements release {yesterday} {date}"
+          - "AI customer service agent release Fin Sierra Zendesk {yesterday} {date}"
+          - "AI sales marketing agent CRM workflow release {yesterday} {date}"
+          - "AI finance accounting legal healthcare agent release {yesterday} {date}"
+          - "AI 客服 销售 产品经理 财务 垂直智能体 发布 更新 {yesterday} {date}"
+          - "行业 Agent 新产品 上线 医疗 法律 供应链 {yesterday} {date}"
+
+# 横向平台：产品任务能力进通用/垂直正文；独立编排、协议、运行环境进生态实践。
+agent_platform_sources:
+  - name: Kortix
+    category: agent_platform_sources
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://kortix.com/
+        surface_kind: static
+      - type: websearch_scoped
+        queries:
+          - "site:kortix.com release update changelog {yesterday} {date}"
+          - "site:github.com/kortix-ai release {yesterday} {date}"
+      - type: websearch_broad
+        queries:
+          - "Kortix agent platform update {yesterday} {date}"
+  - name: Multica Changelog
+    category: agent_platform_sources
+    weight: medium
+    authority_tier: 1
+    fetch_chain:
+      - type: webfetch
+        url: https://multica.ai/changelog
+        surface_kind: feed
+      - type: websearch_scoped
+        queries:
+          - "site:multica.ai agent changelog release {yesterday} {date}"
+          - "site:github.com/multica-ai/multica/releases {yesterday} {date}"
 
 agent_ecosystem_sources:
   - name: Anthropic Engineering

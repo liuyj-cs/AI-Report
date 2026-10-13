@@ -1,6 +1,6 @@
 ---
 name: ai-daily-report
-description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通用与办公 Agent 及政策风险动态，并给出落地建议。产物为移动端优先的单文件 HTML，通过 Gmail SMTP（应用专用密码）发送到 .env 中的收件人。Trigger when 用户说"生成今天的 AI 日报"、"跑一下 /ai-daily"、"生成本周 AI 周报"、"跑一下 /ai-weekly"。
+description: 生成 AI 行业日报或周报。覆盖模型、通用 Agent、垂直领域 Agent 及政策风险动态，并给出落地建议。产物为移动端优先的单文件 HTML，通过 Gmail SMTP（应用专用密码）发送到 .env 中的收件人。Trigger when 用户说"生成今天的 AI 日报"、"跑一下 /ai-daily"、"生成本周 AI 周报"、"跑一下 /ai-weekly"。
 ---
 
 # AI 日报 / 周报 Skill
@@ -34,9 +34,9 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - 周报：`cache/weekly/{end_date}/report.json` 存在 → 询问用户是否覆盖
 5. **确认 SMTP 凭据可用**：本步骤已合并到 step 2 的 .env 校验。Gmail 应用专用密码无浏览器认证流程。
 
-## 通用与办公 Agent 编辑契约
+## 通用与垂直 Agent 编辑契约
 
-新批次执行 [通用与办公 Agent 工作流](workflows/general-agent-editorial.md)：日报 1.2、候选台账 1.1、周报 1.1；manifest 锁版本。政策风险独立归类，完整留存工具响应；每次只返回一个有大小限制的证据块，检查实际输出完整后再确认回执，逐主张区分直接证据与背景，行动逐依据校验资格与增量。历史格式只读兼容。
+新批次执行 [Agent 分类与编辑工作流](workflows/general-agent-editorial.md)：日报 1.3、候选台账 1.2、周报 1.2；manifest 锁版本。政策风险独立归类，完整留存工具响应；每次只返回一个有大小限制的证据块，检查实际输出完整后再确认回执，逐主张区分直接证据与背景，行动逐依据校验资格与增量。历史格式只读兼容。
 
 ## 日报工作流
 
@@ -92,7 +92,8 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - **整链首层成功** → 进 `fetch_status.succeeded`
    - **整链成功但窗口内 0 条目** → 同时进 `fetch_status.succeeded` 和 `fetch_status.empty`（仅当最终命中层 `surface_kind: feed`，或已跑完搜索层与后续 feed 面仍空时才允许；`static` 层不得停下直接判空。`cn_labs` 另需走完链内全部抓取面，见上）
 
-   - **对 `general_agent_search_queries`** 仍然由 AI 代理单独执行搜索，命中的条目按 `via_broad_search: true` 处理。
+   - **两类 Agent 的开放发现**：逐条执行 `general_agent_search_queries` 与命名源 `Vertical Agent Search Queries` 的查询，日期替换为 `{yesterday}` / `{date}`，实际事件仍按精确窗口核对。每条查询单独记录 attempts.target 为实际查询全文；批量工具响应可以共用 evidence_artifact，但不得只记一个总的面名或只执行其中一条。初始化 manifest 锁定查询，finalize 校验实际尝试覆盖。失败如实记录并在 coverage_summary 说明影响，不伪装为空。
+   - broad search 命中保留 `via_broad_search: true`；按现有补证规则收口，不能因新增领域而放松证据。采集分组、authority 与 weight 不决定正文归属或排序。
 
    - **HN / GitHub Trending 扩大提取范围**
      - Hacker News：提取 **top 50**（而非 top 30）中的 AI/agent/LLM 相关故事
@@ -100,7 +101,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - 高信号媒体发现面：除白名单媒体逐源首轮外，还应单独维护一组 `high_signal_media_queries`，用于把弱信号候选抬进 `candidate_ledger`，后续再由 AI 决定是进正文、进观察区/`unverified`，还是丢弃
      - **召回探针必须执行**：除逐源白名单、`general_agent_search_queries`、`high_signal_media_queries` 外，日报还必须执行 `recall_probe_queries`，并把结果写入 `fetch_status.source_details["High-Recall Product/Adoption Probes"].attempts[]`。
      - `recall_probe_queries` 不是固定正文规则，只是独立召回面。命中的候选仍由 AI 基于窗口、证据路径、产品相关性和团队可行动性决定进入正文、观察区、`unverified` 或拒绝。
-     - 对 Cursor / Zed / IDE 平台化类信号，不要只看 changelog；官方 blog、release post、SDK 公告和 Agent Client Protocol 一类入口都属于 coding_agents/agent_ecosystem 候选面；跨工作任务时由 AI 单独给归属理由。
+     - 对 Cursor / Zed / IDE 平台化类信号，不要只看 changelog；官方 blog、release post、SDK 公告和 Agent Client Protocol 一类入口都属于 general_agents / vertical_agents / agent_ecosystem 候选面；跨工作任务时由 AI 单独给归属理由。
      - 对 DeepSeek / Qwen / Kimi / 智谱GLM / MiniMax / 豆包 / 混元 等中文头部模型，**任何单一面空都≠无发布**。这类源的 fetch_chain 里通常有多个抓取面（API changelog、HuggingFace 组织 `sort=created`、GitHub 组织 `sort=updated`、官方 blog），**每个面只覆盖一部分发布口径**——API changelog 记的是接口变更，开源权重的发布第一现场是 HF。所以 cn_labs 的判空规则比通则更严：**即使命中层是 `feed`，只要链里还有没走到的抓取面，就必须继续下穿**（finalize 会阻塞停在中途的链）；走完全部抓取面仍空，才可以判该源空，此时不强制再跑 websearch。若还需要更宽的确认，再走 ② websearch_scoped/broad；③ 主流媒体一跳。命中后进入 `candidate_ledger`，官方一手（HF/GitHub release）可保 high，纯媒体按 `media_plus_official_one_hop` / `media_only` 降级。
      - **AI HOT 是中文圈召回对照面**（`aihot.virxact.com/api/v1/items`，匿名只读）。首层使用 `mode=all&window=7d&by=published&limit=100`，在本地按锁定的 manifest 窗口筛选；`selected` 只作为策展参考字段。`all` 仍是经过上游相关性与内容条件过滤的公开池，不能代表原始采集全集，也不能用空池证明“中文圈没有新闻”。
        - **采集时读取 [AI HOT 分页与证据工作流](workflows/aihot-discovery.md)**：保留每页真实 HTTP 状态、响应类型、完整 JSON、请求 URL 与证据哈希，按返回的 `nextCursor` 翻页；翻过窗口起点或上游耗尽才算本窗口覆盖完成。未翻完、请求失败或证据不完整分别如实保留 `partial` / `error`，不得写成 API success 或 empty；非核心聚合面失败可继续走真实的搜索兜底。
@@ -151,8 +152,8 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - 每条候选都要能回答四个问题：最强证据是什么、为什么是今天、为何进入该章节、为什么能或不能进入 `action_items`
      - 严禁使用固定分数阈值、固定厂商排名、固定 Top N 条数决定正文入选与排序
      - 严禁因为“某厂商默认更重要”而跳过窗口硬卡、版本校验或来源闭环
-     - **重大事件判定（major_event）**：当一条 `selected_core` 候选满足「会改变读者的选型决策、或值得当天安排评估」（典型：新一代前沿模型发布、头部 coding agent 重大版本或定价变化、影响选型的重大产品发布）时，标记 `major_event: true`。这是编辑结论，不是分数阈值；每天 0-2 条，宁缺毋滥。
-     - **major_event 默认必标清单**：以下三类事件命中即默认 `major_event: true`——① 新一代前沿主力模型正式发布/GA（Anthropic / OpenAI / Google / Meta / DeepSeek / Qwen 等，如 GPT-5.6、Gemini 3.5 Pro、Claude 新主力）；② 头部 coding agent 重大版本或定价模式变化（Claude Code / Codex / Cursor / Copilot 量级）；③ 影响选型的重大 agent 平台 / 协议发布。命中清单但决定不标的候选，`candidate_ledger` 的 `decision_reason` 必须写明不算 major_event 的理由。
+     - **重大事件判定（major_event）**：当一条 `selected_core` 候选满足「会改变读者的选型决策、或值得当天安排评估」（典型：新一代前沿模型发布、对选型有重大影响的通用/垂直 Agent 版本或定价变化、影响选型的重大产品发布）时，标记 `major_event: true`。这是编辑结论，不是分数阈值；每天 0-2 条，宁缺毋滥。
+     - **major_event 默认必标清单**：以下三类事件命中即默认 `major_event: true`——① 新一代前沿主力模型正式发布/GA（Anthropic / OpenAI / Google / Meta / DeepSeek / Qwen 等，如 GPT-5.6、Gemini 3.5 Pro、Claude 新主力）；② 影响选型的通用/垂直 Agent 重大版本或定价模式变化（不限研发产品）；③ 影响选型的重大 agent 平台 / 协议发布。命中清单但决定不标的候选，`candidate_ledger` 的 `decision_reason` 必须写明不算 major_event 的理由。
 
    **3-0. 窗口硬卡（最高优先级，无例外）**
    - 每条候选条目必须已填写 `published_at`（在 Step 1a 完成）
@@ -188,8 +189,8 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
    - 按对象归类到以下五类：
      - **frontier_models**：模型能力发布、基准测试、开源、API 定价调整
-     - **coding_agents**：明确面向写代码的产品（如 `Codex / Claude Code / Gemini CLI / Jules / Cursor / Copilot / Cline / Aider / Windsurf` 等）；是否进入正文和排序由事件本身决定，不按产品名单预设主次
-     - **general_agents**：通用与办公 Agent 的产品/能力变化，回答任务、变化与使用条件。研究系统安全与一般政策程序归 policy_risk；明确具体产品版本或区域受影响的风险可留产品栏，由 AI 给栏目理由
+     - **vertical_agents**：围绕职业、业务流程或行业交付结果的产品更新，例如研发、产品管理、客服、销售、财务。写代码只是其中一种任务；栏目由本次更新的主要任务与交付结果决定，不按品牌固定归属
+     - **general_agents**：跨任务、跨职能的 Agent 产品/能力变化，可以包括编码；回答任务、变化与使用条件。研究系统安全与一般政策程序归 policy_risk；明确具体产品版本或区域受影响的风险可留产品栏，由 AI 给栏目理由
      - **policy_risk**：政策程序、正式规则、研究安全与行业风险，按独立事件卡呈现
      - **unverified**：观察区 / 待核实区。用于收纳“日期明确、事实链部分成立、但一级证据未闭环”或“官方痕迹存在但信息过薄”的候选，不进入正文判断与行动建议
    - 媒体内容提升规则：高质量媒体（trust: high）的确定消息 → 按对象进入产品或政策风险正文；证据未闭环 → unverified
@@ -214,7 +215,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - 每条候选最终必须落到：`selected_core`、`selected_watch`、`selected_unverified`、`rejected_window`、`rejected_duplicate`、`rejected_weak_evidence`、`rejected_not_ai`、`rejected_low_relevance`
      - 助手必须为每条候选写一句 `decision_reason`，明确说明是保留、降级还是丢弃
 
-3a. **当前状态校验（针对 frontier_models 和 coding_agents）**
+3a. **当前状态校验（针对 frontier_models、general_agents 和 vertical_agents）**
 
    对于涉及具体**模型版本号**或**产品版本号**的条目，在写入 JSON 前必须验证该版本是否为当前最新：
 
@@ -251,7 +252,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
 3b-1. **模型能力卡（正文必读，不依赖独立专题邮件）**
 
-   - 新生成日报使用 `version: "1.2"`；历史 `1.0/1.1` 仍可重渲染。每条 `frontier_models` 必填 `model_assessment`，不以 `major_event` 为前提。新模型、能力更新、评测事件应填写 `status: assessed`；查不到分数用 `insufficient_evidence` 并列明查过哪些评测面、未取得什么；纯调价/政策事件用 `not_applicable` 并说明不涉及能力更新。不能为过校验编数字。
+   - 新生成日报使用 `version: "1.3"`；历史 `1.0/1.1/1.2` 仍可重渲染。每条 `frontier_models` 必填 `model_assessment`，不以 `major_event` 为前提。新模型、能力更新、评测事件应填写 `status: assessed`；查不到分数用 `insufficient_evidence` 并列明查过哪些评测面、未取得什么；纯调价/政策事件用 `not_applicable` 并说明不涉及能力更新。不能为过校验编数字。
    - **采集目标**：打开官方发布页、model/system card、技术报告的评测表及脚注；再查至少一个独立评测面。图表在图片/PDF中时应读取图表，不能只读标题摘要。优先选能解释强项与短板的代表性项目，通常覆盖编码、推理/知识、Agent/工具、多模态或长上下文中与发布相关的维度；没有相关数据就写缺口，不强凑固定数量。
    - **结构**：`conclusion` 先给综合判断：能力处于什么位置、相对谁有何优势、成本是否划算、适合什么任务及主要边界。不能只写“值得关注/验证、尚不能全面替代”。`groups[]` 按评测来源/条件分组，每组必填 `title / source_name / source_url / evidence_type / observed_at / conditions / metrics`。`evidence_type` 为 `vendor_reported / independent / team_test`；跨页面对照的来源写 `supporting_sources[{source_name, source_url}]`，组内核验时间覆盖这些页面。全部主来源和对照来源必须在 `fetch_status.source_details.*.attempts` 中有成功的精确 URL 抓取记录，并补到候选的 `source_attempt_refs`。
    - **每项评测**：填 `benchmark`（含版本）、`what_it_tests`（用中文解释测什么）、`model_variant`（具体型号和推理档位）、数值 `score`、`unit`、`direction`、`comparators[{model_variant, score}]`、`interpretation`。优先带上一代和有决策价值的竞品/同系列对照；取不到对照则空数组并说明缺口。不得把综合指数写成百分制成绩，也不得把 Elo 当正确率。
@@ -265,9 +266,9 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
    - 顶层 `reading_guide` 写 0-4 条“今日核心判断”，每条 `{text, ref}` 必须回指正文，最多 160 字；安静日允许空。模型条目优先写“型号与定位 → 关键能力对照 → 成本优势或代价 → 适用任务/关键边界”，正文已有的决定性数字不要省成模糊形容词。不得只写“值得看/有进步/仍需验证”，不得只列风险、不交代已成立的价值，也不得复述新闻标题。每个价格/分数在正文可查到同口径来源；无法判断就具体说明缺哪个证据。
    - **读者验收**：只看开头应能回答“这款模型相对谁处于什么位置、为何值得用或不值得、适合什么任务”。HTML 的模型能力卡导读显示“查看详评”，普通产品和风险显示“查看详情”，钉钉导读不追加重复标题。两端正文语义层级为 H1 报告 → H2 栏目 → H3 模型/事件 → H4 能力评测 → H5 评测分组；不得靠同级大字或空行模拟从属关系。钉钉发布必须回读真实块级标题验收，详见同步工作流。
-   - 展示顺序固定为：模型 → Coding Agent → 通用与办公 Agent → 政策与风险观察 → 硬数据 → 跨条目模式 → 决策雷达 → 落地建议 → 建议实验 → 生态实践 → 方法论 → 待核实。目录、正文和终端简版保持一致。
+   - 展示顺序固定为：模型 → 通用 Agent → 垂直领域 Agent → 政策与风险观察 → 硬数据 → 跨条目模式 → 决策雷达 → 落地建议 → 建议实验 → 生态实践 → 方法论 → 待核实。目录、正文和终端简版保持一致。
    - **各层各司其职**：正文说事实与证据；模式只写至少两条事件合起来才成立的新判断；雷达说明哪个在途决策改变、哪个门槛尚未跨过；建议写是否行动、投入与验收；实验只写执行步骤与产物。每层不能只是换句话重复“值得小范围试点”。
-   - 同一事件横跨模型与 Coding 工具时，模型节讲能力，工具节只讲接入、额度与管理增量。没有新分析时压缩观察段，空板块用一句说明，不凑趋势。把内部 ref 显示成文章标题，避免读者看到数组索引。
+   - 同一事件横跨模型与 Agent 产品时，模型节讲能力，工具节只讲接入、额度与管理增量。没有新分析时压缩观察段，空板块用一句说明，不凑趋势。把内部 ref 显示成文章标题，避免读者看到数组索引。
    - 读者身份来自 `profile.yaml`，不要套泛化的“四角色”模板。具体型号的接入入口、评测配置与实验对象需逐一对应，不能因一款已接入某工具就假设另一款也已接入。
 
 3b-3. **按需选型研究（独立专题）**
@@ -286,7 +287,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - `practice_case`：工程实践 / 团队落地复盘。日报只写 1-2 句导读 + 链接，深读进周报
      - `tool_release`：值得关注的工具发布
    - **准入窗口与新闻线不同**：放宽为"7 天内首次达到阈值 / 首次被收录"，但 `relevance` 必须锚定 profile.yaml 的 `practice_focus` 或某个角色——不泛收一切 AI 热门
-   - 生态条目不进入 `action_items` 依据，可作为 `experiments_this_week` 的素材
+   - 生态条目不进入 `action_items` 依据，可启发实验设计；正式 `experiments_this_week.related_item_refs` 仍须引用合格 Agent 产品正文，不能以生态引用替代
    - 空则 `items: []` + `empty_message`，不凑数
 
 3d. **负责人访谈发现与文稿（interview，独立邮件，非核心源、不阻塞日报）**
@@ -312,11 +313,11 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - 锚定 `profile.yaml > practice_focus` + 范式网（spec-driven / harness / loop engineering 等），不泛收一切 AI 热点。
    - **不进 `action_items` 依据**；`hook` 是单向的（radar → experiment/建议）。
 
-4. **产出 coding_agents 深度观察**
-   - 从 coding_agents.items 中挑最值得关注的 1 条
-   - 写 150-250 字中文分析，填入 `deep_dive.body`
-   - **安静日放宽**：当 frontier_models + coding_agents + general_agents 总条目 ≤ 4 时，deep_dive 字数上限放宽到 **150-400 字**，允许更深入的趋势分析和背景解读
-   - 若当日无 coding_agents 进展：仍写一段观察（可围绕"本周无新动作，建议保持观察"或近期延续话题）
+4. **复核两类 Agent 的任务与分析增量**
+   - 两栏共用任务卡；`task_domain` 为开放领域文本，`capability_layer` 为 execution（直接完成任务）或 platform（平台与协作能力），与 `usage_mode` 的自主程度分别判断。
+   - 通用与垂直候选的台账均填写相同的领域/层级值，`section_reason` 解释本次事件归属；脚本只核对一致性，不替 AI 归类。
+   - 不再要求研发栏单独填深度观察，也不因空栏制造观察。独立事件的意义写 impact，跨事件分析写 pattern_observations；需要比较选型时走独立专题。
+   - 发稿前对照 profile 的 `agent_task_coverage` 检查非研发领域的遗漏与访问缺口；有价值的弱信号完整进入候选台账，不能因为当天不入正文就省略补证记录。
 
 5. **抓取并解析硬数据（market_signals）**
    - 对 `whitelist.yaml > hard_data` 4 个源走标准 fetch_chain（LMArena / Artificial Analysis / OpenRouter / HuggingFace Trending）
@@ -332,14 +333,14 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - OpenRouter：与上一轮抓取（`cache/{prev_date}/report.json`）对比 → `pricing_changes`；首次运行无上一轮则 `[]`
    - 基于 benchmark 快照写 1-3 条一句话 `capability_gaps`
    - `benchmark_changes` 只写有前后基线的真实变化；没有 old/new 或 rank delta 时，不得写“上升、下降、扩大领先、超越”等变化性措辞。
-   - `benchmark_watch` 写新评分、新上榜、当天快照或缺稳定基线的榜单观察，必须有 `observed_at`、source 与有效 `ref`；每个 `benchmark_watch` item 的 `ref` 都必须指向相关正文条目：`frontier_models[i]`、`coding_agents[i]` 或 `general_agents[i]`。
+   - `benchmark_watch` 写新评分、新上榜、当天快照或缺稳定基线的榜单观察，必须有 `observed_at`、source 与有效 `ref`；每个 `benchmark_watch` item 的 `ref` 都必须指向相关正文条目：`frontier_models[i]`、`vertical_agents[i]` 或 `general_agents[i]`。
    - `capability_gaps` 是解释层；涉及 benchmark / leaderboard / score / pricing 时，必须引用 `benchmark_changes`、`benchmark_watch`、`pricing_changes` 或正文 item ref。
    - 任一子数组有内容即可；只有 `benchmark_changes / benchmark_watch / pricing_changes / capability_gaps` 全空时，才填 `empty_message: "今日无显著硬数据变化"`
    - 4 个 hard_data 源同样写入 `fetch_status.source_details`
    - **hard_data 不进 core_sources**：失败不阻塞日报
 
 6. **跨条目模式识别（pattern_observations）**
-   - 写完 frontier / coding / general 三节后，反思是否有 ≥2 条可归入同一主题
+   - 写完 frontier / general / vertical 三节后，反思是否有 ≥2 条可归入同一主题
    - 有 → 写入 `pattern_observations.items`（日报 0-3 条，允许空）
    - 每条必须填：
      - `theme`（≤60 字）
@@ -349,7 +350,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - **严禁为凑数强行合并**
 
 7. **生成本期实验（experiments_this_week）**
-   - 基于本期 coding_agents / general_agents 最值得一试的工具或能力，**0-1 条**可执行实验
+   - 基于本期 vertical_agents / general_agents 最值得一试的工具或能力，**0-1 条**可执行实验
    - 字段：`{title, hypothesis, steps[2..5], time_budget_hours.{min,max}, expected_output, required_skills[1..4]}`
    - **`time_budget_hours.max ≤ 8` 小时**；产出必须是单一可衡量结果
    - 每条实验必须标 `audience`：`team_pilot`（设计为 2-3 人小范围团队试点，expected_output 必须是可向上汇报的度量结果）或 `personal_workflow`（个人当天/当周可试的新用法）。按当日素材选最合适的受众，不强行轮换
@@ -364,7 +365,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - `unverified` 条目不得进入雷达
 
 8. **推导当日落地建议（action_items）**
-   - **引用当日产品与风险正文**（frontier_models / coding_agents / general_agents / policy_risk）；硬数据通过对应产品条目提供支持，不单独作为行动引用
+   - **引用当日产品与风险正文**（frontier_models / general_agents / vertical_agents / policy_risk）；硬数据通过对应产品条目提供支持，不单独作为行动引用
    - 先列出可引用的 `core/watch` 正文事实，再从这些事实倒推出建议；不要先写建议再反向找依据
    - `unverified` 或仅媒体单源传闻**不得**进入 `action_items`
    - 0-4 条；每条必须携带：
@@ -375,7 +376,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
      - `time_horizon`（this_week / this_month / this_quarter）
      - `team_size_applicability[]`（small_lt_10 / medium_10_50 / large_gt_50）
      - `priority`（P0 / P1 / P2）
-     - `references[]`：每条引用都必须指向 `frontier_models / coding_agents / general_agents / policy_risk` 中的 `core/watch` 条目，逐条满足台账的 action_eligibility，并填写 action_delta
+     - `references[]`：每条引用都必须指向 `frontier_models / general_agents / vertical_agents / policy_risk` 中的 `core/watch` 条目，逐条满足台账的 action_eligibility，并填写 action_delta
    - **多样性硬约束**：items ≥ 3 时 `recommendation_type` 必须出现 ≥3 种不同值；不允许全 patch / 全 monitor
    - **范围约束**：`effort_person_days.max ≤ effort_person_days.min × 3`
    - 写作语气必须回答"是否下注 / 何时下注 / 下注多少人日"，不是"怎么打补丁"
@@ -383,9 +384,9 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - 空时 `items: []` + `empty_message: "今日无明显行动项，延续近期建议。"`
 
 9. **产出结构化 JSON**
-   - 日报 1.2 必填 `coverage_summary`（1—1200 字符）：由 AI 合并与读者判断相关的来源缺口、覆盖范围和影响，不复制逐次抓取审计。覆盖充分时也写清核对范围，不宣称穷尽行业。详细原始限制保留在 evidence 与 source_details；空栏目用自己的 empty_message 说明原因。
+   - 日报 1.3 必填 `coverage_summary`（1—1200 字符）：由 AI 合并与读者判断相关的来源缺口、覆盖范围和影响，不复制逐次抓取审计。覆盖充分时也写清核对范围，不宣称穷尽行业。详细原始限制保留在 evidence 与 source_details；空栏目用自己的 empty_message 说明原因。
    - 严格遵循 `schemas/daily_report.schema.json`
-   - 字段约束：新日报 `version: "1.2"`、`type: "daily"`、`date`、`window`（带时区）、`generated_at`、`reading_guide`、**十二个 `sections`**（frontier_models / coding_agents / general_agents / policy_risk / market_signals / pattern_observations / decision_radar / action_items / experiments_this_week / agent_ecosystem / methodology_radar / unverified）、`fetch_status`。历史 `1.0/1.1` 兼容读取；不要用旧版本跳过新日报能力卡要求。
+   - 字段约束：新日报 `version: "1.3"`、`type: "daily"`、`date`、`window`（带时区）、`generated_at`、`reading_guide`、**十二个 `sections`**（frontier_models / general_agents / vertical_agents / policy_risk / market_signals / pattern_observations / decision_radar / action_items / experiments_this_week / agent_ecosystem / methodology_radar / unverified）、`fetch_status`。历史 `1.0/1.1/1.2` 兼容读取；不要用旧版本跳过新日报能力卡要求。
    - **章节标题契约**：`sections.*.title` 只写纯语义标题（如 `模型动态`、`方法论雷达`），不得写 `一、`、`三a、`、`6.` 等展示编号；日报/周报模板是章节编号的唯一真源，schema 会在渲染前拒绝带编号标题。
    - **每条产品正文章目必须填 `release_stage` / `published_at_confidence` / `authority_score` / `editorial_tier`**（schema required，缺失会被 render 阶段拒绝）
    - **`fetch_status.source_details`** 必须记录所有走过 fetch_chain 的源（含降级路径），渲染层会展示降级路径供巡检
@@ -446,12 +447,11 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
         · {item 2 headline}
         ...（最多显示 2 条，其余用「还有 N 条」表示）
 
-      二、Coding Agent 专项
+      二、通用 Agent
         · {item 1 headline}
         · {item 2 headline}
-        深度观察：{deep_dive.title}（详见 HTML）
 
-      三、通用与办公 Agent
+      三、垂直领域 Agent
         · {item 1 headline}
         ...
 
@@ -515,9 +515,9 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
 3. **聚合 & 去重 & 归纳**
    - 按模型提供方聚合 frontier_models 条目 → `vendor_groups`
-   - 按产品聚合 coding agent 条目 → `product_groups`
-   - 新版通用与办公 Agent 使用有类型的 `items`，按任务归纳；政策风险独立 `policy_risk.items`。跨栏目归纳保留原日报引用并说明 origin_classification_note；旧双数组仅在周报 1.0 历史读取中保留
-   - 每个 vendor_group / product_group 必须填 `weekly_changes / trend_judgment / implication / references`（三段式观察深度**二/三/四节保持一致**）
+   - 按任务与产品归纳 `general_agents.items` 和 `vertical_agents.items`；两栏每项均含 product / task_domain / capability_layer / use_case / weekly_changes / implication / references，栏级 trend_judgment / implication 只写有独立增量的判断，允许空字符串。
+   - 混合版本日报逐事件重审归属，历史 coding 栏不得整体搬入垂直栏，历史 general 也不得整体沿用；引用保留原日期、原 section、原 headline，跨栏目必须说明 origin_classification_note，不改历史归档。
+   - 政策风险独立 `policy_risk.items`。旧周报 product_groups / 双数组仅用于历史读取；模型 vendor_group 继续使用 weekly_changes / trend_judgment / implication / references。
 
 3a. **聚合本周硬数据（market_signals）**
    - 新版日报的 `model_assessment` 是模型能力证据输入：归纳时保留具体型号、来源与可比条件，不能只提取总分；不得把不同框架或指数版本合成周级排名。
@@ -531,7 +531,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
    - 字段同日报：`theme` / `supporting_item_refs` / `interpretation_for_tech_lead`（100-220 字）
 
 3c. **生成本周实验（experiments_this_week）**
-   - 0-3 条；每条 related_item_refs 必须非空且仅引用 coding_agents/general_agents
+   - 0-3 条；每条 related_item_refs 必须非空且仅引用 vertical_agents/general_agents
    - 每条 `time_budget_hours.max ≤ 16`（周报上限），可在 1 周内完成
    - 字段：`{title, hypothesis, steps[2..5], time_budget_hours.{min,max}, expected_output, required_skills[1..4]}`
    - 每条实验必须标 `audience`（team_pilot / personal_workflow）。若本周日报素材足够，1-3 条实验应覆盖两种受众各至少一次；素材不足时不强凑，但要在 hypothesis 里说明为何只面向单一受众
@@ -555,7 +555,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 
 5. **产出周报 JSON**
    - 严格遵循 `schemas/weekly_report.schema.json`
-   - 新周报 `version: "1.1"`，**十二章节**：`tldr / frontier_models / coding_agents / general_agents / policy_risk / market_signals / pattern_observations / experiments_this_week / practice_digest / methodology_radar / action_items / next_week_signals`
+   - 新周报 `version: "1.2"`，**十二章节**：`tldr / frontier_models / general_agents / vertical_agents / policy_risk / market_signals / pattern_observations / experiments_this_week / practice_digest / methodology_radar / action_items / next_week_signals`
    - **章节标题契约**：`sections.*.title` 只写纯语义标题，不携带 `一、`、`1.` 等展示编号；周报模板统一负责 `一、` 至 `十二、` 的展示编号。
    - 顶层必填 `week_end`（YYYY-MM-DD，窗口结束日）
    - TL;DR 3-5 条
@@ -599,11 +599,11 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 ## 归类规则
 
 - **frontier_models**：纯模型能力（新模型发布、benchmark、开源权重、API 定价等）。不含产品化的 coding agent、通用 agent。
-- **coding_agents**：明确面向写代码的产品。**不包括**只是"某 AI 助手支持写代码"的通用产品（那些进 general_agents）。
-- **general_agents**：通用与办公 Agent 产品变化；必填任务、变化、能力形态、可用条件、影响及证据边界。
+- **vertical_agents**：围绕职业/流程/行业结果设计的 Agent，包括研发、产品管理、客服、销售、财务等；task_domain 用开放文本标记具体领域，不设行业配额。
+- **general_agents**：跨任务 Agent 产品变化，包含其编码能力；与垂直栏共同使用任务卡。两栏必填任务、变化、能力形态、可用条件、影响、证据边界、task_domain 与 capability_layer。
 - **policy_risk**：政策程序、正式规则、研究安全和行业风险；与产品可用性直接相关的具体风险可留产品栏，按事件逐一说明。
 - **unverified**：观察区 / 待核实区。可包含非权威源消息、单一媒体信息、早期爆料，也可包含“官方痕迹存在但信息过薄”的信号；共同点是它们都不应直接驱动正文强结论与行动建议。
-- **落地建议**：从 frontier_models / coding_agents / general_agents / policy_risk 的 core/watch 事实推导，逐依据校验行动资格与新增投入。`unverified` 里的内容**不作为**建议依据。
+- **落地建议**：从 frontier_models / general_agents / vertical_agents / policy_risk 的 core/watch 事实推导，逐依据校验行动资格与新增投入。`unverified` 里的内容**不作为**建议依据。
 - **agent_ecosystem**：生态与实践信号（热门仓库、skills/插件、实践案例、工具发布）。不是新闻，准入窗口放宽到 7 天首见；不作为 action_items 依据。
 - **decision_radar**：编辑结论层，只引用当日 core/watch 正文条目，按 profile.yaml 在途决策分组。
 - **methodology_radar**：方法论/范式/工具思潮（spec-driven / harness / loop engineering 等）。日报捕获 + 周报聚合，宽准入窗口（7 天首见）+ 30 天 cooldown（advisory，不阻断投递）；不作为 action_items 依据，hook 单向连到 experiments/建议。
@@ -642,7 +642,7 @@ description: 生成 AI 行业日报或周报。覆盖模型、Coding Agent、通
 | `headline` | ≤ 30 字 |
 | `summary` | ≤ 40 字 |
 | `impact` | ≤ 30 字 |
-| 深度观察 `body` | 150-250 字（安静日 ≤4 条时放宽到 150-400 字） |
+| 两类 Agent 任务卡 | 领域、层级、任务、变化、执行方式、条件、影响与证据边界；分析不按栏目凑字数 |
 | 日报落地建议 `recommendation` | 一句话，≤ 50 字 |
 | 周报 `weekly_changes` | 3-5 句 |
 | 周报 `trend_judgment` / `implication` | 各一句话 |

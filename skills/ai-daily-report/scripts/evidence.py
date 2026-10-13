@@ -181,7 +181,7 @@ def review_coverage(content: str, receipts: list[dict[str, Any]]) -> dict[str, A
 
 
 def validate_evidence_reviews(report: dict[str, Any], cache_dir: Path | None) -> list[str]:
-    if report.get("version") != "1.2":
+    if report.get("version") not in {"1.2", "1.3"}:
         return []
     if cache_dir is None:
         return ["discovery_review: evidence cache directory is required for daily 1.2"]

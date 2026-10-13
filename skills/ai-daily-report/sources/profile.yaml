@@ -26,6 +26,8 @@ practice_focus:
   - 团队级 agent 工作流（code review / 测试 / CI 集成 / 多 agent 编排）
   - Claude Code / Codex 的 skills、插件、MCP 生态
   - AI coding 推广度量与治理（采纳率、效率度量、权限管控）
+  - 通用 Agent 与垂直 Agent 在同一任务上的交付质量、接管次数和总成本
+  - 产品、客服、销售、财务工作流与跨职能 Agent 协作
 
 # 访谈关注对象：interview 轨道的发现参数化输入。seeds 是种子，AI 可顺名追人/追新职位。
 interview_watchlist:
@@ -43,9 +45,9 @@ interview_watchlist:
     note: DeepMind（Demis Hassabis 等）+ 头部 coding agent 产品负责人（Cursor / GitHub 等）
 
 # 任务矩阵用于补漏和解释相关性，不是固定入选名单或厂商排名。
-workplace_task_coverage:
+agent_task_coverage:
   - task: 研究、检索与资料整理
-    sources: [ChatGPT Enterprise Release Notes, Claude Release Notes, Google Workspace Updates]
+    sources: [ChatGPT Release Notes, ChatGPT Enterprise Release Notes, Claude Release Notes, Google Workspace Updates]
     questions: [可追溯来源, 持续任务, 导出结果]
   - task: 文档、演示、表格与数据工作
     sources: [Microsoft 365 Copilot Release Notes, Claude Release Notes, 飞书更新日志, 钉钉悟空更新日志]
@@ -60,5 +62,20 @@ workplace_task_coverage:
     sources: [ChatGPT Enterprise Release Notes, Microsoft 365 Copilot Release Notes, Claude Release Notes]
     questions: [套餐与区域, 审计, 管理员控制, 数据边界]
   - task: 开放发现
-    sources: [General Agent Search Queries, High-Signal Media Discovery]
+    sources: [General Agent Search Queries, Vertical Agent Search Queries, High-Signal Media Discovery]
     questions: [新对象, 官方补证, 对目标任务的实际价值]
+  - task: 软件研发与交付
+    sources: [OpenAI Codex, Anthropic Claude Code, Cursor, Devin Release Notes, Vertical Agent Search Queries]
+    questions: [代码与测试质量, 合并前验收, 自主执行边界, 人工接管成本]
+  - task: 产品管理与需求协作
+    sources: [ChatPRD Product Releases, Vertical Agent Search Queries]
+    questions: [需求上下文, 可追溯性, 原型与任务交接, 业务验收]
+  - task: 客服与服务运营
+    sources: [Fin Product Updates, Vertical Agent Search Queries]
+    questions: [解决率定义, 转人工, 工单系统写入, 单次成功成本]
+  - task: 销售营销与财务及行业任务
+    sources: [Vertical Agent Search Queries, High-Signal Media Discovery]
+    questions: [业务系统集成, 专业准确性, 结果验收, 国内与海外可用性]
+  - task: Agent 团队管理与跨任务平台
+    sources: [Kortix, Multica Changelog, Agent Ecosystem Discovery]
+    questions: [任务分配, 持续执行, 失败恢复, 权限隔离, 是否只是底层能力]

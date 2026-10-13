@@ -1,4 +1,5 @@
-{% set new_editorial = report.version == "1.1" %}
+{% set new_editorial = report.version in ["1.1", "1.2"] %}
+{% set agent_taxonomy = report.version == "1.2" %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -263,6 +264,32 @@
     {% endfor %}
   </section>
 
+  {% if agent_taxonomy %}
+  {% for section_name, number in [("general_agents", "三"), ("vertical_agents", "四")] %}
+  {% set agent_section = report.sections[section_name] %}
+  <section id="{{ section_name }}">
+    <h2>{{ number }}、{{ agent_section.title }}</h2>
+    {% for item in agent_section["items"] %}
+    <article class="group" id="{{ section_name }}-{{ loop.index0 }}">
+      <h3>{{ item.product }}</h3>
+      <span class="badge">{{ item.task_domain }}</span>
+      {% if item.capability_layer == "platform" %}<span class="badge">平台与协作</span>{% endif %}
+      <p><strong>工作任务：</strong>{{ item.use_case }}</p>
+      <p><strong>本周变化：</strong>{{ item.weekly_changes }}</p>
+      <p><strong>实际影响：</strong>{{ item.implication }}</p>
+      <p class="source">{% for ref in item.references %}<a href="{{ ref.url }}">{{ ref.date }} {{ ref.headline }}</a>{% if ref.origin_classification_note %}（{{ ref.origin_classification_note }}）{% endif %}{% if not loop.last %}；{% endif %}{% endfor %}</p>
+    </article>
+    {% else %}<p>{{ agent_section.empty_message }}</p>{% endfor %}
+    {% if agent_section.trend_judgment or agent_section.implication %}
+    <div class="group">
+      {% if agent_section.trend_judgment %}<p><strong>趋势判断：</strong>{{ agent_section.trend_judgment }}</p>{% endif %}
+      {% if agent_section.implication %}<p><strong>选型含义：</strong>{{ agent_section.implication }}</p>{% endif %}
+    </div>
+    {% endif %}
+  </section>
+  {% endfor %}
+  {% else %}
+  {# Historical weekly structure; do not relabel delivered reports. #}
   <section>
     <h2>三、{{ report.sections.coding_agents.title }}</h2>
     <h3>本周三大变化</h3>
@@ -329,6 +356,8 @@
       <div class="implication">{{ report.sections.general_agents.implication }}</div>
     </div>
   </section>
+
+  {% endif %}
 
   {% if new_editorial %}
   <section id="policy-risk">

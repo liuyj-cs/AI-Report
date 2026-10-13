@@ -2,6 +2,8 @@
 """Discovery-first orchestration for AI-authored daily/weekly reports."""
 from __future__ import annotations
 
+from report_contract import WEEKLY_VERSION
+
 import argparse
 from datetime import date, datetime, timedelta
 import hashlib
@@ -420,7 +422,7 @@ def run_weekly_init(project_root: Path, week_end: str, now_iso: str, env_path: P
     payload = {
         "version": "1.0",
         "type": "weekly_input_days",
-        "expected_report_version": "1.1",
+        "expected_report_version": WEEKLY_VERSION,
         "week_end": week_end,
         "source_days": source_days,
     }

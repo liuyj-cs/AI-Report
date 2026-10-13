@@ -9,8 +9,8 @@ from typing import Any
 from jsonschema import Draft202012Validator
 from evidence import validate_evidence_reviews
 
-PRODUCT_SECTIONS = ("frontier_models", "coding_agents", "general_agents")
-DECISION_SECTIONS = (*PRODUCT_SECTIONS, "policy_risk")
+from report_contract import (decision_sections, product_sections, has_editorial_contract,
+                             uses_agent_taxonomy, expected_ledger_version)
 ACTION_TYPES = {
     "none": set(), "monitor": {"monitor"}, "experiment": {"monitor", "experiment"},
     "full_action": {"patch", "experiment", "adopt", "migrate", "monitor", "hire"},
@@ -18,16 +18,11 @@ ACTION_TYPES = {
 SELECTED = {"selected_core", "selected_watch", "selected_unverified"}
 
 
-def decision_sections(report: dict[str, Any]) -> tuple[str, ...]:
-    new = report.get("version") == ("1.2" if report.get("type") == "daily" else "1.1")
-    return DECISION_SECTIONS if new else PRODUCT_SECTIONS
-
-
 def validate_batch_version(report: dict[str, Any], manifest: dict[str, Any] | None) -> list[str]:
     expected = manifest.get("expected_report_version") if manifest else None
     if expected and report.get("version") != expected:
         return [f"batch version requires {expected}, got {report.get('version')}"]
-    new = report.get("version") == ("1.2" if report.get("type") == "daily" else "1.1")
+    new = has_editorial_contract(report)
     if new and not expected:
         return ["new report requires an initialized version-locked manifest"]
     return []
@@ -44,11 +39,11 @@ def validate_report_schema(report: dict[str, Any]) -> list[str]:
 
 
 def validate_candidate_contract(report: dict[str, Any], ledger: dict[str, Any]) -> list[str]:
-    if report.get("version") != "1.2":
+    if not has_editorial_contract(report):
         return []
     errors = []
-    if ledger.get("version") != "1.1":
-        errors.append("classification: daily 1.2 requires candidate ledger 1.1")
+    if ledger.get("version") != expected_ledger_version(report):
+        errors.append(f"classification: daily {report.get('version')} requires candidate ledger {expected_ledger_version(report)}")
     if ledger.get("date") != report.get("date"):
         errors.append("classification: report and ledger dates must match")
     selected = {}
@@ -61,8 +56,8 @@ def validate_candidate_contract(report: dict[str, Any], ledger: dict[str, Any]) 
         if cid in ids:
             errors.append(f"{label} duplicate candidate_id")
         ids.add(cid)
-        if key[0] == "general_agents" and candidate.get("subject_kind") not in {"product", "capability", "platform"}:
-            errors.append(f"{label} general_agents requires a product/capability/platform subject")
+        if key[0] in {"general_agents", "vertical_agents"} and candidate.get("subject_kind") not in {"product", "capability", "platform"}:
+            errors.append(f"{label} Agent section requires a product/capability/platform subject")
         if candidate.get("decision") in SELECTED:
             if key in selected:
                 errors.append(f"{label} duplicate selected candidate")
@@ -90,7 +85,7 @@ def validate_candidate_contract(report: dict[str, Any], ledger: dict[str, Any]) 
                     errors.append(f"claim_support: {key} direct evidence must be successfully retrieved and reviewed: {ref}")
     actual = {}
     dedup_keys = set()
-    for section in (*DECISION_SECTIONS, "unverified"):
+    for section in (*decision_sections(report), "unverified"):
         for item in report.get("sections", {}).get(section, {}).get("items", []):
             key = (section, item.get("headline"))
             if key in actual:
@@ -107,6 +102,12 @@ def validate_candidate_contract(report: dict[str, Any], ledger: dict[str, Any]) 
         tier = selected[key].get("editorial_tier")
         if key[0] != "unverified" and actual[key].get("editorial_tier") != tier:
             errors.append(f"classification: ledger/report tier mismatch {key}")
+    if uses_agent_taxonomy(report):
+        for key in selected.keys() & actual.keys():
+            if key[0] in {"general_agents", "vertical_agents"}:
+                for field in ("task_domain", "capability_layer"):
+                    if selected[key].get(field) != actual[key].get(field):
+                        errors.append(f"classification: ledger/report {field} mismatch {key}")
     for action in report.get("sections", {}).get("action_items", {}).get("items", []):
         for ref in action.get("references", []):
             item = actual.get((ref.get("section"), ref.get("headline")), {})
@@ -130,14 +131,14 @@ def validate_action_eligibility(report: dict[str, Any], selected: dict[tuple, di
 
 
 def validate_decision_refs(report: dict[str, Any]) -> list[str]:
-    new = report.get("version") == ("1.2" if report.get("type") == "daily" else "1.1")
+    new = has_editorial_contract(report)
     if not new:
         return []
     sections = report.get("sections", {})
     errors = []
     for field, refs_field, allowed in [
-        ("pattern_observations", "supporting_item_refs", DECISION_SECTIONS),
-        ("experiments_this_week", "related_item_refs", ("coding_agents", "general_agents")),
+        ("pattern_observations", "supporting_item_refs", decision_sections(report)),
+        ("experiments_this_week", "related_item_refs", product_sections(report)[1:]),
     ]:
         for i, item in enumerate(sections.get(field, {}).get("items", [])):
             refs = item.get(refs_field, [])
@@ -159,7 +160,7 @@ def validate_decision_refs(report: dict[str, Any]) -> list[str]:
 
 
 def validate_agent_daily(report: dict[str, Any], ledger: dict[str, Any], project_root: Path | None) -> list[str]:
-    if report.get("version") != "1.2":
+    if not has_editorial_contract(report):
         return []
     from editorial import validate_candidate_ledger_schema
     schema_errors = validate_report_schema(report) + validate_candidate_ledger_schema(ledger)
@@ -171,13 +172,15 @@ def validate_agent_daily(report: dict[str, Any], ledger: dict[str, Any], project
 
 
 def validate_agent_weekly(report: dict[str, Any], project_root: Path) -> list[str]:
-    if report.get("version") != "1.1":
+    if not has_editorial_contract(report):
         return []
     errors = validate_report_schema(report)
     if errors:
         return errors
     errors.extend(validate_decision_refs(report))
-    for section in ("general_agents", "policy_risk"):
+    for section in (*product_sections(report)[1:], "policy_risk"):
+        if section == "coding_agents":
+            continue
         for item in report.get("sections", {}).get(section, {}).get("items", []):
             for ref in item.get("references", []):
                 if ref.get("section") != section and not ref.get("origin_classification_note", "").strip():
@@ -194,7 +197,7 @@ def validate_agent_weekly(report: dict[str, Any], project_root: Path) -> list[st
             evidence_root = project_root
             try:
                 daily = json.loads((project_root / "cache" / day / "report.json").read_text(encoding="utf-8"))
-                if daily.get("version") != "1.2":
+                if not has_editorial_contract(daily):
                     evidence_root = project_root / "cache" / "weekly" / report["week_end"] / "evidence_reviews"
                 cache = evidence_root / "cache" / day
                 reviewed = json.loads((cache / "report.json").read_text(encoding="utf-8"))
@@ -202,8 +205,8 @@ def validate_agent_weekly(report: dict[str, Any], project_root: Path) -> list[st
             except (OSError, json.JSONDecodeError) as exc:
                 errors.append(f"action_eligibility: weekly action {i} evidence re-review unavailable: {exc}")
                 continue
-            if reviewed.get("version") != "1.2" or reviewed.get("date") != day or ledger.get("version") != "1.1" or ledger.get("date") != day:
-                errors.append(f"action_eligibility: weekly action {i} requires dated daily 1.2 / ledger 1.1 evidence")
+            if not has_editorial_contract(reviewed) or reviewed.get("date") != day or ledger.get("version") != expected_ledger_version(reviewed) or ledger.get("date") != day:
+                errors.append(f"action_eligibility: weekly action {i} requires dated version-matched daily / ledger evidence")
                 continue
             evidence_errors = validate_agent_daily(reviewed, ledger, evidence_root)
             errors.extend(evidence_errors)
@@ -211,7 +214,7 @@ def validate_agent_weekly(report: dict[str, Any], project_root: Path) -> list[st
                 continue
             errors.extend(validate_candidate_ledger_semantics(ledger))
             errors.extend(validate_source_attempt_refs(reviewed, ledger))
-            matches = [(section, item) for section in DECISION_SECTIONS
+            matches = [(section, item) for section in decision_sections(reviewed)
                        for item in reviewed.get("sections", {}).get(section, {}).get("items", [])
                        if item.get("headline") == ref.get("headline") and item.get("source_url") == ref.get("url")]
             if len(matches) != 1:
@@ -223,4 +226,35 @@ def validate_agent_weekly(report: dict[str, Any], project_root: Path) -> list[st
             selected = {(c.get("proposed_section"), c.get("headline")): c for c in ledger.get("items", []) if c.get("decision") in SELECTED}
             single = {"sections": {"action_items": {"items": [{**action, "references": [{**ref, "section": section}]}]}}}
             errors.extend(validate_action_eligibility(single, selected))
+    return errors
+
+
+def validate_agent_discovery(report: dict[str, Any], manifest: dict[str, Any] | None) -> list[str]:
+    """Check configured cross-domain searches were attempted, not whether news exists."""
+    if not uses_agent_taxonomy(report):
+        return []
+    if manifest is None:
+        return ["agent discovery requires the locked manifest"]
+    from datetime import date, timedelta
+    try:
+        day = date.fromisoformat(manifest["date"])
+    except (KeyError, TypeError, ValueError):
+        return ["agent discovery manifest date is invalid"]
+    groups = {"General Agent Search Queries": manifest.get("general_agent_search_queries", [])}
+    for source in manifest.get("required_sources", []):
+        if source.get("name") == "Vertical Agent Search Queries":
+            groups[source["name"]] = [q for layer in source.get("fetch_chain", []) for q in layer.get("queries", [])]
+    if not groups.get("General Agent Search Queries") or not groups.get("Vertical Agent Search Queries"):
+        return ["agent discovery manifest must include general and vertical search queries"]
+    errors = []
+    details = report.get("fetch_status", {}).get("source_details", {})
+    for name, queries in groups.items():
+        attempted = {a.get("target") for a in details.get(name, {}).get("attempts", [])
+                     if a.get("layer_type") in {"websearch_scoped", "websearch_broad"}
+                     and a.get("result") in {"success", "success_but_empty", "empty", "error"}
+                     and a.get("reason") != "pending discovery"}
+        for query in queries:
+            target = query.replace("{yesterday}", (day - timedelta(days=1)).isoformat()).replace("{date}", day.isoformat())
+            if target not in attempted:
+                errors.append(f"agent discovery: {name} missing query attempt: {target}")
     return errors

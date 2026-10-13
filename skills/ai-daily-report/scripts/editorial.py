@@ -24,16 +24,17 @@ from methodology import load_seen_methodology, validate_methodology_repeats
 from tracking import load_tracking_events, validate_tracking_followup, validate_tracking_refs
 from deep_dive import validate_deep_dives
 from interview import validate_interviews
-from agent_editorial import decision_sections, validate_agent_daily, validate_agent_weekly
+from agent_editorial import decision_sections, validate_agent_daily, validate_agent_weekly, validate_agent_discovery
 from daily_time import validate_daily_time_window
 
-DAILY_REFERENCE_SECTIONS = ("frontier_models", "coding_agents", "general_agents")
-ITEM_REF_PATTERN = re.compile(r"^(?P<section>frontier_models|coding_agents|general_agents|policy_risk)\[(?P<index>\d+)\]$")
+from report_contract import product_sections, has_editorial_contract
+ITEM_REF_PATTERN = re.compile(r"^(?P<section>frontier_models|coding_agents|vertical_agents|general_agents|policy_risk)\[(?P<index>\d+)\]$")
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 
 LEDGER_TO_REPORT_SECTION = {
     "frontier_models": "frontier_models",
     "coding_agents": "coding_agents",
+    "vertical_agents": "vertical_agents",
     "general_agents": "general_agents",
     "unverified": "unverified",
     "policy_risk": "policy_risk",
@@ -366,7 +367,7 @@ def validate_candidate_ledger_semantics(ledger: dict[str, Any]) -> list[str]:
 
 def validate_major_event_consistency(report: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    for section_name in DAILY_REFERENCE_SECTIONS:
+    for section_name in product_sections(report):
         for index, item in enumerate(report.get("sections", {}).get(section_name, {}).get("items", [])):
             label = f"{section_name}[{index}]"
             is_major = bool(item.get("major_event"))
@@ -493,11 +494,13 @@ def _daily_hard_data_candidates(report: dict[str, Any]) -> list[dict[str, Any]]:
     field_map = {
         "frontier_models": ("headline", "summary", "impact", "evidence_quote"),
         "coding_agents": ("headline", "summary", "impact", "evidence_quote"),
-        "general_agents": ("headline", "summary", "what_changed", "impact", "availability", "evidence_quote") if report.get("version") == "1.2" else ("headline", "summary", "heat_signal", "evidence_quote"),
+        "vertical_agents": ("headline", "summary", "what_changed", "impact", "availability", "evidence_quote"),
+        "general_agents": ("headline", "summary", "what_changed", "impact", "availability", "evidence_quote") if has_editorial_contract(report) else ("headline", "summary", "heat_signal", "evidence_quote"),
     }
     identity_map = {
         "frontier_models": ("vendor", "headline", "summary"),
         "coding_agents": ("product", "headline", "summary"),
+        "vertical_agents": ("product", "headline", "summary"),
         "general_agents": ("product", "vendor", "headline", "summary"),
     }
     for section_name, fields in field_map.items():
@@ -551,9 +554,15 @@ def _weekly_hard_data_candidates(report: dict[str, Any]) -> list[dict[str, Any]]
                     "note": _explicit_hard_data_note(item),
                 }
             )
+    for index, item in enumerate(report.get("sections", {}).get("vertical_agents", {}).get("items", [])):
+        if _has_hard_data_signal(item, ("weekly_changes", "implication")):
+            candidates.append({"section": "vertical_agents", "index": index,
+                "ref": f"vertical_agents[{index}]", "headline": item.get("product", ""),
+                "source_name": "weekly_vertical_agents", "identity_fields": ("product", "weekly_changes"),
+                "item": item, "note": _explicit_hard_data_note(item)})
     general_index = 0
     general = report.get("sections", {}).get("general_agents", {})
-    for bucket_name in (("items",) if report.get("version") == "1.1" else ("newcomers", "big_lab_moves")):
+    for bucket_name in (("items",) if has_editorial_contract(report) else ("newcomers", "big_lab_moves")):
         for item in general.get(bucket_name, []):
             if _has_hard_data_signal(item, ("headline", "weekly_changes", "implication")):
                 candidates.append(
@@ -614,11 +623,7 @@ def market_signal_consistency_findings(report: dict[str, Any], target_kind: str)
 
 def _daily_item_counts(report: dict[str, Any]) -> dict[str, int]:
     sections = report.get("sections", {})
-    return {
-        "frontier_models": len(sections.get("frontier_models", {}).get("items", [])),
-        "coding_agents": len(sections.get("coding_agents", {}).get("items", [])),
-        "general_agents": len(sections.get("general_agents", {}).get("items", [])),
-    }
+    return {name: len(sections.get(name, {}).get("items", [])) for name in product_sections(report)}
 
 
 def _validate_item_ref(label: str, ref: str, counts: dict[str, int]) -> list[str]:
@@ -734,7 +739,7 @@ def validate_sparse_day_restraint(report: dict[str, Any]) -> list[str]:
     """稀薄日（正文 ≤2 条）action_items 最多 1 条——宁可明说"今日信号不足"也不放大。"""
     sections = report.get("sections", {})
     total = sum(
-        len(sections.get(name, {}).get("items", [])) for name in DAILY_REFERENCE_SECTIONS
+        len(sections.get(name, {}).get("items", [])) for name in product_sections(report)
     )
     actions = sections.get("action_items", {}).get("items", [])
     if total <= SPARSE_DAY_ITEM_THRESHOLD and len(actions) > 1:
@@ -754,8 +759,9 @@ def _weekly_item_counts(report: dict[str, Any]) -> dict[str, int]:
     return {
         "frontier_models": len(sections.get("frontier_models", {}).get("vendor_groups", [])),
         "coding_agents": len(sections.get("coding_agents", {}).get("product_groups", [])),
-        "general_agents": len(general.get("items", [])) if report.get("version") == "1.1" else len(general.get("newcomers", [])) + len(general.get("big_lab_moves", [])),
-        "policy_risk": len(sections.get("policy_risk", {}).get("items", [])) if report.get("version") == "1.1" else 0,
+        "vertical_agents": len(sections.get("vertical_agents", {}).get("items", [])),
+        "general_agents": len(general.get("items", [])) if has_editorial_contract(report) else len(general.get("newcomers", [])) + len(general.get("big_lab_moves", [])),
+        "policy_risk": len(sections.get("policy_risk", {}).get("items", [])) if has_editorial_contract(report) else 0,
     }
 
 
@@ -899,8 +905,8 @@ def _iter_weekly_reference_lists(report: dict[str, Any]) -> list[tuple[str, list
         refs.append((f"sections.coding_agents.product_groups[{index}]", group.get("references", [])))
     for index, group in enumerate(actions):
         refs.append((f"sections.action_items.items[{index}]", group.get("references", [])))
-    if report.get("version") == "1.1":
-        for section in ("general_agents", "policy_risk"):
+    if has_editorial_contract(report):
+        for section in ("general_agents", "vertical_agents", "policy_risk"):
             for index, item in enumerate(report.get("sections", {}).get(section, {}).get("items", [])):
                 refs.append((f"sections.{section}.items[{index}]", item.get("references", [])))
     return refs
@@ -1006,6 +1012,7 @@ def validate_daily_artifacts(
     errors.extend(validate_daily_time_window(report, ledger, manifest))
     errors.extend(validate_core_source_failures(report, whitelist))
     errors.extend(validate_agent_daily(report, ledger, project_root))
+    errors.extend(validate_agent_discovery(report, manifest))
     errors.extend(validate_candidate_ledger_schema(ledger))
     errors.extend(validate_fetch_status_integrity(report, whitelist))
     errors.extend(validate_source_attempt_refs(report, ledger))

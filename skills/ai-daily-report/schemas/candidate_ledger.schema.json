@@ -4,7 +4,11 @@
   "type": "object",
   "required": ["version", "type", "date", "generated_at", "items"],
   "properties": {
-    "version": {"enum": ["1.0", "1.1"]},
+    "version": {"enum": [
+      "1.0",
+      "1.1",
+      "1.2"
+    ]},
     "type": {"const": "daily_candidate_ledger"},
     "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
     "generated_at": {"type": "string"},
@@ -36,7 +40,14 @@
       "properties": {
         "candidate_id": {"type": "string", "minLength": 1},
         "headline": {"type": "string", "minLength": 1},
-        "proposed_section": {"enum": ["frontier_models", "coding_agents", "general_agents", "unverified", "policy_risk"]},
+        "proposed_section": {"enum": [
+          "frontier_models",
+          "coding_agents",
+          "general_agents",
+          "unverified",
+          "policy_risk",
+          "vertical_agents"
+        ]},
         "published_at": {"type": "string", "minLength": 1},
         "source_attempt_refs": {
           "type": "array",
@@ -81,7 +92,19 @@
             },
             "additionalProperties": false
           }
+        },
+        "task_domain": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "capability_layer": {
+          "enum": [
+            "execution",
+            "platform"
+          ]
         }
+
       },
       "allOf": [
         {
@@ -103,15 +126,91 @@
     {
       "if": {
         "properties": {
-          "version": {"const": "1.1"}
+          "version": {
+            "enum": [
+              "1.1",
+              "1.2"
+            ]
+          }
         },
-        "required": ["version"]
+        "required": [
+          "version"
+        ]
       },
       "then": {
         "properties": {
           "items": {
             "items": {
-              "required": ["subject_kind", "section_reason", "claim_support"]
+              "required": [
+                "subject_kind",
+                "section_reason",
+                "claim_support"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "version": {
+            "const": "1.2"
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "then": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "proposed_section": {
+                  "enum": [
+                    "frontier_models",
+                    "general_agents",
+                    "vertical_agents",
+                    "policy_risk",
+                    "unverified"
+                  ]
+                }
+              },
+              "if": {
+                "properties": {
+                  "proposed_section": {
+                    "enum": [
+                      "general_agents",
+                      "vertical_agents"
+                    ]
+                  }
+                },
+                "required": [
+                  "proposed_section"
+                ]
+              },
+              "then": {
+                "required": [
+                  "task_domain",
+                  "capability_layer"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "proposed_section": {
+                  "not": {
+                    "const": "vertical_agents"
+                  }
+                }
+              }
             }
           }
         }
