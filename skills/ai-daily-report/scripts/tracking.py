@@ -91,19 +91,29 @@ def validate_tracking_refs(
 
 def validate_tracking_followup(
     report: dict[str, Any],
-    project_root: Path,
-    preloaded: tuple[list[dict[str, Any]], list[str]] | None = None,
+    manifest: dict[str, Any] | None,
+    preloaded: tuple[list[dict[str, Any]], list[str]],
 ) -> list[str]:
-    """追踪期内（开档次日起）每个活跃事件必须有定向搜索留痕，否则 5 天追踪期只是摆设。"""
+    """只核验初始化时锁定的活跃事件，避免后续新增档案改写历史验收。"""
     errors: list[str] = []
     target_date = str(report.get("date", ""))
     try:
         target = date.fromisoformat(target_date)
     except ValueError:
         return errors  # 日期非法由 validate_tracking_refs 负责报错
-    events, _ = preloaded if preloaded is not None else load_tracking_events(project_root)
+    if manifest is None or "active_tracking" not in manifest:
+        if report.get("version") == "1.2":
+            return ["daily 1.2 manifest missing locked active_tracking"]
+        return []  # 历史日报没有本批次追踪锁，不追溯要求后来出现的档案
+    events, _ = preloaded
+    locked_slugs = {event["event_slug"] for event in manifest["active_tracking"]}
+    by_slug = {event["event_slug"]: event for event in events}
     source_details = report.get("fetch_status", {}).get("source_details", {})
-    for event in events:
+    for slug in locked_slugs:
+        event = by_slug.get(slug)
+        if event is None:
+            errors.append(f"locked active tracking {slug!r} has no valid tracking file")
+            continue
         opened = date.fromisoformat(event["opened_date"])
         if not (is_active_event(event, target) and opened < target):
             continue

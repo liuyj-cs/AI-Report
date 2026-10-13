@@ -21,7 +21,7 @@ from editorial import (
 
 
 def _daily_manifest(report):
-    return {"date": report["date"], "window": deepcopy(report["window"])}
+    return {"date": report["date"], "window": deepcopy(report["window"]), "active_tracking": []}
 
 
 def _minimal_report_with_fetch_status(sample_daily_report, finalized_fetch_status, whitelist):

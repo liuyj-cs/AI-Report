@@ -1026,7 +1026,7 @@ def validate_daily_artifacts(
         # 一次加载（含 schema 校验）供两个 tracking 校验共用，避免双读 cache/tracking/*.json
         tracking_preloaded = load_tracking_events(project_root)
         errors.extend(validate_tracking_refs(report, project_root, preloaded=tracking_preloaded))
-        errors.extend(validate_tracking_followup(report, project_root, preloaded=tracking_preloaded))
+        errors.extend(validate_tracking_followup(report, manifest, tracking_preloaded))
         errors.extend(validate_deep_dives(report, project_root))
         errors.extend(validate_interviews(str(report.get("date", "")), project_root))
         errors.extend(

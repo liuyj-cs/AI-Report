@@ -111,7 +111,7 @@ def test_followup_requires_tracking_surface(tmp_path):
 
     _write_tracking(tmp_path, "claude-x", "2026-07-01", "2026-07-05")
     report = {"date": "2026-07-02", "fetch_status": {"source_details": {}}}
-    errors = validate_tracking_followup(report, tmp_path)
+    errors = validate_tracking_followup(report, {"active_tracking": [{"event_slug": "claude-x"}]}, load_tracking_events(tmp_path))
     assert len(errors) == 1
     assert "claude-x" in errors[0]
 
@@ -133,7 +133,7 @@ def test_followup_passes_with_attempt(tmp_path):
             }
         },
     }
-    assert validate_tracking_followup(report, tmp_path) == []
+    assert validate_tracking_followup(report, {"active_tracking": [{"event_slug": "claude-x"}]}, load_tracking_events(tmp_path)) == []
 
 
 def test_followup_exempts_opening_day(tmp_path):
@@ -141,7 +141,24 @@ def test_followup_exempts_opening_day(tmp_path):
 
     _write_tracking(tmp_path, "claude-x", "2026-07-02", "2026-07-05")
     report = {"date": "2026-07-02", "fetch_status": {"source_details": {}}}
-    assert validate_tracking_followup(report, tmp_path) == []
+    assert validate_tracking_followup(report, {"active_tracking": [{"event_slug": "claude-x"}]}, load_tracking_events(tmp_path)) == []
+
+
+def test_followup_ignores_tracking_file_created_after_manifest(tmp_path):
+    from tracking import validate_tracking_followup
+
+    _write_tracking(tmp_path, "later-added", "2026-07-01", "2026-07-05")
+    report = {"date": "2026-07-02", "fetch_status": {"source_details": {}}}
+    assert validate_tracking_followup(report, {"active_tracking": []}, load_tracking_events(tmp_path)) == []
+
+
+def test_followup_requires_manifest_lock_for_new_report(tmp_path):
+    from tracking import validate_tracking_followup
+
+    report = {"version": "1.2", "date": "2026-07-02", "fetch_status": {"source_details": {}}}
+    assert "missing locked active_tracking" in validate_tracking_followup(report, None, load_tracking_events(tmp_path))[0]
+    report["version"] = "1.1"
+    assert validate_tracking_followup(report, None, load_tracking_events(tmp_path)) == []
 
 
 def test_manifest_lists_tracking_surfaces():

@@ -263,7 +263,7 @@
       "required": ["vendor", "vendor_region", "headline", "summary", "impact", "source_name", "source_url", "confidence", "release_stage", "published_at_confidence", "authority_score", "editorial_tier"],
       "properties": {
         "vendor": {"type": "string"},
-        "vendor_region": {"enum": ["US", "CN"]},
+        "vendor_region": {"enum": ["US", "CN", "EU"]},
         "headline": {"type": "string", "maxLength": 40},
         "summary": {"type": "string", "maxLength": 80},
         "impact": {"type": "string", "maxLength": 60},

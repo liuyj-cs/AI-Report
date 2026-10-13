@@ -218,7 +218,7 @@
       "required": ["vendor", "vendor_region", "weekly_changes", "trend_judgment", "implication", "references"],
       "properties": {
         "vendor": {"type": "string"},
-        "vendor_region": {"enum": ["US", "CN"]},
+        "vendor_region": {"enum": ["US", "CN", "EU"]},
         "weekly_changes": {"type": "string"},
         "trend_judgment": {"type": "string"},
         "implication": {"type": "string"},

@@ -323,13 +323,13 @@
 <div class="action-item">
   <div class="head">
     <span class="badge badge-tier">{{ item.priority }}</span>
-    <span class="badge badge-rec-{{ item.recommendation_type }}">{{ item.recommendation_type | upper }}</span>
-    <span class="badge badge-horizon">{{ item.time_horizon }}</span>
+    <span class="badge badge-rec-{{ item.recommendation_type }}">{{ {'patch': '修补', 'experiment': '试验', 'adopt': '采用', 'migrate': '迁移', 'monitor': '跟踪', 'hire': '招聘'}[item.recommendation_type] }}</span>
+    <span class="badge badge-horizon">{{ {'this_week': '本周', 'this_month': '本月', 'this_quarter': '本季度'}[item.time_horizon] }}</span>
     {{ item.recommendation }}
   </div>
   <div class="rationale">依据：{{ item.rationale }}</div>
   {% if new_editorial %}<div class="rationale">新增行动依据：{{ item.action_delta }}</div>{% endif %}
-  <div class="estimate">投入 {{ item.effort_person_days.min }}–{{ item.effort_person_days.max }} 人日 · 适用团队 {{ item.team_size_applicability | join('，') }}{% if item.success_metric %} · 目标 {{ item.success_metric }}{% endif %}</div>
+  <div class="estimate">投入 {{ item.effort_person_days.min }}–{{ item.effort_person_days.max }} 人日 · 适用团队 {% for size in item.team_size_applicability %}{{ {'small_lt_10': '少于 10 人', 'medium_10_50': '10 至 50 人', 'large_gt_50': '多于 50 人'}[size] }}{% if not loop.last %}、{% endif %}{% endfor %}{% if item.success_metric %} · 目标 {{ item.success_metric }}{% endif %}</div>
   {% if item.references %}
   <div class="rationale">引用：{% for r in item.references %}<a href="{{ r.url }}">{{ r.date }} {{ r.headline }}</a>{% if not loop.last %}；{% endif %}{% endfor %}</div>
   {% endif %}
@@ -396,7 +396,7 @@
     <article class="card" id="coding_agents-{{ loop.index0 }}">
       {% if item.confidence == "low" %}<span class="badge badge-warn">待核实</span>{% endif %}
       <div>
-        <span class="badge badge-tier">{{ item.product }} · {{ item.product_tier }}</span>
+        <span class="badge badge-tier">{{ item.product }}</span>
         {{ item_meta(item) }}
       </div>
       <h3 class="headline">{{ item.headline }}</h3>
@@ -453,12 +453,13 @@
     <h2>四、{{ report.sections.policy_risk.title }}</h2>
     {% for item in report.sections.policy_risk["items"] %}
     <article class="card" id="policy_risk-{{ loop.index0 }}">
-      <div><span class="badge badge-tier">{{ item.subject }}</span><span class="badge">{{ item.event_status }}</span>
+      <div><span class="badge badge-tier">{{ item.subject }}</span>
         <span class="badge badge-tier">{{ "核心事件" if item.editorial_tier == "core" else "重要观察" }}</span>
         {% if item.tracking_ref %}<span class="badge badge-tracking">事件追踪</span>{% endif %}
       </div>
       <h3 class="headline">{{ item.headline }}</h3>
       <div class="summary">{{ item.summary }}</div>
+      <p><strong>事件状态：</strong>{{ item.event_status }}</p>
       <p><strong>适用范围：</strong>{{ item.affected_scope }}</p>
       <p><strong>决策影响：</strong>{{ item.decision_relevance }}</p>
       {% if item.evidence_limits %}<div class="evidence"><strong>证据边界：</strong><ul>{% for limit in item.evidence_limits %}<li>{{ limit }}</li>{% endfor %}</ul></div>{% endif %}
